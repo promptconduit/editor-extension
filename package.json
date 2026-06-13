@@ -1,0 +1,48 @@
+{
+  "name": "promptconduit-cost",
+  "displayName": "PromptConduit — Realtime Token Cost",
+  "description": "See what your AI coding sessions cost, live, in the status bar. 100% local — no data leaves your machine.",
+  "version": "0.1.0",
+  "publisher": "promptconduit",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": ["Other"],
+  "keywords": ["claude", "claude code", "cursor", "token", "cost", "usage"],
+  "activationEvents": ["onStartupFinished"],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "promptconduit.cost.showDetails",
+        "title": "PromptConduit: Show Cost Breakdown"
+      }
+    ],
+    "configuration": {
+      "title": "PromptConduit Cost",
+      "properties": {
+        "promptconduit.cost.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show the realtime token-cost item in the status bar."
+        },
+        "promptconduit.cost.binaryPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the promptconduit CLI. Leave blank to auto-detect on PATH and common Homebrew locations."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "vscode:prepublish": "npm run compile"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.9.0"
+  }
+}
