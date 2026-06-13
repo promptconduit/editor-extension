@@ -44,4 +44,30 @@ npm run compile        # or: npm run watch
 Press **F5** in VS Code / Cursor to launch an Extension Development Host, open a
 folder where you run Claude Code, and watch the status bar update as you work.
 
-Publish targets: **Open VSX** (for Cursor) and the **VS Code Marketplace**.
+## Publishing
+
+Targets: **Open VSX** (for Cursor) and the **VS Code Marketplace**.
+
+One-time setup:
+1. Push this directory to its own GitHub repo (the `repository` field in
+   `package.json` assumes `promptconduit/cost-extension` — update it to match).
+2. Create access tokens and add them as repo **secrets**:
+   - `OVSX_TOKEN` — Open VSX token from <https://open-vsx.org> (namespace must exist:
+     `npx ovsx create-namespace promptconduit`).
+   - `VSCE_PAT` — VS Code Marketplace PAT from <https://marketplace.visualstudio.com/manage>
+     (create the `promptconduit` publisher first).
+
+Release: bump `version` in `package.json`, commit, then tag — the `Publish`
+workflow does the rest:
+
+```bash
+git tag v0.1.0 && git push origin v0.1.0
+```
+
+Or publish locally:
+
+```bash
+npm run package        # builds promptconduit-cost-<version>.vsix
+npm run publish:ovsx   # needs OVSX_TOKEN in env or `ovsx login`
+npm run publish:vsce   # needs `vsce login promptconduit`
+```

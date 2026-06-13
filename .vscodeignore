@@ -1,5 +1,8 @@
 node_modules/
 .vscode-test/
+.github/**
 src/**
 tsconfig.json
 .gitignore
+*.vsix
+package-lock.json

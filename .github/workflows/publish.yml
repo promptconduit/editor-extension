@@ -1,0 +1,37 @@
+name: Publish
+
+# Tag the repo (e.g. `git tag v0.1.0 && git push origin v0.1.0`) to publish.
+# Requires two repo secrets:
+#   OVSX_TOKEN  — Open VSX access token (for Cursor)            https://open-vsx.org
+#   VSCE_PAT    — VS Code Marketplace Personal Access Token     https://marketplace.visualstudio.com/manage
+# The VS Code step is best-effort (continue-on-error) so an Open VSX release
+# still succeeds if the Marketplace token isn't set.
+
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - run: npm ci
+      - run: npm run compile
+
+      - name: Publish to Open VSX (Cursor)
+        if: ${{ env.OVSX_TOKEN != '' }}
+        run: npx ovsx publish --pat "$OVSX_TOKEN"
+        env:
+          OVSX_TOKEN: ${{ secrets.OVSX_TOKEN }}
+
+      - name: Publish to VS Code Marketplace
+        if: ${{ env.VSCE_PAT != '' }}
+        continue-on-error: true
+        run: npx @vscode/vsce publish --pat "$VSCE_PAT"
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
