@@ -83,6 +83,24 @@ export class CostStatusBar {
     this.scheduleRender();
   }
 
+  private hasUnpriced(): boolean {
+    return (this.activeSession?.by_model ?? []).some((m) => !m.model_priced);
+  }
+
+  // The session cost shown in the bar: a dollar amount when we have priced
+  // turns, or "unpriced" when there are tokens but no rate (e.g. Cursor
+  // composer) so a real session never reads as a misleading "$0.00".
+  private sessionCostLabel(): string {
+    const s = this.activeSession;
+    if (!s) {
+      return "$0.00";
+    }
+    if (s.totals.cost_total > 0) {
+      return fmtUSD(s.totals.cost_total);
+    }
+    return this.hasUnpriced() ? "unpriced" : "$0.00";
+  }
+
   private scheduleRender(): void {
     if (this.throttle) {
       this.pending = true;
@@ -99,11 +117,13 @@ export class CostStatusBar {
   }
 
   private render(): void {
-    const reqCost = this.lastEvent?.cost.total;
-    const sessCost = this.activeSession?.totals.cost_total;
+    const reqStr = this.lastEvent
+      ? this.lastEvent.model_priced
+        ? fmtUSD(this.lastEvent.cost.total)
+        : "unpriced"
+      : "—";
 
-    const reqStr = reqCost !== undefined ? fmtUSD(reqCost) : "—";
-    const sessStr = sessCost !== undefined ? fmtUSD(sessCost) : "$0.00";
+    const sessStr = this.sessionCostLabel();
     this.item.text = `$(zap) ${reqStr} · $(history) ${sessStr}`;
 
     const tip = new vscode.MarkdownString();
@@ -111,9 +131,13 @@ export class CostStatusBar {
     tip.appendMarkdown(`**AI session cost** _(100% local)_\n\n`);
     if (this.activeSession) {
       const s = this.activeSession;
-      tip.appendMarkdown(`Session total: **${fmtUSD(s.totals.cost_total)}** _(${sourceBadge(s.source)})_\n\n`);
+      tip.appendMarkdown(`Session total: **${this.sessionCostLabel()}** _(${sourceBadge(s.source)})_\n\n`);
       for (const m of s.by_model) {
-        tip.appendMarkdown(`- ${m.model}: ${fmtUSD(m.cost_total)}\n`);
+        const cost = m.model_priced ? fmtUSD(m.cost_total) : "tokens only — unpriced";
+        tip.appendMarkdown(`- ${m.model}: ${cost}\n`);
+      }
+      if (this.hasUnpriced()) {
+        tip.appendMarkdown(`\n_Some models have no rate in the table — exact tokens shown, cost not computed._\n`);
       }
       tip.appendMarkdown(
         `\nTokens — in ${s.totals.input.toLocaleString()}, out ${s.totals.output.toLocaleString()}, ` +

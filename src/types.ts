@@ -36,6 +36,7 @@ export interface CostEvent {
 
 export interface ModelTotal {
   model: string;
+  model_priced: boolean;
   tokens: Tokens;
   cost_total: number;
 }

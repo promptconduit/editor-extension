@@ -58,19 +58,24 @@ export class CostPanel {
 
   private html(session: SessionSummary | undefined, lastEvent: CostEvent | undefined): string {
     const t = session?.totals;
-    const rows = (session?.by_model ?? [])
+    const models = session?.by_model ?? [];
+    const anyUnpriced = models.some((m) => !m.model_priced);
+    const rows = models
       .map(
         (m) => `
         <tr>
-          <td>${escape(m.model)}</td>
+          <td>${escape(m.model)}${m.model_priced ? "" : ' <span class="badge">unpriced</span>'}</td>
           <td class="num">${num(m.tokens.input)}</td>
           <td class="num">${num(m.tokens.output)}</td>
           <td class="num">${num(m.tokens.cache_read)}</td>
           <td class="num">${num(m.tokens.cache_write)}</td>
-          <td class="num">${fmtUSD(m.cost_total)}</td>
+          <td class="num">${m.model_priced ? fmtUSD(m.cost_total) : "—"}</td>
         </tr>`,
       )
       .join("");
+    const unpricedNote = anyUnpriced
+      ? `<p class="muted">Models marked <em>unpriced</em> aren't in the rate table (e.g. Cursor's composer models). Exact tokens are shown; add a per-token rate to compute their cost.</p>`
+      : "";
 
     const totalCost = t ? fmtUSD(t.cost_total) : "$0.0000";
     const lastReq = lastEvent
@@ -106,9 +111,10 @@ export class CostPanel {
       </tr>
     </thead>
     <tbody>
-      ${rows || `<tr><td colspan="6" class="muted">No priced turns yet.</td></tr>`}
+      ${rows || `<tr><td colspan="6" class="muted">No turns yet.</td></tr>`}
     </tbody>
   </table>
+  ${unpricedNote}
   <footer class="muted">
     Computed entirely on your machine from local transcripts. None of your data is sent anywhere.
   </footer>
