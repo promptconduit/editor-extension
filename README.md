@@ -50,7 +50,7 @@ Targets: **Open VSX** (for Cursor) and the **VS Code Marketplace**.
 
 One-time setup:
 1. Push this directory to its own GitHub repo (the `repository` field in
-   `package.json` assumes `promptconduit/cost-extension` — update it to match).
+   `package.json` points at `promptconduit/editor-extension`).
 2. Create access tokens and add them as repo **secrets**:
    - `OVSX_TOKEN` — Open VSX token from <https://open-vsx.org> (namespace must exist:
      `npx ovsx create-namespace promptconduit`).
