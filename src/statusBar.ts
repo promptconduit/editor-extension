@@ -24,6 +24,30 @@ function sourceBadge(source: string): string {
   }
 }
 
+function pct(x: number): string {
+  return `${Math.round(x * 100)}%`;
+}
+
+// signalsSummary renders a one-line headline of the session's cost-reduction
+// signals (CLI schema v2+) for the status-bar tooltip, so the key numbers show
+// on hover without opening the full panel. Cache-hit rate is always included
+// when signals exist; tier and tool-call volume are added only when meaningful.
+// Returns "" when the session carries no signals (older CLI or no priced turns).
+function signalsSummary(session: SessionSummary): string {
+  const sig = session.signals;
+  if (!sig) {
+    return "";
+  }
+  const parts = [`cache hit ${pct(sig.cache_hit_rate)}`];
+  if (sig.tier && sig.tier !== "unknown") {
+    parts.push(`${sig.tier} tier`);
+  }
+  if (sig.tool_calls > 0) {
+    parts.push(`${sig.tool_calls} tool call${sig.tool_calls === 1 ? "" : "s"}`);
+  }
+  return parts.join(" · ");
+}
+
 /**
  * CostStatusBar owns the bottom-right status bar item. It renders the latest
  * request cost and the active session's running total, throttling UI writes so
@@ -169,6 +193,10 @@ export class CostStatusBar {
         `\nTokens — in ${s.totals.input.toLocaleString()}, out ${s.totals.output.toLocaleString()}, ` +
           `cache read ${s.totals.cache_read.toLocaleString()}, cache write ${s.totals.cache_write.toLocaleString()}\n`,
       );
+      const signals = signalsSummary(s);
+      if (signals) {
+        tip.appendMarkdown(`\n${signals}\n`);
+      }
     } else {
       tip.appendMarkdown(`No priced turns yet this session.\n`);
     }
