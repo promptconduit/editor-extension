@@ -25,6 +25,10 @@
       {
         "command": "promptconduit.cost.showDetails",
         "title": "PromptConduit: Show Cost Breakdown"
+      },
+      {
+        "command": "promptconduit.events.showFeed",
+        "title": "PromptConduit: Show Live Events Feed"
       }
     ],
     "configuration": {
