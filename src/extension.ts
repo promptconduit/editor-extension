@@ -16,7 +16,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
   context.subscriptions.push(
     vscode.commands.registerCommand("promptconduit.cost.showDetails", () => {
-      CostPanel.show(statusBar?.session, statusBar?.lastRequest);
+      CostPanel.show(statusBar?.session, statusBar?.lastRequest, statusBar?.recentRequests);
     }),
     vscode.commands.registerCommand("promptconduit.events.showFeed", () => {
       EventsFeedPanel.show();
@@ -49,7 +49,7 @@ export function activate(context: vscode.ExtensionContext): void {
         } else {
           statusBar?.updateFromSummary(rec);
         }
-        CostPanel.refresh(statusBar?.session, statusBar?.lastRequest);
+        CostPanel.refresh(statusBar?.session, statusBar?.lastRequest, statusBar?.recentRequests);
       },
       onError: (msg) => console.error(`[promptconduit-cost] ${msg}`),
     });

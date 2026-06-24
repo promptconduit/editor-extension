@@ -30,9 +30,14 @@ function sourceBadge(source: string): string {
  * bursty turns don't thrash the bar.
  */
 export class CostStatusBar {
+  private static readonly MAX_RECENT = 50;
   private readonly item: vscode.StatusBarItem;
   private lastEvent: CostEvent | undefined;
   private activeSession: SessionSummary | undefined;
+  // Bounded, request_id-deduped history of recent turns for the drill-down
+  // panel (oldest first). The CLI dedups by request_id too, but Cursor emits
+  // two events per generation, so we guard here as well.
+  private recent: CostEvent[] = [];
   private pending = false;
   private throttle: NodeJS.Timeout | undefined;
 
@@ -58,6 +63,11 @@ export class CostStatusBar {
     return this.lastEvent;
   }
 
+  /** Recent turns (oldest first) for the drill-down panel. */
+  get recentRequests(): CostEvent[] {
+    return this.recent;
+  }
+
   show(): void {
     this.item.show();
   }
@@ -68,7 +78,23 @@ export class CostStatusBar {
 
   updateFromEvent(ev: CostEvent): void {
     this.lastEvent = ev;
+    this.recordRecent(ev);
     this.scheduleRender();
+  }
+
+  // Append (or replace, by request_id) into the bounded recent history.
+  private recordRecent(ev: CostEvent): void {
+    if (ev.request_id) {
+      const i = this.recent.findIndex((e) => e.request_id === ev.request_id);
+      if (i >= 0) {
+        this.recent[i] = ev;
+        return;
+      }
+    }
+    this.recent.push(ev);
+    if (this.recent.length > CostStatusBar.MAX_RECENT) {
+      this.recent.shift();
+    }
   }
 
   updateFromSummary(s: SessionSummary): void {
