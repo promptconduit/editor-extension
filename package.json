@@ -12,12 +12,12 @@
   "keywords": ["claude", "claude code", "cursor", "token", "cost", "usage"],
   "repository": {
     "type": "git",
-    "url": "https://github.com/promptconduit/cost-extension.git"
+    "url": "https://github.com/promptconduit/editor-extension.git"
   },
   "bugs": {
-    "url": "https://github.com/promptconduit/cost-extension/issues"
+    "url": "https://github.com/promptconduit/editor-extension/issues"
   },
-  "homepage": "https://github.com/promptconduit/cost-extension#readme",
+  "homepage": "https://github.com/promptconduit/editor-extension#readme",
   "activationEvents": ["onStartupFinished"],
   "main": "./out/extension.js",
   "contributes": {
