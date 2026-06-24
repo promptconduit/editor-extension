@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { EventsFeedPanel } from "./eventsFeed";
 import { CostPanel } from "./panel";
 import { CostStatusBar } from "./statusBar";
 import { CostWatcher, resolveBinary } from "./watcher";
@@ -16,6 +17,9 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     vscode.commands.registerCommand("promptconduit.cost.showDetails", () => {
       CostPanel.show(statusBar?.session, statusBar?.lastRequest);
+    }),
+    vscode.commands.registerCommand("promptconduit.events.showFeed", () => {
+      EventsFeedPanel.show();
     }),
   );
 
