@@ -127,8 +127,10 @@ test("Telemetry panel renders seeded events in Cursor", async () => {
   // All three seeded rows share repo "demo-repo" → exactly one Repo cell each.
   await expect(webview.getByText("demo-repo")).toHaveCount(3);
 
-  // Capture both: the full window (panel in context) and the panel's frame body.
-  await win.screenshot({ path: "out/screenshots/telemetry-panel.png" });
-  await webview.locator("body").screenshot({ path: "out/screenshots/telemetry-panel-frame.png" });
+  // Debug captures only (uploaded on failure). On a fresh CI profile these are
+  // occluded by Cursor's login wall — see README; the assertions above are the
+  // real gate, not these images.
+  await win.screenshot({ path: "out/screenshots/03-window.png" });
+  await webview.locator("body").screenshot({ path: "out/screenshots/04-webview-frame.png" });
   await app.close();
 });

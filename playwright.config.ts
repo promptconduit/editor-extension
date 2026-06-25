@@ -12,4 +12,5 @@ export default defineConfig({
   workers: 1, // one editor instance at a time
   reporter: [["list"], ["html", { open: "never", outputFolder: "out/playwright-report" }]],
   outputDir: "out/test-results",
+  use: { trace: "retain-on-failure" },
 });

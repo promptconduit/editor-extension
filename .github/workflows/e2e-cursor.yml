@@ -1,14 +1,16 @@
 name: E2E (Cursor)
 
-# Boots the REAL Cursor editor under xvfb, focuses the docked Telemetry panel with
-# a seeded events.jsonl, asserts the rendered rows, and uploads a screenshot.
-# Manual-only once stable (add a nightly `schedule` then). During the POC we also
-# run on push to the POC branch, because `workflow_dispatch` only fires from the
-# default branch — REMOVE the `push:` block before merging.
+# Boots the REAL Cursor editor under xvfb, loads the extension, focuses the docked
+# Telemetry panel against a seeded events.jsonl, and asserts the rendered rows.
+# Pre-merge gate: runs on every PR to main so a change can't silently break the
+# panel. Also runs on push to main (post-merge safety) and on demand. Make it a
+# required status check in branch protection to enforce it.
 on:
-  workflow_dispatch:
+  pull_request:
+    branches: [main]
   push:
-    branches: [feat/cursor-e2e-poc]
+    branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -38,7 +40,10 @@ jobs:
 
       - name: Download + extract Cursor
         id: cursor
-        # Pin CURSOR_VERSION for reproducibility (URLs in oslook/cursor-ai-downloads).
+        # Pinned so the gate catches OUR regressions, not Cursor's own updates.
+        # Bump deliberately (versions in oslook/cursor-ai-downloads).
+        env:
+          CURSOR_VERSION: "3.9.8"
         run: bash scripts/install-cursor.sh "$GITHUB_WORKSPACE/.cursor-test"
 
       - name: Run Cursor E2E under xvfb
@@ -47,12 +52,14 @@ jobs:
           EXT_DEV_PATH: ${{ github.workspace }}
         run: xvfb-run -a npx playwright test
 
-      - name: Upload screenshots + report (always)
-        if: always()
+      # On failure, keep the screenshots + Playwright report to debug the break.
+      - name: Upload debug artifacts (on failure)
+        if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: cursor-e2e-artifacts
+          name: cursor-e2e-debug
           path: |
             out/screenshots/
             out/playwright-report/
+            out/test-results/
           if-no-files-found: warn
