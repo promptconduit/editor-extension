@@ -8,8 +8,17 @@
   "engines": {
     "vscode": "^1.85.0"
   },
-  "categories": ["Other"],
-  "keywords": ["claude", "claude code", "cursor", "token", "cost", "usage"],
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "claude",
+    "claude code",
+    "cursor",
+    "token",
+    "cost",
+    "usage"
+  ],
   "repository": {
     "type": "git",
     "url": "https://github.com/promptconduit/editor-extension.git"
@@ -18,7 +27,9 @@
     "url": "https://github.com/promptconduit/editor-extension/issues"
   },
   "homepage": "https://github.com/promptconduit/editor-extension#readme",
-  "activationEvents": ["onStartupFinished"],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
   "main": "./out/extension.js",
   "contributes": {
     "commands": [
@@ -72,9 +83,11 @@
     "vscode:prepublish": "npm run compile",
     "package": "vsce package",
     "publish:vsce": "vsce publish",
-    "publish:ovsx": "ovsx publish"
+    "publish:ovsx": "ovsx publish",
+    "test:e2e": "playwright test"
   },
   "devDependencies": {
+    "@playwright/test": "^1.61.1",
     "@types/node": "^20.11.0",
     "@types/vscode": "^1.85.0",
     "@vscode/vsce": "^3.2.0",

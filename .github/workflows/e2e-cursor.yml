@@ -1,0 +1,65 @@
+name: E2E (Cursor)
+
+# Boots the REAL Cursor editor under xvfb, loads the extension, focuses the docked
+# Telemetry panel against a seeded events.jsonl, and asserts the rendered rows.
+# Pre-merge gate: runs on every PR to main so a change can't silently break the
+# panel. Also runs on push to main (post-merge safety) and on demand. Make it a
+# required status check in branch protection to enforce it.
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  cursor-e2e:
+    # MUST be 22.04: the Cursor AppImage SIGTRAPs on Ubuntu 24.04 (glibc 2.39/t64),
+    # and --no-sandbox does not fix it. See forum.cursor.com SIGTRAP report.
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - run: npm ci
+      # Compile so --extensionDevelopmentPath can load the extension from ./out.
+      - run: npm run compile
+
+      - name: System deps (Electron libs + xvfb)
+        run: |
+          sudo apt-get update
+          npx playwright install-deps chromium
+          sudo apt-get install -y xvfb
+
+      - name: Download + extract Cursor
+        id: cursor
+        # Pinned so the gate catches OUR regressions, not Cursor's own updates.
+        # Bump deliberately (versions in oslook/cursor-ai-downloads).
+        env:
+          CURSOR_VERSION: "3.9.8"
+        run: bash scripts/install-cursor.sh "$GITHUB_WORKSPACE/.cursor-test"
+
+      - name: Run Cursor E2E under xvfb
+        env:
+          CURSOR_BIN: ${{ steps.cursor.outputs.cursor_bin }}
+          EXT_DEV_PATH: ${{ github.workspace }}
+        run: xvfb-run -a npx playwright test
+
+      # On failure, keep the screenshots + Playwright report to debug the break.
+      - name: Upload debug artifacts (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cursor-e2e-debug
+          path: |
+            out/screenshots/
+            out/playwright-report/
+            out/test-results/
+          if-no-files-found: warn
