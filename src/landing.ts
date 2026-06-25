@@ -98,7 +98,7 @@ export function landingHtml(): string {
     <section class="card upsell" aria-labelledby="pro-h">
       <h2 id="pro-h">PromptConduit Pro &amp; Team</h2>
       <p>The free extension shows the cost of the session in front of you. Pro and
-        Team add the long view across every session, and works with the tools you
+        Team add the long view across every session, and work with the tools you
         already use — Claude Code, Cursor, and more.</p>
       <ul class="feat">
         <li>

@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.4.0
+
+- **Tab-aware cost**: the status bar now follows the most-recently-active agent
+  tab. Cost is tracked per conversation (Cursor's per-tab `conversation_id`,
+  falling back to `session_id` for Claude Code), and the bar, tooltip, and
+  breakdown panel all reflect whichever tab produced the latest turn (#7).
+- **Zero-state landing**: a fresh or unseen tab now shows `$0.00` and, on click,
+  a landing view — what PromptConduit is, the 100%-local privacy promise, a
+  "how cost tracking works" blurb, **Learn more** links, and a Pro/Team
+  overview — instead of an empty table (#8, #9, #10, #11).
+
+## 0.3.0
+
+- The status-bar hover tooltip now surfaces the session's cost-reduction signals
+  (cache-hit rate, model tier, tool-call volume) inline.
+- Added a docked **Telemetry** panel in the editor's bottom panel — a live tail
+  of the local `events.jsonl` feed.
+
 ## 0.2.0
 
 - Upgraded to cost-feed **schema v2**: the breakdown now shows a per-request
