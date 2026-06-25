@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { ConversationStore } from "./state";
 import { CostEvent, SessionSummary } from "./types";
 
 const SHOW_DETAILS_COMMAND = "promptconduit.cost.showDetails";
@@ -50,18 +51,17 @@ function signalsSummary(session: SessionSummary): string {
 
 /**
  * CostStatusBar owns the bottom-right status bar item. It renders the latest
- * request cost and the active session's running total, throttling UI writes so
- * bursty turns don't thrash the bar.
+ * request cost and the running total of the MOST-RECENTLY-ACTIVE conversation
+ * (Cursor per-tab `conversation_id`, falling back to `session_id` for Claude
+ * Code), throttling UI writes so bursty turns don't thrash the bar.
+ *
+ * Per-conversation state lives in a ConversationStore; the bar, tooltip, and the
+ * public getters consumed by the detail panel all read the ACTIVE conversation,
+ * so the bar follows whichever agent tab produced the latest record (#7).
  */
 export class CostStatusBar {
-  private static readonly MAX_RECENT = 50;
   private readonly item: vscode.StatusBarItem;
-  private lastEvent: CostEvent | undefined;
-  private activeSession: SessionSummary | undefined;
-  // Bounded, request_id-deduped history of recent turns for the drill-down
-  // panel (oldest first). The CLI dedups by request_id too, but Cursor emits
-  // two events per generation, so we guard here as well.
-  private recent: CostEvent[] = [];
+  private readonly store = new ConversationStore();
   private pending = false;
   private throttle: NodeJS.Timeout | undefined;
 
@@ -78,18 +78,19 @@ export class CostStatusBar {
     return this.item;
   }
 
-  /** The most recently observed session summary, for the detail panel. */
+  /** Session summary of the active conversation, for the detail panel. */
   get session(): SessionSummary | undefined {
-    return this.activeSession;
+    return this.store.activeSummary;
   }
 
+  /** Latest request of the active conversation. */
   get lastRequest(): CostEvent | undefined {
-    return this.lastEvent;
+    return this.store.activeLastEvent;
   }
 
-  /** Recent turns (oldest first) for the drill-down panel. */
+  /** Recent turns (oldest first) of the active conversation, for the panel. */
   get recentRequests(): CostEvent[] {
-    return this.recent;
+    return this.store.activeRecent;
   }
 
   show(): void {
@@ -101,47 +102,24 @@ export class CostStatusBar {
   }
 
   updateFromEvent(ev: CostEvent): void {
-    this.lastEvent = ev;
-    this.recordRecent(ev);
+    this.store.recordEvent(ev);
     this.scheduleRender();
   }
 
-  // Append (or replace, by request_id) into the bounded recent history.
-  private recordRecent(ev: CostEvent): void {
-    if (ev.request_id) {
-      const i = this.recent.findIndex((e) => e.request_id === ev.request_id);
-      if (i >= 0) {
-        this.recent[i] = ev;
-        return;
-      }
-    }
-    this.recent.push(ev);
-    if (this.recent.length > CostStatusBar.MAX_RECENT) {
-      this.recent.shift();
-    }
-  }
-
   updateFromSummary(s: SessionSummary): void {
-    // Treat the most-recently-updated session as the active one.
-    if (
-      !this.activeSession ||
-      s.session_id === this.activeSession.session_id ||
-      s.updated_at >= this.activeSession.updated_at
-    ) {
-      this.activeSession = s;
-    }
+    this.store.recordSummary(s);
     this.scheduleRender();
   }
 
   private hasUnpriced(): boolean {
-    return (this.activeSession?.by_model ?? []).some((m) => !m.model_priced);
+    return (this.store.activeSummary?.by_model ?? []).some((m) => !m.model_priced);
   }
 
   // The session cost shown in the bar: a dollar amount when we have priced
   // turns, or "unpriced" when there are tokens but no rate (e.g. Cursor
   // composer) so a real session never reads as a misleading "$0.00".
   private sessionCostLabel(): string {
-    const s = this.activeSession;
+    const s = this.store.activeSummary;
     if (!s) {
       return "$0.00";
     }
@@ -167,9 +145,10 @@ export class CostStatusBar {
   }
 
   private render(): void {
-    const reqStr = this.lastEvent
-      ? this.lastEvent.model_priced
-        ? fmtUSD(this.lastEvent.cost.total)
+    const lastEvent = this.store.activeLastEvent;
+    const reqStr = lastEvent
+      ? lastEvent.model_priced
+        ? fmtUSD(lastEvent.cost.total)
         : "unpriced"
       : "—";
 
@@ -179,8 +158,9 @@ export class CostStatusBar {
     const tip = new vscode.MarkdownString();
     tip.isTrusted = false;
     tip.appendMarkdown(`**AI session cost** _(100% local)_\n\n`);
-    if (this.activeSession) {
-      const s = this.activeSession;
+    const activeSession = this.store.activeSummary;
+    if (activeSession) {
+      const s = activeSession;
       tip.appendMarkdown(`Session total: **${this.sessionCostLabel()}** _(${sourceBadge(s.source)})_\n\n`);
       for (const m of s.by_model) {
         const cost = m.model_priced ? fmtUSD(m.cost_total) : "tokens only — unpriced";
@@ -200,8 +180,8 @@ export class CostStatusBar {
     } else {
       tip.appendMarkdown(`No priced turns yet this session.\n`);
     }
-    if (this.lastEvent) {
-      tip.appendMarkdown(`\nLast request: ${fmtUSD(this.lastEvent.cost.total)} (${this.lastEvent.model})\n`);
+    if (lastEvent) {
+      tip.appendMarkdown(`\nLast request: ${fmtUSD(lastEvent.cost.total)} (${lastEvent.model})\n`);
     }
     tip.appendMarkdown(`\n_Click for the full breakdown._`);
     this.item.tooltip = tip;
