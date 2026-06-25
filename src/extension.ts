@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { EventsFeedPanel } from "./eventsFeed";
+import { EventsFeedViewProvider } from "./eventsFeed";
 import { CostPanel } from "./panel";
 import { CostStatusBar } from "./statusBar";
 import { CostWatcher, resolveBinary } from "./watcher";
@@ -14,12 +14,23 @@ export function activate(context: vscode.ExtensionContext): void {
   statusBar = new CostStatusBar();
   context.subscriptions.push(statusBar);
 
+  // Docked telemetry panel (WebviewView) in Cursor's bottom panel — a live tail
+  // of ~/.promptconduit/events.jsonl.
+  const telemetry = new EventsFeedViewProvider();
+  context.subscriptions.push(
+    vscode.window.registerWebviewViewProvider(EventsFeedViewProvider.viewId, telemetry, {
+      webviewOptions: { retainContextWhenHidden: true },
+    }),
+    telemetry,
+  );
+
   context.subscriptions.push(
     vscode.commands.registerCommand("promptconduit.cost.showDetails", () => {
       CostPanel.show(statusBar?.session, statusBar?.lastRequest, statusBar?.recentRequests);
     }),
     vscode.commands.registerCommand("promptconduit.events.showFeed", () => {
-      EventsFeedPanel.show();
+      // Reveal/focus the docked telemetry panel (auto-registered <viewId>.focus).
+      void vscode.commands.executeCommand(`${EventsFeedViewProvider.viewId}.focus`);
     }),
   );
 
