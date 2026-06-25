@@ -1,0 +1,58 @@
+name: E2E (Cursor)
+
+# Boots the REAL Cursor editor under xvfb, focuses the docked Telemetry panel with
+# a seeded events.jsonl, asserts the rendered rows, and uploads a screenshot.
+# Manual-only once stable (add a nightly `schedule` then). During the POC we also
+# run on push to the POC branch, because `workflow_dispatch` only fires from the
+# default branch — REMOVE the `push:` block before merging.
+on:
+  workflow_dispatch:
+  push:
+    branches: [feat/cursor-e2e-poc]
+
+permissions:
+  contents: read
+
+jobs:
+  cursor-e2e:
+    # MUST be 22.04: the Cursor AppImage SIGTRAPs on Ubuntu 24.04 (glibc 2.39/t64),
+    # and --no-sandbox does not fix it. See forum.cursor.com SIGTRAP report.
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - run: npm ci
+      # Compile so --extensionDevelopmentPath can load the extension from ./out.
+      - run: npm run compile
+
+      - name: System deps (Electron libs + xvfb)
+        run: |
+          sudo apt-get update
+          npx playwright install-deps chromium
+          sudo apt-get install -y xvfb
+
+      - name: Download + extract Cursor
+        id: cursor
+        # Pin CURSOR_VERSION for reproducibility (URLs in oslook/cursor-ai-downloads).
+        run: bash scripts/install-cursor.sh "$GITHUB_WORKSPACE/.cursor-test"
+
+      - name: Run Cursor E2E under xvfb
+        env:
+          CURSOR_BIN: ${{ steps.cursor.outputs.cursor_bin }}
+          EXT_DEV_PATH: ${{ github.workspace }}
+        run: xvfb-run -a npx playwright test
+
+      - name: Upload screenshots + report (always)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cursor-e2e-artifacts
+          path: |
+            out/screenshots/
+            out/playwright-report/
+          if-no-files-found: warn
