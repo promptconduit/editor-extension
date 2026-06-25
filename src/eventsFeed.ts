@@ -197,51 +197,36 @@ class EventsTail {
 }
 
 /**
- * EventsFeedPanel renders a live, scrolling view of the local events.jsonl
- * substrate. A single reused webview (mirrors CostPanel): enableScripts:false,
- * server-rendered HTML, re-rendered on new events with a 250ms throttle.
+ * FeedController owns the live tail of events.jsonl, a bounded newest-first
+ * buffer, and throttled re-rendering. It is host-agnostic: it pushes finished
+ * HTML to a sink, so the same logic backs the docked Telemetry panel today and
+ * any other webview host later. Server-rendered (enableScripts:false), with a
+ * 250ms render throttle to coalesce bursty appends.
  */
-export class EventsFeedPanel {
-  private static current: EventsFeedPanel | undefined;
-  private readonly panel: vscode.WebviewPanel;
+export class FeedController {
   private readonly tail: EventsTail;
   private readonly events: FeedEvent[] = [];
   private disposed = false;
   private pending = false;
   private throttle: NodeJS.Timeout | undefined;
 
-  static show(): void {
-    if (EventsFeedPanel.current && !EventsFeedPanel.current.disposed) {
-      EventsFeedPanel.current.panel.reveal(vscode.ViewColumn.Active);
-      return;
-    }
-    const panel = vscode.window.createWebviewPanel(
-      "promptconduitEventsFeed",
-      "AI Events Feed",
-      vscode.ViewColumn.Active,
-      { enableScripts: false, retainContextWhenHidden: true },
-    );
-    EventsFeedPanel.current = new EventsFeedPanel(panel);
+  constructor(private readonly setHtml: (html: string) => void) {
+    this.tail = new EventsTail(eventsPath(), (events) => this.ingest(events));
   }
 
-  private constructor(panel: vscode.WebviewPanel) {
-    this.panel = panel;
-    this.panel.onDidDispose(() => {
-      this.disposed = true;
-      this.tail.dispose();
-      if (this.throttle) {
-        clearTimeout(this.throttle);
-        this.throttle = undefined;
-      }
-      if (EventsFeedPanel.current === this) {
-        EventsFeedPanel.current = undefined;
-      }
-    });
-
-    this.tail = new EventsTail(eventsPath(), (events) => this.ingest(events));
+  start(): void {
     this.render(); // paint the empty / disabled state immediately
     if (!logDisabled()) {
       this.tail.start();
+    }
+  }
+
+  dispose(): void {
+    this.disposed = true;
+    this.tail.dispose();
+    if (this.throttle) {
+      clearTimeout(this.throttle);
+      this.throttle = undefined;
     }
   }
 
@@ -254,8 +239,8 @@ export class EventsFeedPanel {
     this.scheduleRender();
   }
 
-  // Throttle identical to statusBar.ts: render now, then coalesce a single
-  // trailing render if more events arrive inside the window.
+  // Render now, then coalesce a single trailing render if more events arrive
+  // inside the throttle window (mirrors statusBar.ts).
   private scheduleRender(): void {
     if (this.throttle) {
       this.pending = true;
@@ -275,51 +260,85 @@ export class EventsFeedPanel {
     if (this.disposed) {
       return;
     }
-    this.panel.webview.html = this.html();
+    this.setHtml(buildFeedHtml(this.events));
+  }
+}
+
+/**
+ * EventsFeedViewProvider hosts the telemetry feed as a docked WebviewView in
+ * Cursor's bottom panel (contributed under the "PromptConduit" view container,
+ * view id `promptconduit.telemetry`). One FeedController per resolved view,
+ * torn down when the view is disposed.
+ */
+export class EventsFeedViewProvider implements vscode.WebviewViewProvider, vscode.Disposable {
+  public static readonly viewId = "promptconduit.telemetry";
+  private controller: FeedController | undefined;
+
+  resolveWebviewView(view: vscode.WebviewView): void {
+    view.webview.options = { enableScripts: false };
+    this.controller?.dispose();
+    const controller = new FeedController((html) => {
+      view.webview.html = html;
+    });
+    this.controller = controller;
+    view.onDidDispose(() => {
+      controller.dispose();
+      if (this.controller === controller) {
+        this.controller = undefined;
+      }
+    });
+    controller.start();
   }
 
-  private html(): string {
-    // Newest first.
-    const rows = this.events
-      .slice()
-      .reverse()
-      .map((e) => {
-        const repo = e.repo
-          ? escape(e.branch ? `${e.repo} (${e.branch})` : e.repo)
-          : '<span class="muted">—</span>';
-        return `
-        <tr>
-          <td class="time">${escape(fmtTime(e.capturedAt))}</td>
-          <td><span class="tool">${escape(e.tool || "—")}</span></td>
-          <td><span class="hook">${escape(e.hookEvent || "—")}</span></td>
-          <td>${repo}</td>
-        </tr>`;
-      })
-      .join("");
+  dispose(): void {
+    this.controller?.dispose();
+    this.controller = undefined;
+  }
+}
 
-    const body = this.events.length > 0 ? this.tableHtml(rows) : this.emptyHtml();
+// Build the feed HTML from the current event buffer. Newest-first, compact for
+// the bottom panel, and script-free (server-rendered).
+function buildFeedHtml(events: FeedEvent[]): string {
+  const rows = events
+    .slice()
+    .reverse()
+    .map((e) => {
+      const repo = e.repo
+        ? escape(e.branch ? `${e.repo} (${e.branch})` : e.repo)
+        : '<span class="muted">—</span>';
+      return `
+      <tr>
+        <td class="time">${escape(fmtTime(e.capturedAt))}</td>
+        <td><span class="tool">${escape(e.tool || "—")}</span></td>
+        <td><span class="hook">${escape(e.hookEvent || "—")}</span></td>
+        <td>${repo}</td>
+      </tr>`;
+    })
+    .join("");
 
-    return `<!DOCTYPE html>
+  const body = events.length > 0 ? tableHtml(rows) : emptyHtml();
+
+  return `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
 <style>
-  body { font-family: var(--vscode-font-family); color: var(--vscode-editor-foreground); padding: 1rem 1.25rem; }
-  h1 { font-size: 1.1rem; margin: 0 0 0.25rem; }
+  body { font-family: var(--vscode-font-family); color: var(--vscode-editor-foreground); padding: 0.4rem 0.6rem; }
+  h1 { font-size: 0.95rem; margin: 0 0 0.15rem; }
   .muted { color: var(--vscode-descriptionForeground); }
-  table { border-collapse: collapse; width: 100%; margin-top: 1rem; }
-  th, td { text-align: left; padding: 0.35rem 0.6rem; border-bottom: 1px solid var(--vscode-panel-border); vertical-align: top; }
-  th { color: var(--vscode-descriptionForeground); font-weight: 600; }
+  table { border-collapse: collapse; width: 100%; margin-top: 0.5rem; }
+  th, td { text-align: left; padding: 0.25rem 0.5rem; border-bottom: 1px solid var(--vscode-panel-border); vertical-align: top; }
+  th { color: var(--vscode-descriptionForeground); font-weight: 600; position: sticky; top: 0; background: var(--vscode-editor-background); }
   td.time, th.time { white-space: nowrap; font-variant-numeric: tabular-nums; }
   .tool, .hook { display: inline-block; font-size: 0.78rem; padding: 0.1rem 0.5rem; border-radius: 0.5rem;
                  background: var(--vscode-badge-background); color: var(--vscode-badge-foreground); }
-  .empty { margin-top: 1.5rem; }
+  .empty { margin-top: 1rem; }
   code { background: var(--vscode-textCodeBlock-background); padding: 0.1rem 0.35rem; border-radius: 0.35rem; }
-  footer { margin-top: 1.5rem; }
+  footer { margin-top: 1rem; font-size: 0.8rem; }
 </style>
 </head>
 <body>
-  <h1>AI Events Feed <span class="muted">(${this.events.length} recent)</span></h1>
+  <h1>AI telemetry <span class="muted">(${events.length} recent)</span></h1>
   <p class="muted">Live tail of <code>~/.promptconduit/events.jsonl</code> — newest first.</p>
   ${body}
   <footer class="muted">
@@ -327,10 +346,10 @@ export class EventsFeedPanel {
   </footer>
 </body>
 </html>`;
-  }
+}
 
-  private tableHtml(rows: string): string {
-    return `<table>
+function tableHtml(rows: string): string {
+  return `<table>
     <thead>
       <tr>
         <th class="time">Time</th><th>Tool</th><th>Event</th><th>Repo</th>
@@ -340,21 +359,20 @@ export class EventsFeedPanel {
       ${rows}
     </tbody>
   </table>`;
-  }
+}
 
-  private emptyHtml(): string {
-    if (logDisabled()) {
-      return `<div class="empty muted">
-    <p>The local event log is <strong>disabled</strong> (<code>PROMPTCONDUIT_EVENT_LOG=0</code>).</p>
-    <p>Unset that variable and restart your AI tool to start capturing events, then reopen this view.</p>
-  </div>`;
-    }
+function emptyHtml(): string {
+  if (logDisabled()) {
     return `<div class="empty muted">
+    <p>The local event log is <strong>disabled</strong> (<code>PROMPTCONDUIT_EVENT_LOG=0</code>).</p>
+    <p>Unset that variable and restart your AI tool to start capturing events.</p>
+  </div>`;
+  }
+  return `<div class="empty muted">
     <p>No events yet. Run an AI coding session (e.g. Claude Code) with the
     <code>promptconduit</code> CLI hooks installed and events will stream in here within ~1s.</p>
     <p>Waiting on <code>~/.promptconduit/events.jsonl</code>…</p>
   </div>`;
-  }
 }
 
 // Render the ISO8601 captured_at as a local HH:MM:SS; fall back to the raw
