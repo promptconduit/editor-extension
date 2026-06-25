@@ -60,6 +60,43 @@ launch. Alternatively, run the *pixel* screenshot against stock VS Code (no
 login wall) while keeping this Cursor run for the DOM-level functional
 assertions. The functional verification here needs neither.
 
+## PR screenshots (authenticated Cursor)
+
+`.github/workflows/pr-screenshot.yml` renders the panel in **real, logged-in
+Cursor** and posts the screenshot **inline as a sticky PR comment**. It's
+non-blocking and separate from the `e2e-cursor` gate. With no auth secret it
+no-ops.
+
+**Why auth:** a fresh Cursor profile shows a full-window login wall that occludes
+the workbench. Cursor keeps its session as plaintext rows in `state.vscdb`
+(not the OS keychain), so we inject a captured token into the CI profile
+(`scripts/inject-cursor-auth.sh`) and Cursor boots logged in.
+
+### One-time setup
+
+1. **Use a dedicated Cursor account for CI** — logging in from CI can log your
+   personal account out elsewhere (Cursor allows one active session).
+2. Log into Cursor with that account, quit Cursor, then capture the session:
+   ```bash
+   sqlite3 ~/.config/Cursor/User/globalStorage/state.vscdb \
+     "SELECT key,value FROM ItemTable WHERE key LIKE 'cursorAuth/%';"
+   # macOS: ~/Library/Application Support/Cursor/User/globalStorage/state.vscdb
+   ```
+3. Add repo secrets (Settings → Secrets and variables → Actions):
+   - `CURSOR_ACCESS_TOKEN` — the `cursorAuth/accessToken` value (**required**)
+   - `CURSOR_REFRESH_TOKEN` — `cursorAuth/refreshToken` (recommended)
+   - `CURSOR_EMAIL` — `cursorAuth/cachedEmail` (optional, for the UI)
+
+That's it — the next PR gets an inline Cursor screenshot.
+
+### Caveats
+
+- The access token is a short-lived JWT; if the wall returns, re-capture (the
+  refresh token helps the client renew). For a screenshot you usually only need
+  the client-side logged-in state, which is forgiving.
+- Screenshots live on an orphan `ci-screenshots` branch (off `main`, off the PR
+  diff). Internal-branch PRs only — fork PRs get a read-only token and skip.
+
 ## Reference
 
 The launch flags + env scrub + webview frame pattern follow

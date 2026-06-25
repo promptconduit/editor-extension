@@ -55,7 +55,10 @@ test("Telemetry panel renders seeded events in Cursor", async () => {
   test.skip(!CURSOR_BIN, "CURSOR_BIN not set — run via the e2e-cursor workflow");
 
   const home = writeSeededHome();
-  const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), "pc-ud-"));
+  // Reuse a pre-prepared profile when provided (the PR-screenshot workflow
+  // injects Cursor auth into it so the editor boots logged in — no login wall).
+  const userDataDir =
+    process.env.CURSOR_USER_DATA_DIR ?? fs.mkdtempSync(path.join(os.tmpdir(), "pc-ud-"));
   const extensionsDir = fs.mkdtempSync(path.join(os.tmpdir(), "pc-ext-"));
   const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "pc-ws-"));
   fs.mkdirSync("out/screenshots", { recursive: true });
@@ -127,9 +130,20 @@ test("Telemetry panel renders seeded events in Cursor", async () => {
   // All three seeded rows share repo "demo-repo" → exactly one Repo cell each.
   await expect(webview.getByText("demo-repo")).toHaveCount(3);
 
-  // Debug captures only (uploaded on failure). On a fresh CI profile these are
-  // occluded by Cursor's login wall — see README; the assertions above are the
-  // real gate, not these images.
+  // In an authenticated profile (PR-screenshot run), maximize the bottom panel so
+  // the capture shows the Telemetry panel prominently. Skipped for the gate run so
+  // it adds no flake there. Best-effort.
+  if (process.env.CURSOR_USER_DATA_DIR) {
+    await win.keyboard.press("F1");
+    await win.locator(".quick-input-widget").waitFor({ timeout: 15_000 });
+    await win.keyboard.type("View: Toggle Maximized Panel");
+    await win.waitForTimeout(300);
+    await win.keyboard.press("Enter");
+    await win.waitForTimeout(1_500);
+  }
+
+  // 03-window is the headline capture: clean (workbench + panel) on an
+  // authenticated profile, occluded by the login wall on a fresh one (see README).
   await win.screenshot({ path: "out/screenshots/03-window.png" });
   await webview.locator("body").screenshot({ path: "out/screenshots/04-webview-frame.png" });
   await app.close();
