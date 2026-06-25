@@ -60,6 +60,20 @@ test("Telemetry panel renders seeded events in Cursor", async () => {
   const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "pc-ws-"));
   fs.mkdirSync("out/screenshots", { recursive: true });
 
+  // Suppress the welcome/get-started editor so the workbench (and our panel)
+  // aren't hidden behind it in the window screenshot.
+  const userDir = path.join(userDataDir, "User");
+  fs.mkdirSync(userDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(userDir, "settings.json"),
+    JSON.stringify({
+      "workbench.startupEditor": "none",
+      "workbench.tips.enabled": false,
+      "update.mode": "none",
+      "telemetry.telemetryLevel": "off",
+    }),
+  );
+
   // Flags + env from microsoft/vscode-test via ruifigueira/vscode-test-playwright.
   const app = await electron.launch({
     executablePath: CURSOR_BIN!,
@@ -82,6 +96,9 @@ test("Telemetry panel renders seeded events in Cursor", async () => {
   const win = await app.firstWindow();
   await win.waitForLoadState("domcontentloaded");
   await win.waitForTimeout(8_000); // workbench + onStartupFinished activation
+  // Best-effort: dismiss any welcome/login tab covering the workbench.
+  await win.keyboard.press("Escape");
+  await win.waitForTimeout(1_000);
   await win.screenshot({ path: "out/screenshots/01-cursor-loaded.png" });
 
   // Focus our docked view via the command palette (F1 is steadier than Ctrl+Shift+P).
@@ -110,9 +127,8 @@ test("Telemetry panel renders seeded events in Cursor", async () => {
   // All three seeded rows share repo "demo-repo" → exactly one Repo cell each.
   await expect(webview.getByText("demo-repo")).toHaveCount(3);
 
-  // Screenshot the panel's own webview body, not the window: a fresh CI profile
-  // shows Cursor's full-window login wall on top, so capture the frame content
-  // directly for clean visual evidence of the rendered panel.
-  await webview.locator("body").screenshot({ path: "out/screenshots/telemetry-panel.png" });
+  // Capture both: the full window (panel in context) and the panel's frame body.
+  await win.screenshot({ path: "out/screenshots/telemetry-panel.png" });
+  await webview.locator("body").screenshot({ path: "out/screenshots/telemetry-panel-frame.png" });
   await app.close();
 });
