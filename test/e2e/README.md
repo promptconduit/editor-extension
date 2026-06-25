@@ -39,6 +39,27 @@ The panel reads a plain file, so input is fully deterministic — no CLI, no AI.
 - **Playwright ↔ Electron**: if `firstWindow()` hangs, bump `@playwright/test` to
   match Cursor's Electron version.
 
+## POC result + the one open limitation
+
+**Functional E2E in real Cursor works and is green.** Cursor boots under xvfb,
+the extension loads, and the panel's webview renders the seeded events — proven
+by the DOM assertions (`AI telemetry`, `UserPromptSubmit`, `PreToolUse`,
+`demo-repo`×3) passing inside the webview iframe. That is genuine verification
+that the panel works in actual Cursor.
+
+**Clean pixel screenshots are blocked by Cursor's login wall.** On a fresh,
+unauthenticated CI profile, Cursor paints a full-window "Log In / Sign Up" gate
+over the workbench that `workbench.startupEditor:none` + Escape do **not**
+dismiss. The panel still renders in the DOM underneath (hence the green
+assertions), but `screenshot()` captures the occluding login pixels — so
+`telemetry-panel.png` shows the login screen, not the panel.
+
+To get pixel screenshots in Cursor you'd need to **authenticate it in CI** —
+inject a Cursor auth/session token (as a secret) into the user-data-dir before
+launch. Alternatively, run the *pixel* screenshot against stock VS Code (no
+login wall) while keeping this Cursor run for the DOM-level functional
+assertions. The functional verification here needs neither.
+
 ## Reference
 
 The launch flags + env scrub + webview frame pattern follow
