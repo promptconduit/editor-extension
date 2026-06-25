@@ -110,6 +110,9 @@ test("Telemetry panel renders seeded events in Cursor", async () => {
   // All three seeded rows share repo "demo-repo" → exactly one Repo cell each.
   await expect(webview.getByText("demo-repo")).toHaveCount(3);
 
-  await win.screenshot({ path: "out/screenshots/telemetry-panel.png" });
+  // Screenshot the panel's own webview body, not the window: a fresh CI profile
+  // shows Cursor's full-window login wall on top, so capture the frame content
+  // directly for clean visual evidence of the rendered panel.
+  await webview.locator("body").screenshot({ path: "out/screenshots/telemetry-panel.png" });
   await app.close();
 });
