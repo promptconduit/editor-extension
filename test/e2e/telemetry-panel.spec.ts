@@ -104,8 +104,11 @@ test("Telemetry panel renders seeded events in Cursor", async () => {
     .contentFrame();
 
   await expect(webview.getByText("AI telemetry")).toBeVisible({ timeout: 30_000 });
+  // Two distinct seeded events (unique text → one match each).
   await expect(webview.getByText("UserPromptSubmit")).toBeVisible();
-  await expect(webview.getByText("demo-repo")).toBeVisible();
+  await expect(webview.getByText("PreToolUse")).toBeVisible();
+  // All three seeded rows share repo "demo-repo" → exactly one Repo cell each.
+  await expect(webview.getByText("demo-repo")).toHaveCount(3);
 
   await win.screenshot({ path: "out/screenshots/telemetry-panel.png" });
   await app.close();
