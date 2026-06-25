@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import { CostEvent, SessionSummary, ToolSummary } from "./types";
 import { buildTips } from "./tips";
+import { landingHtml } from "./landing";
 
 function fmtUSD(n: number): string {
   return `$${n.toFixed(4)}`;
@@ -95,6 +96,13 @@ export class CostPanel {
     lastEvent: CostEvent | undefined,
     recent: CostEvent[],
   ): string {
+    // Zero-state: the active conversation has produced nothing yet (a fresh or
+    // unseen agent tab). Show the landing view — what this is, the 100%-local
+    // promise, and the upsell — instead of an empty cost table (#8/#9).
+    if (!session && !lastEvent && recent.length === 0) {
+      return this.landingDocument();
+    }
+
     const t = session?.totals;
     const models = session?.by_model ?? [];
     const anyUnpriced = models.some((m) => !m.model_priced);
@@ -173,6 +181,26 @@ export class CostPanel {
   <footer class="muted">
     Computed entirely on your machine from local transcripts. None of your data is sent anywhere.
   </footer>
+</body>
+</html>`;
+  }
+
+  // Wrap the landing body in the same document shell the breakdown uses, so the
+  // zero-state view inherits the panel's CSP, charset, and base theme styling.
+  // The landing supplies its own scoped (.landing) styles; this adds only the
+  // body/code base rules. Stays script-free (enableScripts:false).
+  private landingDocument(): string {
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<style>
+  body { font-family: var(--vscode-font-family); color: var(--vscode-editor-foreground); padding: 1rem 1.25rem; }
+  code { font-family: var(--vscode-editor-font-family, monospace); }
+</style>
+</head>
+<body>
+${landingHtml()}
 </body>
 </html>`;
   }

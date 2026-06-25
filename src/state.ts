@@ -20,9 +20,12 @@ interface ConversationState {
   // dedups by request_id too, but Cursor emits two events per generation, so we
   // guard here as well.
   recent: CostEvent[];
-  // Newest activity timestamp seen (event ts / summary updated_at), ms epoch.
-  // Used to pick the active conversation. Falls back to arrival order when a
-  // record carries an unparseable/absent timestamp.
+  // Newest activity time seen for this conversation, used to pick the active
+  // one. Normally epoch-ms from the record's ts / updated_at (both required,
+  // CLI-stamped RFC3339 fields). Only the defensive/forward-compat path where a
+  // record lacks a parseable timestamp falls back to a small arrival-order seq;
+  // arrival ordering is therefore guaranteed only among such timestamp-less
+  // records, which don't occur with a conformant CLI.
   lastActivity: number;
 }
 

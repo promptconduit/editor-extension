@@ -2,7 +2,7 @@
   "name": "promptconduit-cost",
   "displayName": "PromptConduit — Realtime Token Cost",
   "description": "See what your AI coding sessions cost, live, in the status bar. 100% local — no data leaves your machine.",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "publisher": "promptconduit",
   "license": "MIT",
   "engines": {
