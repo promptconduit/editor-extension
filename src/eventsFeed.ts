@@ -25,7 +25,7 @@ function logDisabled(): boolean {
 }
 
 /** The subset of envelope fields the feed renders. */
-interface FeedEvent {
+export interface FeedEvent {
   tool: string;
   hookEvent: string;
   capturedAt: string;
@@ -35,7 +35,7 @@ interface FeedEvent {
 
 // Parse one JSONL line into a FeedEvent. Returns null for blanks, malformed
 // JSON, or non-object lines so a single bad line never breaks the feed.
-function parseLine(line: string): FeedEvent | null {
+export function parseLine(line: string): FeedEvent | null {
   const trimmed = line.trim();
   if (!trimmed) {
     return null;
@@ -298,7 +298,7 @@ export class EventsFeedViewProvider implements vscode.WebviewViewProvider, vscod
 
 // Build the feed HTML from the current event buffer. Newest-first, compact for
 // the bottom panel, and script-free (server-rendered).
-function buildFeedHtml(events: FeedEvent[]): string {
+export function buildFeedHtml(events: FeedEvent[]): string {
   const rows = events
     .slice()
     .reverse()
