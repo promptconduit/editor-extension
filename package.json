@@ -84,7 +84,11 @@
     "package": "vsce package",
     "publish:vsce": "vsce publish",
     "publish:ovsx": "ovsx publish",
-    "test:e2e": "playwright test"
+    "dev": "bash scripts/dev.sh",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "preview": "vite-node dev/preview.ts"
   },
   "devDependencies": {
     "@playwright/test": "^1.61.1",
@@ -92,6 +96,7 @@
     "@types/vscode": "^1.85.0",
     "@vscode/vsce": "^3.2.0",
     "ovsx": "^0.10.0",
-    "typescript": "^5.9.0"
+    "typescript": "^5.9.0",
+    "vitest": "^3.2.6"
   }
 }

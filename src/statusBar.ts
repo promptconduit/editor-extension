@@ -4,7 +4,7 @@ import { CostEvent, SessionSummary } from "./types";
 
 const SHOW_DETAILS_COMMAND = "promptconduit.cost.showDetails";
 
-function fmtUSD(n: number): string {
+export function fmtUSD(n: number): string {
   // Sub-cent precision for request cost; the tooltip shows full precision.
   if (n < 0.01) {
     return `$${n.toFixed(4)}`;
@@ -34,7 +34,7 @@ function pct(x: number): string {
 // on hover without opening the full panel. Cache-hit rate is always included
 // when signals exist; tier and tool-call volume are added only when meaningful.
 // Returns "" when the session carries no signals (older CLI or no priced turns).
-function signalsSummary(session: SessionSummary): string {
+export function signalsSummary(session: SessionSummary): string {
   const sig = session.signals;
   if (!sig) {
     return "";
