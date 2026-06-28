@@ -10,9 +10,10 @@ import * as fs from "node:fs";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { landingHtml } from "../src/landing";
+import { renderBreakdownHtml } from "../src/panel";
 import { buildFeedHtml, parseLine } from "../src/eventsFeed";
 import { signalsSummary } from "../src/statusBar";
-import { sampleTelemetryLines, heavySummary, cleanSummary } from "./fixtures";
+import { sampleTelemetryLines, sampleEvents, heavySummary, cleanSummary } from "./fixtures";
 
 // VS Code webview theme variables (dark-ish) so server-rendered HTML that styles
 // itself with var(--vscode-*) looks right in a plain browser.
@@ -44,7 +45,24 @@ const events = sampleTelemetryLines
   .map(parseLine)
   .filter((e): e is NonNullable<typeof e> => e !== null);
 
+// Cost breakdown panel in its main states: a heavy session (every tip + edge
+// case fires), a lean clean session, the zero-state landing, and an unpriced
+// (tokens-but-no-rate) session.
+const unpricedSummary = {
+  ...cleanSummary,
+  source: "estimate",
+  totals: { input: 6000, output: 1200, cache_read: 0, cache_write: 0, cost_total: 0, currency: "USD" },
+  by_model: [
+    { model: "composer-x", model_priced: false, tokens: { input: 6000, output: 1200, cache_read: 0, cache_write: 0 }, cost_total: 0 },
+  ],
+  signals: undefined,
+};
+
 const pages: Record<string, string> = {
+  "breakdown-heavy.html": themed(renderBreakdownHtml(heavySummary, sampleEvents[2], sampleEvents), true),
+  "breakdown-clean.html": themed(renderBreakdownHtml(cleanSummary, sampleEvents[2], sampleEvents.slice(2)), true),
+  "breakdown-unpriced.html": themed(renderBreakdownHtml(unpricedSummary, undefined, []), true),
+  "breakdown-zero.html": themed(renderBreakdownHtml(undefined, undefined, []), true),
   "telemetry.html": themed(buildFeedHtml(events), true),
   "telemetry-empty.html": themed(buildFeedHtml([]), true),
   "landing.html": themed(landingHtml(), false),

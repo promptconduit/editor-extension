@@ -4,8 +4,27 @@ See what your AI coding sessions cost, **live, in the status bar** — computed
 entirely on your machine. None of your data leaves your device.
 
 The bottom-right status bar shows `⚡ <request cost> · 🕘 <session cost>`. Click
-it for a full breakdown: per-model rows and input / output / cache-read /
-cache-write tokens.
+it for the **AI Cost Breakdown** panel.
+
+## The AI Cost Breakdown panel
+
+The breakdown is an estimate of what your session would cost at **pay-as-you-go
+API rates** — *"this is what the same tokens would bill à la carte if you
+weren't on a subscription."* It's also an educational tool for spending fewer
+tokens:
+
+- **Cost per prompt** — every request as a row with a relative-cost bar, so the
+  expensive prompts stand out. Click one for its token split and cache stats.
+- **What's driving your cost** — a color-coded readout of cache-hit rate,
+  fresh-input share, model tier, and tool-call volume.
+- **Make it cheaper** — actionable tips, each linking the official docs for the
+  technique (prompt caching, model choice, batching).
+- **Reading these numbers** — edge cases (unpriced models, estimated vs. exact
+  counts, subscription-vs-API) explained, each with a concrete fix.
+- **Learn more** — the official Claude *and* Cursor cost docs, tool-aware: the
+  active assistant's links come first, but both are always shown.
+
+Works for **Claude Code** and **Cursor**.
 
 ## How it works
 

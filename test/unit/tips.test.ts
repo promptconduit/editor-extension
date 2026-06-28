@@ -14,14 +14,35 @@ describe("buildTips", () => {
     expect(buildTips(cleanSummary, undefined)).toEqual([]);
   });
 
-  it("surfaces every reduction tip for a heavy session", () => {
+  it("surfaces every behavioural reduction tip for a heavy session", () => {
     const t = titles(heavySummary);
     expect(t).toContain("Reuse context to hit the prompt cache");
     expect(t).toContain("Drop to a cheaper model for routine edits");
     expect(t).toContain("Trim the context you send each turn");
     expect(t).toContain("Batch tool calls where you can");
-    expect(t).toContain("Some models are unpriced");
-    expect(t).toHaveLength(5);
+    // "unpriced" is a data caveat now, owned by edgeCases.ts — not a tip.
+    expect(t).not.toContain("Some models are unpriced");
+    expect(t).toHaveLength(4);
+  });
+
+  it("attaches a safe https doc link to every tip", () => {
+    for (const tip of buildTips(heavySummary, undefined)) {
+      expect(tip.link).toBeDefined();
+      expect(tip.link!.href).toMatch(/^https:\/\//);
+      expect(tip.link!.label.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("points tips at the active tool's docs (Claude vs Cursor)", () => {
+    const claude = buildTips(heavySummary, undefined); // tool: claude-code
+    const cacheTipClaude = claude.find((t) => t.title === "Reuse context to hit the prompt cache");
+    expect(cacheTipClaude!.link!.href).toContain("platform.claude.com");
+
+    const cursor: SessionSummary = { ...heavySummary, tool: "cursor" };
+    const cacheTipCursor = buildTips(cursor, undefined).find(
+      (t) => t.title === "Reuse context to hit the prompt cache",
+    );
+    expect(cacheTipCursor!.link!.href).toContain("cursor.com");
   });
 
   it("only flags premium tier (not standard/economy)", () => {

@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.5.0
+
+- **AI Cost Breakdown — reframed around the API equivalent.** The breakdown
+  panel now leads with what the session *would* cost at pay-as-you-go API rates —
+  "this is what the same tokens would bill à la carte" — so subscription users
+  can see the value their plan covers (#33).
+- **Cost per prompt, at a glance.** Each request is a row with a relative-cost
+  bar, so the prompts that drove spend stand out; click any row for its token
+  split, cache-hit rate, and tools.
+- **"What's driving your cost"** — a scannable, color-coded readout of cache-hit
+  rate, fresh-input share, model tier, and tool-call volume.
+- **Educational by design.** Cost-reduction tips and the new **Learn more**
+  section link the official Claude *and* Cursor docs (API pricing, prompt
+  caching, reduce-token-usage). Links are tool-aware — the active assistant's
+  docs come first, but both are always shown.
+- **Edge cases, explained with a fix.** A "Reading these numbers" section
+  surfaces unpriced models, estimated vs. exact counts, and the
+  subscription-vs-API framing, each with a concrete resolution.
+- The zero-state landing now carries the same educational links and framing.
+
 ## 0.4.0
 
 - **Tab-aware cost**: the status bar now follows the most-recently-active agent
