@@ -1,19 +1,33 @@
 name: Publish
 
-# Tag the repo (e.g. `git tag v0.1.0 && git push origin v0.1.0`) to publish.
+# Publishes the extension to Open VSX (Cursor) and the VS Code Marketplace.
+# Triggers on a version tag push (e.g. `git tag v0.5.0 && git push origin v0.5.0`)
+# or a manual run (Actions → Publish → "Run workflow", selecting the tag as the
+# ref) so an existing tag can be (re)published without re-tagging.
+#
 # Requires two repo secrets:
 #   OVSX_TOKEN  — Open VSX access token (for Cursor)            https://open-vsx.org
 #   VSCE_PAT    — VS Code Marketplace Personal Access Token     https://marketplace.visualstudio.com/manage
-# The VS Code step is best-effort (continue-on-error) so an Open VSX release
-# still succeeds if the Marketplace token isn't set.
+# Each publish step runs only when its secret is set, so you can ship to one
+# registry before the other. The VS Code step is best-effort (continue-on-error)
+# so an Open VSX release still succeeds if the Marketplace token is missing.
 
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
 
 jobs:
   publish:
     runs-on: ubuntu-latest
+    # Hoisted to JOB level on purpose: GitHub Actions does NOT expose a step's
+    # own `env:` block to that same step's `if:` condition, so the previous
+    # step-level env made `if: env.OVSX_TOKEN != ''` always evaluate empty and
+    # both publish steps skipped even when the secrets were set. Job-level env
+    # IS visible to step `if:` expressions, which is what makes the gating work.
+    env:
+      OVSX_TOKEN: ${{ secrets.OVSX_TOKEN }}
+      VSCE_PAT: ${{ secrets.VSCE_PAT }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v6
@@ -26,12 +40,8 @@ jobs:
       - name: Publish to Open VSX (Cursor)
         if: ${{ env.OVSX_TOKEN != '' }}
         run: npx ovsx publish --pat "$OVSX_TOKEN"
-        env:
-          OVSX_TOKEN: ${{ secrets.OVSX_TOKEN }}
 
       - name: Publish to VS Code Marketplace
         if: ${{ env.VSCE_PAT != '' }}
         continue-on-error: true
         run: npx @vscode/vsce publish --pat "$VSCE_PAT"
-        env:
-          VSCE_PAT: ${{ secrets.VSCE_PAT }}
