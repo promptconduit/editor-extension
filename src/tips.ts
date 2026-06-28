@@ -1,13 +1,20 @@
-import { CostEvent, SessionSummary, Signals } from "./types";
+import { CostEvent, SessionSummary, Signals, ToolId } from "./types";
+import { LINKS, ResourceLink } from "./links";
 
-// A single cost-reduction tip: a one-line action plus the why behind it.
+// A single cost-reduction tip: a one-line action, the why behind it, and an
+// optional doc that teaches the technique. Tips are BEHAVIOURAL (things to do
+// differently to spend less); data caveats live in edgeCases.ts instead.
 export interface Tip {
   title: string;
   detail: string;
+  link?: ResourceLink;
 }
 
-function hasUnpriced(session: SessionSummary): boolean {
-  return (session.by_model ?? []).some((m) => !m.model_priced);
+// Pick the right doc for the active tool: Anthropic's guides for Claude Code,
+// Cursor's for Cursor. Keeps every tip educational for whichever assistant
+// produced the session (the panel teaches both — see links.learnMoreLinks).
+function doc(tool: ToolId, claude: ResourceLink, cursor: ResourceLink): ResourceLink {
+  return tool === "cursor" ? cursor : claude;
 }
 
 // Fallback cache-hit-rate from session totals, mirroring the CLI formula, for
@@ -23,6 +30,8 @@ function cacheHitRateFromTotals(s: SessionSummary): number {
  * (with safe fallbacks computed from totals). It returns [] when nothing is
  * actionable yet, so the panel shows tips only when they'd genuinely help.
  * Thresholds are intentionally conservative to avoid noise early in a session.
+ * Each tip carries a doc link for the session's tool so the panel doubles as an
+ * educational surface.
  */
 export function buildTips(
   session: SessionSummary | undefined,
@@ -33,6 +42,7 @@ export function buildTips(
     return tips;
   }
 
+  const tool: ToolId = session.tool;
   const sig: Signals | undefined = session.signals;
   const totals = session.totals;
   const inputSide = totals.input + totals.cache_read + totals.cache_write;
@@ -45,6 +55,7 @@ export function buildTips(
     tips.push({
       title: "Reuse context to hit the prompt cache",
       detail: `~${pct}% of your input tokens weren't cache hits. Keep one session going and avoid re-pasting large files — cached reads are ~10× cheaper than fresh input.`,
+      link: doc(tool, LINKS.claudePromptCaching, LINKS.cursorPricing),
     });
   }
 
@@ -54,6 +65,7 @@ export function buildTips(
       title: "Drop to a cheaper model for routine edits",
       detail:
         "You're on a premium-tier model. Reserve it for hard problems and switch to a standard/economy model for boilerplate and quick edits.",
+      link: doc(tool, LINKS.claudeApiPricing, LINKS.cursorPricing),
     });
   }
 
@@ -64,6 +76,7 @@ export function buildTips(
     tips.push({
       title: "Trim the context you send each turn",
       detail: `${pct}% of input-side tokens were fresh input. Paste only the relevant code and let the cache carry the rest across turns.`,
+      link: doc(tool, LINKS.claudeCodeReduceTokens, LINKS.cursorDocs),
     });
   }
 
@@ -73,15 +86,7 @@ export function buildTips(
     tips.push({
       title: "Batch tool calls where you can",
       detail: `${toolCalls} tool calls this session. Grouping related reads/edits into fewer, larger steps cuts round-trips and output tokens.`,
-    });
-  }
-
-  // 5. Unpriced models present.
-  if (hasUnpriced(session)) {
-    tips.push({
-      title: "Some models are unpriced",
-      detail:
-        "Models with no rate (e.g. Cursor's composer) show exact tokens but no dollar cost — treat their token counts as the cost signal.",
+      link: doc(tool, LINKS.claudeCodeReduceTokens, LINKS.cursorDocs),
     });
   }
 

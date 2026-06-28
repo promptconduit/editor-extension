@@ -19,9 +19,10 @@ npm run test:watch  # re-run on save — keep this open while you work
 
 Add tests under `test/unit/`. Sample data lives in `dev/fixtures.ts` (shared by
 the tests, the preview, and dev). The pure logic is in vscode-free modules
-(`types.ts`, `tips.ts`, `state.ts`); render helpers in vscode-coupled files
-(`eventsFeed.ts`, `statusBar.ts`) are exported and tested through a tiny `vscode`
-stub (`test/mocks/vscode.ts`).
+(`types.ts`, `tips.ts`, `edgeCases.ts`, `links.ts`, `html.ts`, `state.ts`);
+render helpers in vscode-coupled files (`panel.ts`, `eventsFeed.ts`,
+`statusBar.ts`) export pure builders (`renderBreakdownHtml`, `buildFeedHtml`,
+`signalsSummary`) tested through a tiny `vscode` stub (`test/mocks/vscode.ts`).
 
 ## 2. See it live in Cursor
 
@@ -40,9 +41,10 @@ panel** (bottom panel → "PromptConduit") and **cost status bar** show your rea
 
 ## 3. Webview preview in a browser — instant UI iteration
 
-Render the UI surfaces (telemetry feed, landing/zero-state, tooltip headline)
-with sample data to static HTML and open them in your browser. Best for
-tweaking look/feel without booting the editor.
+Render the UI surfaces (the **AI Cost Breakdown** panel in its heavy / clean /
+unpriced / zero states, the telemetry feed, landing, and tooltip headline) with
+sample data to static HTML and open them in your browser. Best for tweaking
+look/feel without booting the editor.
 
 ```bash
 npm run preview                 # render + open

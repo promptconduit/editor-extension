@@ -15,6 +15,12 @@
 export const SCHEMA_VERSION = 2; // newest version this build fully understands
 export const MIN_SCHEMA = 1; // oldest version we still read
 
+// Source tool of a cost record. The known values mirror the CLI's tool ids
+// (cli/internal/cost/event.go: ToolClaudeCode / ToolCursor); the open string
+// keeps autocomplete for those while still accepting any future tool the CLI
+// adds without an extension change.
+export type ToolId = "claude-code" | "cursor" | (string & {});
+
 export interface Tokens {
   input: number;
   output: number;

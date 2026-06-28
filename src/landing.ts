@@ -10,6 +10,8 @@
 // browser without any JS. Styling reuses the panel's inline-CSS theme
 // conventions (var(--vscode-...) variables) so light/dark themes match.
 
+import { learnMoreSectionHtml } from "./html";
+
 /**
  * Inner HTML body for the cost webview's zero-state ("no cost yet") view.
  *
@@ -62,6 +64,10 @@ export function landingHtml(): string {
         cost. This extension prices every turn — input, output, and cache tokens —
         and surfaces the running total live in the status bar, with a click-through
         breakdown by model and request.</p>
+      <p>Costs are priced against public <strong>pay-as-you-go API rates</strong>, so the
+        figure answers “what would this have cost without my subscription?” — and the
+        breakdown is an educational tool: it flags what's driving spend and links the
+        official Claude and Cursor docs on how to spend fewer tokens.</p>
 
       <div class="card privacy">
         <strong>100% local — no data leaves your machine.</strong>
@@ -81,8 +87,10 @@ export function landingHtml(): string {
       </ol>
     </section>
 
-    <section aria-labelledby="learn-h">
-      <h2 id="learn-h">Learn more</h2>
+    ${learnMoreSectionHtml()}
+
+    <section aria-labelledby="project-h">
+      <h2 id="project-h">Project</h2>
       <ul class="links">
         <li>
           <a href="https://github.com/promptconduit">github.com/promptconduit</a>

@@ -16,5 +16,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run compile
+      - name: Unit tests
+        run: npm test
       - name: Package (smoke-test vsce packaging)
         run: npx @vscode/vsce package --out /tmp/extension.vsix
