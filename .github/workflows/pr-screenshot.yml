@@ -1,0 +1,93 @@
+name: PR screenshot (Cursor)
+
+# Renders the Telemetry panel in REAL, authenticated Cursor and posts the
+# screenshot inline as a sticky PR comment. Non-blocking (NOT a required check):
+# it's a visual aid, separate from the e2e-cursor gate.
+#
+# Requires a dedicated CI Cursor account's token as repo secrets (see
+# test/e2e/README.md). With no CURSOR_ACCESS_TOKEN secret, the job no-ops.
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write # push screenshots to the ci-screenshots asset branch
+  pull-requests: write # upsert the PR comment
+  issues: write
+
+jobs:
+  screenshot:
+    runs-on: ubuntu-22.04 # Cursor AppImage SIGTRAPs on 24.04
+    steps:
+      - name: Gate on the Cursor auth secret
+        id: guard
+        env:
+          TOKEN: ${{ secrets.CURSOR_ACCESS_TOKEN }}
+        run: |
+          if [ -n "$TOKEN" ]; then
+            echo "have=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "have=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No CURSOR_ACCESS_TOKEN secret set — skipping the Cursor screenshot."
+          fi
+
+      - if: steps.guard.outputs.have == 'true'
+        uses: actions/checkout@v4
+      - if: steps.guard.outputs.have == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+      - if: steps.guard.outputs.have == 'true'
+        run: npm ci
+      - if: steps.guard.outputs.have == 'true'
+        run: npm run compile
+
+      - name: System deps (Electron libs + xvfb + sqlite)
+        if: steps.guard.outputs.have == 'true'
+        run: |
+          sudo apt-get update
+          npx playwright install-deps chromium
+          sudo apt-get install -y xvfb sqlite3
+
+      - name: Download + extract Cursor
+        id: cursor
+        if: steps.guard.outputs.have == 'true'
+        env:
+          CURSOR_VERSION: "3.9.8"
+        run: bash scripts/install-cursor.sh "$GITHUB_WORKSPACE/.cursor-test"
+
+      - name: Inject Cursor auth into a fresh profile
+        id: profile
+        if: steps.guard.outputs.have == 'true'
+        env:
+          CURSOR_ACCESS_TOKEN: ${{ secrets.CURSOR_ACCESS_TOKEN }}
+          CURSOR_REFRESH_TOKEN: ${{ secrets.CURSOR_REFRESH_TOKEN }}
+          CURSOR_EMAIL: ${{ secrets.CURSOR_EMAIL }}
+        run: |
+          UD="$GITHUB_WORKSPACE/.cursor-ud"
+          bash scripts/inject-cursor-auth.sh "$UD"
+          echo "user_data_dir=$UD" >> "$GITHUB_OUTPUT"
+
+      - name: Render the panel in authenticated Cursor
+        if: steps.guard.outputs.have == 'true'
+        env:
+          CURSOR_BIN: ${{ steps.cursor.outputs.cursor_bin }}
+          EXT_DEV_PATH: ${{ github.workspace }}
+          CURSOR_USER_DATA_DIR: ${{ steps.profile.outputs.user_data_dir }}
+        run: xvfb-run -a npx playwright test
+
+      - name: Post the screenshot inline on the PR
+        if: steps.guard.outputs.have == 'true'
+        continue-on-error: true # never block on a comment hiccup
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash scripts/post-pr-screenshot.sh out/screenshots/03-window.png "${{ github.event.pull_request.number }}"
+
+      - name: Upload screenshots (debug)
+        if: ${{ always() && steps.guard.outputs.have == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr-screenshot
+          path: out/screenshots/
+          if-no-files-found: warn
