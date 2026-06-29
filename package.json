@@ -68,16 +68,16 @@
     "views": {
       "promptconduitTelemetry": [
         {
-          "id": "promptconduit.coaching",
-          "name": "Coaching",
-          "type": "webview",
-          "contextualTitle": "PromptConduit Agent Coaching"
-        },
-        {
           "id": "promptconduit.telemetry",
           "name": "Telemetry",
           "type": "webview",
           "contextualTitle": "PromptConduit Telemetry"
+        },
+        {
+          "id": "promptconduit.coaching",
+          "name": "Coaching",
+          "type": "webview",
+          "contextualTitle": "PromptConduit Agent Coaching"
         }
       ]
     },
