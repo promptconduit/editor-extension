@@ -28,13 +28,9 @@ window.addEventListener("error", (e) => post({ type: "log", level: "error", msg:
 
 // ---- renderer / scene / camera -------------------------------------------------
 const app = document.getElementById("app")!;
-const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.outputColorSpace = THREE.SRGBColorSpace;
-renderer.toneMapping = THREE.ACESFilmicToneMapping;
-app.appendChild(renderer.domElement);
 
+// Scene/camera need no GL context — build them unconditionally so the data layer
+// and DOM chrome work even where WebGL is unavailable (e.g. headless CI).
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(COLORS.bg);
 scene.fog = new THREE.FogExp2(COLORS.bg, 0.014);
@@ -44,24 +40,41 @@ scene.add(sceneRoot);
 const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 400);
 camera.position.set(2, 5, 22);
 
-const controls = new OrbitControls(camera, renderer.domElement);
-controls.enableDamping = true;
-controls.dampingFactor = 0.06;
-controls.autoRotate = true;
-controls.autoRotateSpeed = 0.4;
-controls.minDistance = 7;
-controls.maxDistance = 70;
-controls.target.set(4, 1, -1);
+// The renderer/controls/composer DO need a GL context. Degrade gracefully if
+// creation fails (no GPU / software GL disabled): the HUD, transport, and hover
+// still work; we just don't draw the 3D scene.
+let renderer: THREE.WebGLRenderer | undefined;
+let controls: OrbitControls | undefined;
+let composer: EffectComposer | undefined;
+let glReady = false;
 
-const composer = new EffectComposer(renderer);
-composer.addPass(new RenderPass(scene, camera));
-const bloom = new UnrealBloomPass(
-  new THREE.Vector2(window.innerWidth, window.innerHeight),
-  1.1, // strength
-  0.5, // radius
-  0.55, // threshold
-);
-composer.addPass(bloom);
+try {
+  renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  app.appendChild(renderer.domElement);
+
+  controls = new OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.06;
+  controls.autoRotate = true;
+  controls.autoRotateSpeed = 0.4;
+  controls.minDistance = 7;
+  controls.maxDistance = 70;
+  controls.target.set(4, 1, -1);
+
+  composer = new EffectComposer(renderer);
+  composer.addPass(new RenderPass(scene, camera));
+  composer.addPass(
+    new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.1, 0.5, 0.55),
+  );
+  glReady = true;
+} catch (err) {
+  post({ type: "log", level: "warn", msg: `WebGL unavailable: ${String(err)}` });
+  showNoGl();
+}
 
 const frameClock = new THREE.Clock();
 const hover = new HoverCard((url) => post({ type: "open_external", url }));
@@ -85,13 +98,13 @@ const pointer = new THREE.Vector2();
 let hoverDirty = false;
 let lastRay = 0;
 
-renderer.domElement.addEventListener("pointermove", (e) => {
-  const rect = renderer.domElement.getBoundingClientRect();
+app.addEventListener("pointermove", (e) => {
+  const rect = app.getBoundingClientRect();
   pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
   pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
   hoverDirty = true;
 });
-renderer.domElement.addEventListener("pointerleave", () => hover.hide());
+app.addEventListener("pointerleave", () => hover.hide());
 
 function updateHover(t: number): void {
   if (!hoverDirty || t - lastRay < 0.05) return; // ~20fps cap
@@ -145,6 +158,17 @@ function loadScene(data: SceneData, mode: PlaybackMode, isDemo: boolean): void {
   const { graph, timeline } = data;
   const schedule = buildSchedule(timeline);
 
+  playback = new PlaybackClock(schedule);
+  transportRef = new Transport(playback, mode === "live");
+  buildHud(graph.nodes, isDemo);
+
+  // Without a GL context there's nothing to draw — the HUD/transport above are
+  // the whole experience. Mark ready so the host/tests know the load completed.
+  if (!glReady) {
+    markReady("nogl");
+    return;
+  }
+
   nodes = layoutNodes(graph.nodes);
   for (const v of nodes.values()) {
     v.setSpawnTime(schedule.nodeSpawn.get(v.id) ?? schedule.sessionStart);
@@ -172,10 +196,6 @@ function loadScene(data: SceneData, mode: PlaybackMode, isDemo: boolean): void {
     schedule.toolEnd,
   );
   sceneRoot.add(packets.mesh);
-
-  playback = new PlaybackClock(schedule);
-  transportRef = new Transport(playback, mode === "live");
-  buildHud(graph.nodes, isDemo);
 }
 
 function buildHud(graphNodes: GraphNode[], isDemo: boolean): void {
@@ -215,9 +235,9 @@ function animate(): void {
   requestAnimationFrame(animate);
   const dt = frameClock.getDelta(); // consume every frame to avoid jumps after pause
   const t = frameClock.getElapsedTime();
-  if (!running) return;
+  if (!running || !glReady) return;
 
-  controls.update();
+  controls?.update();
 
   if (playback) {
     playback.tick(dt * 1000);
@@ -232,13 +252,23 @@ function animate(): void {
   }
 
   updateHover(t);
-  composer.render();
+  composer?.render();
+  markReady("1");
+}
 
-  if (!sceneReadyPosted) {
-    sceneReadyPosted = true;
-    document.body.setAttribute("data-scene-ready", "1");
-    post({ type: "scene_ready" });
-  }
+function markReady(state: string): void {
+  if (sceneReadyPosted) return;
+  sceneReadyPosted = true;
+  document.body.setAttribute("data-scene-ready", state);
+  post({ type: "scene_ready" });
+}
+
+function showNoGl(): void {
+  const note = document.createElement("div");
+  note.textContent = "3D rendering isn't available in this environment.";
+  note.style.cssText =
+    "position:fixed;inset:0;display:flex;align-items:center;justify-content:center;color:var(--dim);font-size:13px;";
+  document.getElementById("app")?.appendChild(note);
 }
 
 // ---- host messages -------------------------------------------------------------
@@ -247,7 +277,7 @@ window.addEventListener("message", (e: MessageEvent<HostMessage>) => {
   switch (msg.type) {
     case "load":
       reducedMotion = msg.reducedMotion || prefersReducedMotion();
-      controls.autoRotate = !reducedMotion;
+      if (controls) controls.autoRotate = !reducedMotion;
       loadScene(msg.scene, msg.mode, msg.isDemo);
       break;
     case "graph_patch":
@@ -277,8 +307,8 @@ function prefersReducedMotion(): boolean {
 window.addEventListener("resize", () => {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
-  composer.setSize(window.innerWidth, window.innerHeight);
+  renderer?.setSize(window.innerWidth, window.innerHeight);
+  composer?.setSize(window.innerWidth, window.innerHeight);
 });
 
 function el(tag: string, cls: string, text: string): HTMLElement {
