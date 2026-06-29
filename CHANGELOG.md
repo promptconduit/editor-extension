@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.6.0
+
+- **Now just "PromptConduit."** The extension is rebranded from
+  *PromptConduit — Realtime Token Cost* to the umbrella **PromptConduit** as it
+  grows beyond cost into a suite of local, in-editor surfaces over your AI
+  sessions. Realtime cost remains; your `promptconduit.cost.*` settings and
+  commands are unchanged.
+- **Orchestration Theater** — a new 3D visualization (command:
+  *PromptConduit: Show Orchestration Theater*) that cinematically replays your
+  local session log: a lead agent spawning sub-agents, tool calls beaming out to
+  fetch URLs / read-write local files / hit cloud APIs, and hover cards linking
+  the GitHub issue and PR behind each node. Reads `~/.promptconduit/events.jsonl`
+  and runs entirely on your machine.
+- Optional GitHub enrichment fetches issue/PR titles and status to enrich hover
+  cards. It sends only `owner/repo/number` for the current repo (never your code
+  or prompts) and can be set to infer-only or disabled via
+  `promptconduit.visualizer.githubEnrichment`.
+
 ## 0.5.1
 
 - **Leaner package**: the published VSIX no longer ships development-only files
