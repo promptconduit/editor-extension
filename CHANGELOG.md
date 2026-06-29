@@ -18,6 +18,14 @@
   or prompts) and can be set to infer-only or disabled via
   `promptconduit.visualizer.githubEnrichment`.
 
+## 0.5.1
+
+- **Leaner package**: the published VSIX no longer ships development-only files
+  (`dev/`, `test/`, `docs/`, `scripts/`, `.vscode/`, `*.config.ts`,
+  `DEVELOPING.md`, `CONTRIBUTING.md`, source maps). It now contains only the
+  runtime (`out/`, `resources/`) plus README, changelog, and license — smaller
+  download, cleaner listing. No functional change.
+
 ## 0.5.0
 
 - **AI Cost Breakdown — reframed around the API equivalent.** The breakdown

@@ -1,16 +1,33 @@
+# Ship only the runtime: out/ (compiled JS), resources/, and media/ (the webview
+# bundle), plus README, CHANGELOG, LICENSE, and package.json. Everything below is
+# dev-only and has no place in an installed extension.
+
+# deps & build inputs
 node_modules/
-.vscode-test/
-.github/**
 src/**
 webview/**
-scripts/**
-test/**
-dev/**
 *.config.ts
 tsconfig.json
 tsconfig.webview.json
+
+# dev / test / docs tooling
+.vscode/**
+.vscode-test/
+.github/**
+test/**
+dev/**
+scripts/**
+docs/**
+DEVELOPING.md
+CONTRIBUTING.md
+
+# repo / packaging cruft
 .gitignore
+.gitattributes
+.vscodeignore
 *.vsix
 package-lock.json
+
+# sourcemaps (ship code, not maps)
 media/*.map
 out/**/*.map
