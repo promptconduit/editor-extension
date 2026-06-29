@@ -2,7 +2,15 @@ node_modules/
 .vscode-test/
 .github/**
 src/**
+webview/**
+scripts/**
+test/**
+dev/**
+*.config.ts
 tsconfig.json
+tsconfig.webview.json
 .gitignore
 *.vsix
 package-lock.json
+media/*.map
+out/**/*.map
