@@ -106,3 +106,82 @@ export const sampleTelemetryLines: string[] = [
 ];
 
 export const sampleTelemetryJsonl = sampleTelemetryLines.join("\n") + "\n";
+
+// ---------- coaching (rich native_payload envelopes) ----------
+// Realistic Claude Code hook payloads (shapes verified against real captured
+// data) exercising every coaching signal: plan vs auto mode, slash commands, an
+// MCP tool, a Skill invocation, two parallel subagents, a worktree, a hard
+// interrupt, a compaction, and — the headline — two mid-task interruptions.
+
+type NP = Record<string, unknown>;
+
+function cEnv(
+  hookEvent: string,
+  isoTs: string,
+  np: NP,
+  opts: { session?: string; agentId?: string; agentType?: string; worktree?: boolean } = {},
+): string {
+  const session = opts.session ?? "cs1";
+  const extra: NP = {};
+  if (opts.agentId) {
+    extra.agent_id = opts.agentId;
+    extra.agent_type = opts.agentType ?? "";
+  }
+  return JSON.stringify({
+    envelope_version: "1.2",
+    cli_version: "dev",
+    tool: "claude-code",
+    hook_event: hookEvent,
+    captured_at: isoTs,
+    correlation: { trace_id: "ct-" + session, span_id: "sp" },
+    enrichment: { git: { repo_name: "promptconduit", branch: "feat/coaching", is_worktree: opts.worktree ?? false } },
+    native_payload: { session_id: session, hook_event_name: hookEvent, ...extra, ...np },
+  });
+}
+
+function tc(name: string, resp: NP | null = {}, input: NP = {}): NP {
+  return { tool_name: name, tool_use_id: name + "-id", tool_input: input, tool_response: resp };
+}
+
+export const sampleCoachingLines: string[] = [
+  cEnv("SessionStart", "2026-06-28T17:00:00Z", {}, { worktree: true }),
+  // Prompt 1: plan mode + slash command, then a clean Stop (not an interruption).
+  cEnv("UserPromptSubmit", "2026-06-28T17:00:05Z", { permission_mode: "plan", prompt: "/code-review the diff" }, { worktree: true }),
+  cEnv("PostToolBatch", "2026-06-28T17:00:07Z", { permission_mode: "plan", tool_calls: [tc("Read"), tc("Read")] }, { worktree: true }),
+  cEnv("Stop", "2026-06-28T17:00:30Z", { permission_mode: "plan", stop_hook_active: false }, { worktree: true }),
+  // Prompt 2: auto mode. A batch with an MCP tool, a Skill, and two PARALLEL subagents.
+  cEnv("UserPromptSubmit", "2026-06-28T17:00:35Z", { permission_mode: "auto", prompt: "add tests for the parser" }, { worktree: true }),
+  cEnv(
+    "PostToolBatch",
+    "2026-06-28T17:00:37Z",
+    {
+      permission_mode: "auto",
+      tool_calls: [
+        tc("Edit"),
+        tc("Bash", { stdout: "ok", stderr: "", interrupted: false }),
+        tc("mcp__stripe__create_customer", { type: "text" }),
+        tc("Skill", { type: "text" }, { skill: "schedule", args: "nightly check" }),
+        tc("Agent", { agentType: "Explore", totalDurationMs: 41000, totalTokens: 52000, status: "completed" }, { subagent_type: "Explore" }),
+        tc("Agent", { agentType: "Explore", totalDurationMs: 38000, totalTokens: 47000, status: "completed" }, { subagent_type: "Explore" }),
+      ],
+    },
+    { worktree: true },
+  ),
+  cEnv("PostToolUse", "2026-06-28T17:00:40Z", { permission_mode: "auto", duration_ms: 1500, tool_name: "Bash", tool_input: {}, tool_response: { stdout: "done", stderr: "", interrupted: false } }, { worktree: true }),
+  // Prompt 3: arrives while the turn is still open → INTERRUPTION #1.
+  cEnv("UserPromptSubmit", "2026-06-28T17:00:45Z", { permission_mode: "auto", prompt: "wait, also handle the empty case" }, { worktree: true }),
+  cEnv("PostToolUseFailure", "2026-06-28T17:00:46Z", { permission_mode: "auto", is_interrupt: true, tool_name: "Bash", tool_response: null }, { worktree: true }),
+  cEnv("SubagentStart", "2026-06-28T17:00:47Z", {}, { agentId: "a1", agentType: "Explore", worktree: true }),
+  cEnv("SubagentStop", "2026-06-28T17:00:52Z", { stop_hook_active: false }, { agentId: "a1", agentType: "Explore", worktree: true }),
+  cEnv("PreCompact", "2026-06-28T17:00:55Z", { permission_mode: "auto" }, { worktree: true }),
+  // Prompt 4: still no Stop since prompt 3 → INTERRUPTION #2.
+  cEnv("UserPromptSubmit", "2026-06-28T17:00:58Z", { permission_mode: "auto", prompt: "and update the changelog" }, { worktree: true }),
+  cEnv("PostToolUse", "2026-06-28T17:00:59Z", { permission_mode: "auto", duration_ms: 300, tool_name: "Read", tool_input: {}, tool_response: { type: "text" } }, { worktree: true }),
+  cEnv("Stop", "2026-06-28T17:01:10Z", { permission_mode: "auto", stop_hook_active: false }, { worktree: true }),
+  // Prompt 5: another slash command, clean.
+  cEnv("UserPromptSubmit", "2026-06-28T17:01:15Z", { permission_mode: "auto", prompt: "/ship it" }, { worktree: true }),
+  cEnv("PostToolUse", "2026-06-28T17:01:16Z", { permission_mode: "auto", duration_ms: 800, tool_name: "WebFetch", tool_input: {}, tool_response: { type: "text" } }, { worktree: true }),
+  cEnv("Stop", "2026-06-28T17:01:20Z", { permission_mode: "auto", stop_hook_active: false }, { worktree: true }),
+];
+
+export const sampleCoachingJsonl = sampleCoachingLines.join("\n") + "\n";

@@ -2,7 +2,7 @@
   "name": "promptconduit-cost",
   "displayName": "PromptConduit — Realtime Token Cost",
   "description": "See what your AI coding sessions cost, live, in the status bar. 100% local — no data leaves your machine.",
-  "version": "0.5.1",
+  "version": "0.6.0",
   "publisher": "promptconduit",
   "license": "MIT",
   "engines": {
@@ -40,6 +40,10 @@
       {
         "command": "promptconduit.events.showFeed",
         "title": "PromptConduit: Show Telemetry Panel"
+      },
+      {
+        "command": "promptconduit.coaching.showTab",
+        "title": "PromptConduit: Show Agent Coaching"
       }
     ],
     "viewsContainers": {
@@ -53,6 +57,12 @@
     },
     "views": {
       "promptconduitTelemetry": [
+        {
+          "id": "promptconduit.coaching",
+          "name": "Coaching",
+          "type": "webview",
+          "contextualTitle": "PromptConduit Agent Coaching"
+        },
         {
           "id": "promptconduit.telemetry",
           "name": "Telemetry",

@@ -13,7 +13,10 @@ import { landingHtml } from "../src/landing";
 import { renderBreakdownHtml } from "../src/panel";
 import { buildFeedHtml, parseLine } from "../src/eventsFeed";
 import { signalsSummary } from "../src/statusBar";
-import { sampleTelemetryLines, sampleEvents, heavySummary, cleanSummary } from "./fixtures";
+import { parseEnvelopeLine, reduceToSnapshot, reduceToTrends } from "../src/coaching/derive";
+import { buildCoachingInsights } from "../src/coaching/insights";
+import { renderCoachingHtml } from "../src/coaching/render";
+import { sampleTelemetryLines, sampleCoachingLines, sampleEvents, heavySummary, cleanSummary } from "./fixtures";
 
 // VS Code webview theme variables (dark-ish) so server-rendered HTML that styles
 // itself with var(--vscode-*) looks right in a plain browser.
@@ -58,11 +61,24 @@ const unpricedSummary = {
   signals: undefined,
 };
 
+// Coaching tab: derive the report from the rich sample envelopes, exactly as the
+// live tab does from events.jsonl.
+const coachingEvents = sampleCoachingLines
+  .map(parseEnvelopeLine)
+  .filter((e): e is NonNullable<typeof e> => e !== null);
+const coachingSnapshot = reduceToSnapshot(coachingEvents);
+if (coachingSnapshot) {
+  coachingSnapshot.insights = buildCoachingInsights(coachingSnapshot.metrics);
+}
+const coachingTrends = reduceToTrends(coachingEvents, 0);
+
 const pages: Record<string, string> = {
   "breakdown-heavy.html": themed(renderBreakdownHtml(heavySummary, sampleEvents[2], sampleEvents), true),
   "breakdown-clean.html": themed(renderBreakdownHtml(cleanSummary, sampleEvents[2], sampleEvents.slice(2)), true),
   "breakdown-unpriced.html": themed(renderBreakdownHtml(unpricedSummary, undefined, []), true),
   "breakdown-zero.html": themed(renderBreakdownHtml(undefined, undefined, []), true),
+  "coaching-rich.html": themed(renderCoachingHtml(coachingSnapshot, coachingTrends), true),
+  "coaching-empty.html": themed(renderCoachingHtml(undefined), true),
   "telemetry.html": themed(buildFeedHtml(events), true),
   "telemetry-empty.html": themed(buildFeedHtml([]), true),
   "landing.html": themed(landingHtml(), false),

@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { CoachingViewProvider } from "./coachingFeed";
 import { EventsFeedViewProvider } from "./eventsFeed";
 import { CostPanel } from "./panel";
 import { CostStatusBar } from "./statusBar";
@@ -24,6 +25,16 @@ export function activate(context: vscode.ExtensionContext): void {
     telemetry,
   );
 
+  // Docked coaching panel (WebviewView) next to Telemetry — a fully offline
+  // agent-skills report derived from the local event log.
+  const coaching = new CoachingViewProvider();
+  context.subscriptions.push(
+    vscode.window.registerWebviewViewProvider(CoachingViewProvider.viewId, coaching, {
+      webviewOptions: { retainContextWhenHidden: true },
+    }),
+    coaching,
+  );
+
   context.subscriptions.push(
     vscode.commands.registerCommand("promptconduit.cost.showDetails", () => {
       CostPanel.show(statusBar?.session, statusBar?.lastRequest, statusBar?.recentRequests);
@@ -31,6 +42,9 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("promptconduit.events.showFeed", () => {
       // Reveal/focus the docked telemetry panel (auto-registered <viewId>.focus).
       void vscode.commands.executeCommand(`${EventsFeedViewProvider.viewId}.focus`);
+    }),
+    vscode.commands.registerCommand("promptconduit.coaching.showTab", () => {
+      void vscode.commands.executeCommand(`${CoachingViewProvider.viewId}.focus`);
     }),
   );
 
