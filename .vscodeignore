@@ -1,8 +1,28 @@
+# Ship only the runtime: out/ (compiled JS) and resources/, plus README,
+# CHANGELOG, LICENSE, and package.json. Everything below is dev-only and has no
+# place in an installed extension.
+
+# deps & build inputs
 node_modules/
+src/**
+*.config.ts
+tsconfig.json
+
+# dev / test / docs tooling
+.vscode/**
 .vscode-test/
 .github/**
-src/**
-tsconfig.json
+test/**
+dev/**
+scripts/**
+docs/**
+DEVELOPING.md
+CONTRIBUTING.md
+
+# repo / packaging cruft
 .gitignore
+.gitattributes
+.vscodeignore
 *.vsix
 package-lock.json
+out/**/*.map
