@@ -95,7 +95,7 @@ export class CoachingController {
   // the user's overall history so coaching is always present once there's data.
   private buildHtml(): string {
     if (logDisabled()) {
-      return renderCoachingHtml(undefined);
+      return renderCoachingHtml(undefined, undefined, { disabled: true });
     }
     const snapshot = reduceToSnapshot(this.events);
     const trends = reduceToTrends(this.events, 0);

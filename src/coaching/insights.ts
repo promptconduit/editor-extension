@@ -4,8 +4,8 @@
 // when it would genuinely help, mirroring the cost panel's tips engine — and
 // links to a curated article by slug (resolved from contract.ts).
 //
-// This mirrors the server-side platform/app/api/src/services/coachingInsights.ts
-// so both surfaces produce the same feedback from the same metrics.
+// This mirrors the server-side insight builder so both the offline tab and the
+// signed-in dashboard produce the same feedback from the same metrics.
 
 import { CoachingMetrics, INSIGHT_SLUGS, Insight, articleUrlFor } from "./contract";
 

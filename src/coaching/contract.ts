@@ -7,7 +7,7 @@
 //   2. by the platform's GET /v1/me/trends endpoint (additive: cross-machine
 //      history and longer retention, merged in only when authed/online).
 //
-// Keep this file in lockstep with platform/app/api/src/types/coaching.ts. It is
+// Keep this file in lockstep with the server-side coaching contract. It is
 // pure data + types — no `vscode`, no HTML — so it unit-tests cleanly and both
 // the derivation and the renderer import it.
 
@@ -152,9 +152,8 @@ export interface TrendsResponse {
 }
 
 // The canonical insight-type → article-slug map. This MUST stay in sync with the
-// markdown `insightType` frontmatter under platform/app/web/content/coaching/*.md
-// and the mirror in platform/app/api/src/services/coachingInsights.ts. The slug
-// is the contract the renderer resolves (extension → bundled article + online
+// coaching article frontmatter and the server-side insight builder. The slug is
+// the contract the renderer resolves (extension → bundled article + online
 // link; web → /coaching/<slug>).
 export const INSIGHT_SLUGS: Record<string, string> = {
   high_interruption_rate: "reduce-interruptions",

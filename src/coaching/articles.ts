@@ -1,6 +1,6 @@
 // Bundled coaching content. Shipped INSIDE the extension so the coaching tips
 // render in full with no network — the offline-first requirement. Each article
-// mirrors a markdown file under platform/app/web/content/coaching/<slug>.md
+// mirrors the published coaching guide at promptconduit.dev/coaching/<slug>
 // (same slug, same insightType); the online link is the canonical full article.
 //
 // Keep the slugs in lockstep with contract.ts INSIGHT_SLUGS and the web content.

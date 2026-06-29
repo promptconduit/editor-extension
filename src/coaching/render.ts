@@ -281,18 +281,32 @@ function trendsHtml(trends: TrendsResponse | undefined): string {
 export function renderCoachingHtml(
   snapshot: CoachingSnapshot | undefined,
   trends?: TrendsResponse,
+  opts: { disabled?: boolean } = {},
 ): string {
-  if (!snapshot || snapshot.metrics.prompts === 0) {
+  if (opts.disabled) {
+    return documentShell(disabledHtml());
+  }
+  // The active session may legitimately have 0 prompts yet (e.g. it only emitted
+  // SessionStart / tool events). Don't hide the whole report — fall back to the
+  // all-history trends, which is the more useful view in that case.
+  const hasSession = !!snapshot && snapshot.metrics.prompts > 0;
+  const hasTrends = !!trends && trends.metrics.prompts > 0;
+  if (!hasSession && !hasTrends) {
     return documentShell(zeroStateHtml());
   }
+
+  const metrics = hasSession ? (snapshot as CoachingSnapshot).metrics : (trends as TrendsResponse).metrics;
+  const insights = hasSession ? (snapshot as CoachingSnapshot).insights : (trends as TrendsResponse).insights;
+  const header = hasSession ? heroHtml(snapshot as CoachingSnapshot) : trendsHeader(trends as TrendsResponse);
+
   const body = `
   <main class="report">
-    ${heroHtml(snapshot)}
-    ${insightsHtml(snapshot.insights)}
-    ${driversHtml(snapshot.metrics)}
-    ${mcpHtml(snapshot.metrics)}
-    ${skillsHtml(snapshot.metrics)}
-    ${subagentHtml(snapshot.metrics)}
+    ${header}
+    ${insightsHtml(insights)}
+    ${driversHtml(metrics)}
+    ${mcpHtml(metrics)}
+    ${skillsHtml(metrics)}
+    ${subagentHtml(metrics)}
     ${trendsHtml(trends)}
     <footer class="muted">
       Computed entirely on your machine from the local event log — works fully offline.
@@ -300,6 +314,19 @@ export function renderCoachingHtml(
     </footer>
   </main>`;
   return documentShell(body);
+}
+
+// Header used when there's no active-session activity yet but historical data
+// exists — leads with the all-history totals instead of a single session.
+function trendsHeader(trends: TrendsResponse): string {
+  const m = trends.metrics;
+  return `
+    <header class="hero">
+      <div class="hero-badges"><span class="badge subtle">all local history</span></div>
+      <p class="hero-eyebrow">Agent coaching</p>
+      <div class="hero-amount">${num(m.prompts)} <span class="hero-unit">prompts</span></div>
+      <p class="hero-sub">${num(m.tool_invocations)} tool calls · ${pct(m.tool_success_rate)} succeeded · ${pct(m.plan_mode_adoption_rate)} in plan mode</p>
+    </header>`;
 }
 
 function zeroStateHtml(): string {
@@ -316,6 +343,21 @@ function zeroStateHtml(): string {
       <p class="muted">Which MCP servers and skills you used, whether you planned before editing, how
         often you interrupted the agent, your subagent and worktree habits, and tailored tips to level up.</p>
     </section>
+  </main>`;
+}
+
+// Shown when the local event log is disabled — distinct from the empty state so
+// the user knows the data source is off (matches the Telemetry feed's behaviour).
+function disabledHtml(): string {
+  return `
+  <main class="report">
+    <header class="hero">
+      <p class="hero-eyebrow">Agent coaching</p>
+      <div class="hero-amount muted">Local log disabled</div>
+      <p class="hero-sub">The local event log is turned off
+        (<code>PROMPTCONDUIT_EVENT_LOG=0</code>). Unset that variable and restart your AI tool
+        to start building your coaching report — it's computed entirely on your machine.</p>
+    </header>
   </main>`;
 }
 

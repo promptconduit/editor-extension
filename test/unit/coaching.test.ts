@@ -160,4 +160,48 @@ describe("renderCoachingHtml", () => {
   it("escapes content (no script injection via tool names)", () => {
     expect(renderCoachingHtml(undefined)).not.toContain("<script");
   });
+
+  it("renders a 'log disabled' state distinct from the empty state", () => {
+    const html = renderCoachingHtml(undefined, undefined, { disabled: true });
+    expect(html).toContain("Local log disabled");
+    expect(html).toContain("PROMPTCONDUIT_EVENT_LOG=0");
+  });
+
+  it("falls back to trends when the active session has 0 prompts (does not hide history)", () => {
+    // Active (newest) session emitted only a SessionStart → 0 prompts, but an
+    // older session has real activity. The report must still render.
+    const snap = reduceToSnapshot(events)!;
+    const empty = { ...snap, metrics: { ...snap.metrics, prompts: 0 } };
+    const trends = reduceToTrends(events, 0);
+    const html = renderCoachingHtml(empty, trends);
+    expect(html).not.toContain("No sessions yet");
+    expect(html).toContain("all local history");
+  });
+});
+
+describe("per-session state machines", () => {
+  // Two sessions whose prompts interleave in time. Neither interrupts within its
+  // own session; the OLD global state machine would miscount B's prompt as an
+  // interruption of A's open turn.
+  function env(session: string, hook: string, ts: string, extra: Record<string, unknown> = {}): string {
+    return JSON.stringify({
+      tool: "claude-code",
+      hook_event: hook,
+      captured_at: ts,
+      correlation: { trace_id: "t-" + session },
+      native_payload: { session_id: session, hook_event_name: hook, ...extra },
+    });
+  }
+  const interleaved = [
+    env("A", "UserPromptSubmit", "2026-06-28T10:00:00Z", { permission_mode: "auto", prompt: "a1" }),
+    env("B", "UserPromptSubmit", "2026-06-28T10:00:01Z", { permission_mode: "auto", prompt: "b1" }),
+    env("A", "Stop", "2026-06-28T10:00:04Z"),
+    env("B", "Stop", "2026-06-28T10:00:05Z"),
+  ].map(parseEnvelopeLine).filter((e): e is NonNullable<typeof e> => e !== null);
+
+  it("does not count cross-session interleaving as interruptions", () => {
+    const m = computeMetrics(interleaved, 2);
+    expect(m.prompts).toBe(2);
+    expect(m.interruptions.count).toBe(0);
+  });
 });

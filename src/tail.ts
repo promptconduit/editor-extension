@@ -30,17 +30,27 @@ export function logDisabled(): boolean {
   return process.env.PROMPTCONDUIT_EVENT_LOG === "0";
 }
 
-// Read up to `maxBytes` from the END of a file and return complete lines. Drops a
-// leading partial line so we never hand back a truncated JSON fragment.
-function readTailLines(file: string, maxBytes: number): string[] {
+interface TailRead {
+  lines: string[];
+  carry: string; // trailing partial line (no newline yet), held back from `lines`
+  size: number; // the stat.size the read covered — use this for the live offset
+  inode: number;
+}
+
+// Read up to `maxBytes` from the END of a file using a SINGLE stat (so the
+// returned `size` exactly matches the bytes covered — the caller sets its live
+// offset from it, avoiding a re-read/double-count window). Drops a leading
+// partial line, and holds back a trailing partial line as `carry` so a
+// mid-write final event isn't emitted as a broken fragment.
+function readTailLines(file: string, maxBytes: number): TailRead {
   let stat: fs.Stats;
   try {
     stat = fs.statSync(file);
   } catch {
-    return [];
+    return { lines: [], carry: "", size: 0, inode: 0 };
   }
   if (stat.size === 0) {
-    return [];
+    return { lines: [], carry: "", size: 0, inode: stat.ino };
   }
   const start = stat.size > maxBytes ? stat.size - maxBytes : 0;
   const len = stat.size - start;
@@ -55,14 +65,17 @@ function readTailLines(file: string, maxBytes: number): string[] {
       fs.closeSync(fd);
     }
   } catch {
-    return [];
+    return { lines: [], carry: "", size: 0, inode: stat.ino };
   }
-  const lines = text.split("\n");
-  // If we started mid-file, the first element is a partial line — drop it.
-  if (start > 0 && lines.length > 0) {
-    lines.shift();
+  const parts = text.split("\n");
+  // If we started mid-file, the first element is a leading partial line — drop it.
+  if (start > 0 && parts.length > 0) {
+    parts.shift();
   }
-  return lines.filter((l) => l.trim().length > 0);
+  // The last element is "" when the file ended in a newline, or the in-progress
+  // final line otherwise — hold it as carry rather than emitting it.
+  const carry = parts.pop() ?? "";
+  return { lines: parts.filter((l) => l.trim().length > 0), carry, size: stat.size, inode: stat.ino };
 }
 
 export interface RawTailOptions {
@@ -107,22 +120,21 @@ export class RawEventTail {
   // rotated events.jsonl.1 if there's budget left. Then position the tail at the
   // current end of events.jsonl so live appends flow in without re-reading.
   private initialRead(): void {
-    let stat: fs.Stats | undefined;
-    try {
-      stat = fs.statSync(this.file);
-    } catch {
-      stat = undefined;
-    }
+    // Current file: one stat covers both the read and the live offset/carry, so
+    // appends during startup are picked up exactly once by readNew (no overlap).
+    const current = readTailLines(this.file, this.maxBytes);
+    const budgetLeft = this.maxBytes - Math.min(current.size, this.maxBytes);
+    // Rotated file is complete history; fold any trailing fragment in as a line.
+    const rotated = budgetLeft > 64 * 1024
+      ? readTailLines(rotatedJsonlPath(), budgetLeft)
+      : { lines: [], carry: "", size: 0, inode: 0 };
+    const rotatedLines = rotated.carry.trim() ? [...rotated.lines, rotated.carry] : rotated.lines;
+    const lines = [...rotatedLines, ...current.lines];
 
-    const currentLines = stat ? readTailLines(this.file, this.maxBytes) : [];
-    const budgetLeft = this.maxBytes - (stat ? Math.min(stat.size, this.maxBytes) : 0);
-    const rotatedLines = budgetLeft > 64 * 1024 ? readTailLines(rotatedJsonlPath(), budgetLeft) : [];
-    const lines = [...rotatedLines, ...currentLines];
+    this.offset = current.size;
+    this.inode = current.inode;
+    this.carry = current.carry;
 
-    if (stat) {
-      this.offset = stat.size;
-      this.inode = stat.ino;
-    }
     if (lines.length > 0) {
       this.opts.onLines(lines, true);
     } else {

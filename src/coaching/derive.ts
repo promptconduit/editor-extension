@@ -76,8 +76,9 @@ export interface ParsedEvent {
 }
 
 const SUBAGENT_TOOLS = new Set(["Agent", "Task"]);
-// builtin tools that don't count toward "skills" but do count as tool calls.
-const WORKTREE_TOOLS = new Set(["EnterWorktree", "ExitWorktree", "WorktreeCreate"]);
+// Tool names that indicate worktree use (WorktreeCreate is a hook event, not a
+// tool, and is handled separately by hookEvent).
+const WORKTREE_TOOLS = new Set(["EnterWorktree", "ExitWorktree"]);
 
 function canonHook(h: string): string {
   // Fold the occasional lowercase/camel variants seen in the wild.
@@ -189,11 +190,9 @@ export function parseEnvelopeLine(line: string): ParsedEvent | null {
 
 // ---- metric computation over one session's events ----
 
-const MCP_RE = /^mcp__([^_]+(?:[^_]|_(?!_))*?)__/; // mcp__<server>__<tool>
-const BUILTIN_NON_SKILL = new Set([
-  "Read", "Write", "Edit", "Bash", "Glob", "Grep", "WebFetch", "WebSearch",
-  "ToolSearch", "NotebookEdit", "AskUserQuestion", "ExitPlanMode", "EnterPlanMode",
-]);
+// mcp__<server>__<tool> — server is everything up to the next "__" (lazy), so
+// servers that themselves contain single underscores are captured correctly.
+const MCP_RE = /^mcp__(.+?)__/;
 
 function mcpServer(name: string): string | undefined {
   const m = MCP_RE.exec(name);
@@ -220,7 +219,11 @@ export function computeMetrics(events: ParsedEvent[], sessionCount = 1): Coachin
   let slashPrompts = 0;
   let interruptions = 0;
   let contextCompactions = 0;
-  let turnOpen = false;
+  // Turn-open and error-recovery state are PER SESSION: when trends merges many
+  // sessions' events into one stream, interleaved sessions must not bleed into
+  // each other (else an unrelated session's prompt looks like an interruption).
+  const turnOpenBySession = new Map<string, boolean>();
+  const recentlyFailedBySession = new Map<string, Set<string>>();
 
   const modeCounts = new Map<string, number>();
   const mcpCounts = new Map<string, number>();
@@ -231,13 +234,12 @@ export function computeMetrics(events: ParsedEvent[], sessionCount = 1): Coachin
   // tool-call accounting
   let toolInvocations = 0;
   let toolSuccesses = 0;
-  let toolSteps = 0; // PostToolUse + PostToolBatch events (for batching score)
+  let toolSteps = 0; // PostToolUse + PostToolBatch + PostToolUseFailure (one round-trip each)
   let mcpCalls = 0;
   let builtinCalls = 0;
   const toolNames = new Set<string>();
 
-  // error recovery: failed call followed by a later success of the same tool.
-  const recentlyFailed = new Set<string>();
+  // error recovery: failed call followed by a later same-tool success (per session).
   let failedCalls = 0;
   let recoveredCalls = 0;
 
@@ -260,10 +262,10 @@ export function computeMetrics(events: ParsedEvent[], sessionCount = 1): Coachin
     switch (e.hookEvent) {
       case "UserPromptSubmit": {
         prompts++;
-        if (turnOpen) {
+        if (turnOpenBySession.get(e.sessionId)) {
           interruptions++;
         }
-        turnOpen = true;
+        turnOpenBySession.set(e.sessionId, true);
         if (isSlashCommand(e.prompt)) {
           slashPrompts++;
         }
@@ -273,12 +275,12 @@ export function computeMetrics(events: ParsedEvent[], sessionCount = 1): Coachin
         // Only the MAIN agent's Stop closes a turn; a SubagentStop carries an
         // agent_id and must not be treated as the turn boundary.
         if (!e.agentId) {
-          turnOpen = false;
+          turnOpenBySession.set(e.sessionId, false);
         }
         break;
       }
       case "SessionStart":
-        turnOpen = false;
+        turnOpenBySession.set(e.sessionId, false);
         break;
       case "PreCompact":
         contextCompactions++;
@@ -302,17 +304,21 @@ export function computeMetrics(events: ParsedEvent[], sessionCount = 1): Coachin
     }
 
     if (e.isInterrupt) {
-      // A hard Esc interrupt corroborates the turn-open rule; count it once even
-      // if no prompt immediately followed in this slice.
-      turnOpen = true;
+      // A hard Esc interrupt corroborates the turn-open rule for this session.
+      turnOpenBySession.set(e.sessionId, true);
     }
 
     if (e.hookEvent === "PostToolUse" || e.hookEvent === "PostToolBatch" || e.hookEvent === "PostToolUseFailure") {
-      if (e.hookEvent !== "PostToolUseFailure") {
-        toolSteps++;
-      }
+      // Each PostTool* event is one round-trip (one step). A failure is a single
+      // failed call = one step too, so it must count or batching_score inflates.
+      toolSteps++;
       if (e.batchSubagentCount > subMaxConcurrent) {
         subMaxConcurrent = e.batchSubagentCount;
+      }
+      let recentlyFailed = recentlyFailedBySession.get(e.sessionId);
+      if (!recentlyFailed) {
+        recentlyFailed = new Set<string>();
+        recentlyFailedBySession.set(e.sessionId, recentlyFailed);
       }
       for (const call of e.toolCalls) {
         toolInvocations++;
@@ -323,7 +329,7 @@ export function computeMetrics(events: ParsedEvent[], sessionCount = 1): Coachin
           toolNames.add(call.name);
         }
 
-        // error-recovery tracking
+        // error-recovery tracking (scoped to this session)
         if (!call.success) {
           failedCalls++;
           recentlyFailed.add(call.name);
@@ -375,12 +381,6 @@ export function computeMetrics(events: ParsedEvent[], sessionCount = 1): Coachin
     }
   }
 
-  // slash commands also surface as skills_used entries.
-  if (slashPrompts > 0) {
-    // counted as adoption rate; individual command names aren't always in the
-    // prompt text, so we keep the aggregate rather than per-command rows here.
-  }
-
   const permission_modes = [...modeCounts.entries()]
     .map(([mode, prompt_count]) => ({ mode, prompt_count }))
     .sort((a, b) => b.prompt_count - a.prompt_count);
@@ -397,11 +397,16 @@ export function computeMetrics(events: ParsedEvent[], sessionCount = 1): Coachin
   const by_type: SubagentTypeStat[] = [...subByType.entries()]
     .map(([type, v]) => ({ type, count: v.count, avg_duration_ms: v.withMs > 0 ? Math.round(v.totalMs / v.withMs) : 0 }))
     .sort((a, b) => b.count - a.count);
-  // prefer Agent/Task durations; fall back to Start/Stop pairing when richer.
-  const allDurations = subTotalMs > 0 ? [] : pairedDurations;
-  const fallbackTotal = allDurations.reduce((s, d) => s + d, 0);
-  const totalMs = subTotalMs > 0 ? subTotalMs : fallbackTotal;
-  const durationN = subTotalMs > 0 ? by_type.reduce((s, t) => s + (t.avg_duration_ms > 0 ? t.count : 0), 0) : allDurations.length;
+  // Average over the subagents we actually MEASURED (withMs), not the full count
+  // — calls without a duration must not drag the average toward zero. Prefer
+  // Agent/Task durations; fall back to Start/Stop pairing when none were present.
+  const measuredCount = [...subByType.values()].reduce((s, v) => s + v.withMs, 0);
+  let totalMs = subTotalMs;
+  let durationN = measuredCount;
+  if (measuredCount === 0 && pairedDurations.length > 0) {
+    totalMs = pairedDurations.reduce((s, d) => s + d, 0);
+    durationN = pairedDurations.length;
+  }
 
   const metrics: CoachingMetrics = {
     prompts,
