@@ -1,0 +1,16 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "rootDir": ".",
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "noEmit": true
+  },
+  "include": [
+    "webview/**/*.ts",
+    "src/visualizer/types.ts",
+    "src/visualizer/schedule.ts",
+    "src/visualizer/classify.ts"
+  ]
+}

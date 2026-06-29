@@ -1,20 +1,26 @@
 {
-  "name": "promptconduit-cost",
-  "displayName": "PromptConduit — Realtime Token Cost",
-  "description": "See what your AI coding sessions cost, live, in the status bar. 100% local — no data leaves your machine.",
-  "version": "0.6.0",
+  "name": "promptconduit",
+  "displayName": "PromptConduit",
+  "description": "Local, real-time visibility into your AI coding sessions — live token cost in the status bar, a 3D Orchestration Theater that replays how your agents work, and an offline Agent Coaching report. 100% local.",
+  "version": "0.7.0",
   "publisher": "promptconduit",
   "license": "MIT",
   "engines": {
     "vscode": "^1.85.0"
   },
   "categories": [
+    "Visualization",
     "Other"
   ],
   "keywords": [
     "claude",
     "claude code",
     "cursor",
+    "agent",
+    "orchestration",
+    "visualization",
+    "observability",
+    "telemetry",
     "token",
     "cost",
     "usage"
@@ -44,6 +50,10 @@
       {
         "command": "promptconduit.coaching.showTab",
         "title": "PromptConduit: Show Agent Coaching"
+      },
+      {
+        "command": "promptconduit.visualizer.show",
+        "title": "PromptConduit: Show Orchestration Theater"
       }
     ],
     "viewsContainers": {
@@ -72,7 +82,7 @@
       ]
     },
     "configuration": {
-      "title": "PromptConduit Cost",
+      "title": "PromptConduit",
       "properties": {
         "promptconduit.cost.enabled": {
           "type": "boolean",
@@ -83,13 +93,31 @@
           "type": "string",
           "default": "",
           "description": "Path to the promptconduit CLI. Leave blank to auto-detect on PATH and common Homebrew locations."
+        },
+        "promptconduit.visualizer.githubEnrichment": {
+          "type": "string",
+          "enum": ["fetch", "inferOnly", "off"],
+          "enumDescriptions": [
+            "Fetch issue/PR titles and status from github.com (sends only owner/repo/number for the current repo).",
+            "Infer issue/PR numbers from branch and commit messages, but make no network calls.",
+            "Show no GitHub links on Orchestration Theater hover cards."
+          ],
+          "default": "fetch",
+          "description": "How the Orchestration Theater resolves the GitHub issue/PR shown on hover cards."
+        },
+        "promptconduit.visualizer.githubToken": {
+          "type": "string",
+          "default": "",
+          "description": "Optional GitHub token for issue/PR enrichment (raises the API rate limit and reaches private repos). Falls back to the GITHUB_TOKEN/GH_TOKEN environment variable."
         }
       }
     }
   },
   "scripts": {
-    "compile": "tsc -p ./",
-    "watch": "tsc -watch -p ./",
+    "compile": "tsc -p ./ && node scripts/build-webview.mjs",
+    "build:webview": "node scripts/build-webview.mjs",
+    "typecheck:webview": "tsc -p tsconfig.webview.json",
+    "watch": "node scripts/build-webview.mjs --watch & tsc -watch -p ./",
     "vscode:prepublish": "npm run compile",
     "package": "vsce package",
     "publish:vsce": "vsce publish",
@@ -103,9 +131,12 @@
   "devDependencies": {
     "@playwright/test": "^1.61.1",
     "@types/node": "^20.11.0",
+    "@types/three": "^0.169.0",
     "@types/vscode": "^1.85.0",
     "@vscode/vsce": "^3.2.0",
+    "esbuild": "^0.24.2",
     "ovsx": "^0.10.0",
+    "three": "^0.169.0",
     "typescript": "^5.9.0",
     "vitest": "^3.2.6"
   }

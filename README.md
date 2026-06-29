@@ -1,7 +1,21 @@
-# PromptConduit — Realtime Token Cost
+# PromptConduit
 
-See what your AI coding sessions cost, **live, in the status bar** — computed
-entirely on your machine. None of your data leaves your device.
+Local, real-time visibility into your AI coding sessions — **computed entirely on
+your machine**. PromptConduit is a growing set of in-editor surfaces over the
+same local data your AI assistant already produces:
+
+- **Realtime token cost** — `⚡ <request cost> · 🕘 <session cost>` in the
+  status bar, with a click-through **AI Cost Breakdown** panel.
+- **Orchestration Theater** — a 3D replay of how your agents actually work:
+  sub-agents spawning, tool calls reaching out to fetch URLs / read-write files /
+  hit cloud APIs, with hover cards linking the GitHub issue and PR behind each
+  node. Run **"PromptConduit: Show Orchestration Theater"** from the command
+  palette.
+
+Everything reads the local event log (`~/.promptconduit/events.jsonl`); none of
+your code or prompts leave your device.
+
+## Realtime token cost
 
 The bottom-right status bar shows `⚡ <request cost> · 🕘 <session cost>`. Click
 it for the **AI Cost Breakdown** panel.
@@ -86,7 +100,7 @@ git tag v0.1.0 && git push origin v0.1.0
 Or publish locally:
 
 ```bash
-npm run package        # builds promptconduit-cost-<version>.vsix
+npm run package        # builds promptconduit-<version>.vsix
 npm run publish:ovsx   # needs OVSX_TOKEN in env or `ovsx login`
 npm run publish:vsce   # needs `vsce login promptconduit`
 ```

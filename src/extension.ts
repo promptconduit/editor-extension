@@ -4,6 +4,7 @@ import { EventsFeedViewProvider } from "./eventsFeed";
 import { CostPanel } from "./panel";
 import { CostStatusBar } from "./statusBar";
 import { CostWatcher, resolveBinary } from "./watcher";
+import { VisualizerPanel } from "./visualizerPanel";
 
 let statusBar: CostStatusBar | undefined;
 let watcher: CostWatcher | undefined;
@@ -46,6 +47,9 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("promptconduit.coaching.showTab", () => {
       void vscode.commands.executeCommand(`${CoachingViewProvider.viewId}.focus`);
     }),
+    vscode.commands.registerCommand("promptconduit.visualizer.show", () => {
+      VisualizerPanel.show(context.extensionUri);
+    }),
   );
 
   const start = () => {
@@ -76,7 +80,7 @@ export function activate(context: vscode.ExtensionContext): void {
         }
         CostPanel.refresh(statusBar?.session, statusBar?.lastRequest, statusBar?.recentRequests);
       },
-      onError: (msg) => console.error(`[promptconduit-cost] ${msg}`),
+      onError: (msg) => console.error(`[promptconduit] ${msg}`),
     });
     watcher.start();
   };

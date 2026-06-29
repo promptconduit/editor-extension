@@ -16,6 +16,8 @@ import { signalsSummary } from "../src/statusBar";
 import { parseEnvelopeLine, reduceToSnapshot, reduceToTrends } from "../src/coaching/derive";
 import { buildCoachingInsights } from "../src/coaching/insights";
 import { renderCoachingHtml } from "../src/coaching/render";
+import { demoScene } from "../src/visualizer/demo";
+import { SCENE_CSS, SCENE_BODY } from "../src/visualizer/chrome";
 import { sampleTelemetryLines, sampleCoachingLines, sampleEvents, heavySummary, cleanSummary } from "./fixtures";
 
 // VS Code webview theme variables (dark-ish) so server-rendered HTML that styles
@@ -90,6 +92,29 @@ const pages: Record<string, string> = {
     false,
   ),
 };
+
+// The 3D Orchestration Theater, loaded straight from the built esbuild bundle.
+// A tiny shim stands in for the VS Code webview API: when the bundle signals
+// "ready", we feed it the baked demo scene as a host "load" message.
+pages["visualizer.html"] = `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8" />
+<style>${THEME}${SCENE_CSS}</style></head>
+<body>
+${SCENE_BODY}
+<script>
+  const LOAD = { type: "load", scene: ${JSON.stringify(demoScene())}, mode: "playback", reducedMotion: false, isDemo: true };
+  window.acquireVsCodeApi = function () {
+    return {
+      postMessage: function (msg) {
+        if (msg && msg.type === "ready") {
+          window.dispatchEvent(new MessageEvent("message", { data: LOAD }));
+        }
+      },
+      getState() {}, setState() {},
+    };
+  };
+</script>
+<script src="../../media/visualizer.js"></script>
+</body></html>`;
 
 const links = Object.keys(pages)
   .map((f) => `<li><a href="./${f}">${f.replace(".html", "")}</a></li>`)
