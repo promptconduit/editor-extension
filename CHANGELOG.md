@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.11.0
+
+- **Bottom-right "Stream" button.** A new `$(pulse) Stream` item in the status
+  bar opens the live **Stream** panel with one click — a per-session, human-readable
+  tail of `~/.promptconduit/events.jsonl` that auto-follows the most recently active
+  AI session (Cursor agent tab or Claude Code) and can be pinned to one. The panel
+  itself shipped earlier; this adds the discoverable entry point next to the cost item.
+
+<!-- 0.7.0–0.10.0 were internal/unreleased; see git history. -->
+
 ## 0.6.0
 
 - **Now just "PromptConduit."** The extension is rebranded from

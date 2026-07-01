@@ -50,6 +50,20 @@ export function activate(context: vscode.ExtensionContext): void {
     stream,
   );
 
+  // Bottom-right status-bar entry point for the Stream panel. Priority 99 seats
+  // it just to the right of the cost item (100). Clicking it reveals the docked
+  // Stream tab, which renders its own empty states, so it's useful even before
+  // any events have flowed.
+  const streamButton = vscode.window.createStatusBarItem(
+    vscode.StatusBarAlignment.Right,
+    99,
+  );
+  streamButton.text = "$(pulse) Stream";
+  streamButton.tooltip = "Open the live PromptConduit event stream (human-readable JSON)";
+  streamButton.command = "promptconduit.stream.showFeed";
+  streamButton.show();
+  context.subscriptions.push(streamButton);
+
   // When the CLI updates this extension on disk after a self-upgrade, offer a
   // one-click **Reload Window** to apply it — a reload keeps the pty host alive,
   // so terminals running Claude Code survive (a full restart would kill them).
