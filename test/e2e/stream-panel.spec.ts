@@ -1,7 +1,32 @@
-import { test, expect, _electron as electron } from "@playwright/test";
+import { test, expect, _electron as electron, type Page } from "@playwright/test";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
+
+// Find the panel webview whose inner frame contains `text`. Several PromptConduit
+// views (Stream, Telemetry, Coaching) render webviews in the same panel, so
+// selecting by DOM order (`.first()`) is fragile — it shifts when views are added
+// or reordered. Scan by content instead so each spec targets its own view.
+async function webviewWithText(win: Page, text: string, timeoutMs: number) {
+  const deadline = Date.now() + timeoutMs;
+  let lastErr: unknown;
+  while (Date.now() < deadline) {
+    const outers = win.locator("iframe.webview");
+    const count = await outers.count();
+    for (let i = 0; i < count; i++) {
+      try {
+        const frame = outers.nth(i).contentFrame().locator("iframe").first().contentFrame();
+        if ((await frame.getByText(text).count()) > 0) {
+          return frame;
+        }
+      } catch (e) {
+        lastErr = e; // frame not ready yet; keep scanning
+      }
+    }
+    await win.waitForTimeout(500);
+  }
+  throw new Error(`No webview containing "${text}" found within ${timeoutMs}ms${lastErr ? ` (last: ${lastErr})` : ""}`);
+}
 
 // End-to-end test of the docked Stream panel, driving the REAL Cursor editor.
 //
@@ -109,17 +134,10 @@ test("Stream panel follows the most-recently-active session in Cursor", async ()
   await win.waitForTimeout(3_000);
   await win.screenshot({ path: "out/screenshots/stream-02-panel-opened.png" });
 
-  // Walk the two nested webview iframes (outer iframe.webview → inner #active-frame).
-  const webview = win
-    .locator("iframe.webview")
-    .first()
-    .contentFrame()
-    .locator("iframe")
-    .first()
-    .contentFrame();
-
-  // The followed session is tab-B (newest) — its events render, others do not.
-  await expect(webview.getByText("auto-following")).toBeVisible({ timeout: 30_000 });
+  // Grab the Stream view's webview by content (not DOM order — the panel hosts
+  // several PromptConduit webviews). The followed session is tab-B (newest).
+  const webview = await webviewWithText(win, "auto-following", 30_000);
+  await expect(webview.getByText("auto-following")).toBeVisible();
   await expect(webview.getByText("afterAgentResponse")).toBeVisible();
   await expect(webview.getByText("beforeSubmitPrompt")).toBeVisible();
   // Other sessions' unique events must be absent while following tab-B.

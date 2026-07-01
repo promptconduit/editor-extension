@@ -1,7 +1,32 @@
-import { test, expect, _electron as electron } from "@playwright/test";
+import { test, expect, _electron as electron, type Page } from "@playwright/test";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
+
+// Find the panel webview whose inner frame contains `text`. Several PromptConduit
+// views (Stream, Telemetry, Coaching) render webviews in the same panel, so
+// selecting by DOM order (`.first()`) is fragile — it shifts when views are added
+// or reordered. Scan by content instead so each spec targets its own view.
+async function webviewWithText(win: Page, text: string, timeoutMs: number) {
+  const deadline = Date.now() + timeoutMs;
+  let lastErr: unknown;
+  while (Date.now() < deadline) {
+    const outers = win.locator("iframe.webview");
+    const count = await outers.count();
+    for (let i = 0; i < count; i++) {
+      try {
+        const frame = outers.nth(i).contentFrame().locator("iframe").first().contentFrame();
+        if ((await frame.getByText(text).count()) > 0) {
+          return frame;
+        }
+      } catch (e) {
+        lastErr = e; // frame not ready yet; keep scanning
+      }
+    }
+    await win.waitForTimeout(500);
+  }
+  throw new Error(`No webview containing "${text}" found within ${timeoutMs}ms${lastErr ? ` (last: ${lastErr})` : ""}`);
+}
 
 // End-to-end test of the docked Telemetry panel, driving the REAL Cursor editor.
 //
@@ -110,17 +135,10 @@ test("Telemetry panel renders seeded events in Cursor", async () => {
   await win.waitForTimeout(3_000);
   await win.screenshot({ path: "out/screenshots/02-panel-opened.png" });
 
-  // Walk the two nested webview iframes (outer iframe.webview → inner #active-frame)
-  // with the modern contentFrame() pattern.
-  const webview = win
-    .locator("iframe.webview")
-    .first()
-    .contentFrame()
-    .locator("iframe")
-    .first()
-    .contentFrame();
-
-  await expect(webview.getByText("AI telemetry")).toBeVisible({ timeout: 30_000 });
+  // Grab the Telemetry view's webview by content (not DOM order — the panel hosts
+  // several PromptConduit webviews).
+  const webview = await webviewWithText(win, "AI telemetry", 30_000);
+  await expect(webview.getByText("AI telemetry")).toBeVisible();
   // Two distinct seeded events (unique text → one match each).
   await expect(webview.getByText("UserPromptSubmit")).toBeVisible();
   await expect(webview.getByText("PreToolUse")).toBeVisible();
