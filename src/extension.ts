@@ -6,6 +6,7 @@ import { CostPanel } from "./panel";
 import { CostStatusBar } from "./statusBar";
 import { CostWatcher, resolveBinary } from "./watcher";
 import { VisualizerPanel } from "./visualizerPanel";
+import { UpdatePromptController } from "./updatePrompt";
 
 let statusBar: CostStatusBar | undefined;
 let watcher: CostWatcher | undefined;
@@ -47,6 +48,15 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
     stream,
   );
+
+  // When the CLI updates this extension on disk after a self-upgrade, offer a
+  // one-click **Reload Window** to apply it — a reload keeps the pty host alive,
+  // so terminals running Claude Code survive (a full restart would kill them).
+  const updates = new UpdatePromptController(
+    context.extension.packageJSON.version as string,
+  );
+  context.subscriptions.push(updates);
+  updates.start();
 
   context.subscriptions.push(
     vscode.commands.registerCommand("promptconduit.cost.showDetails", () => {
