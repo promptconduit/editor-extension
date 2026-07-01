@@ -2,7 +2,7 @@
   "name": "promptconduit",
   "displayName": "PromptConduit",
   "description": "Local, real-time visibility into your AI coding sessions — live token cost in the status bar, a 3D Orchestration Theater that replays how your agents work, and an offline Agent Coaching report. 100% local.",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "publisher": "promptconduit",
   "license": "MIT",
   "engines": {
@@ -68,6 +68,10 @@
       {
         "command": "promptconduit.visualizer.show",
         "title": "PromptConduit: Show Orchestration Theater"
+      },
+      {
+        "command": "promptconduit.restore.sessions",
+        "title": "PromptConduit: Restore AI Sessions"
       }
     ],
     "menus": {
@@ -143,6 +147,22 @@
           "type": "string",
           "default": "",
           "description": "Optional GitHub token for issue/PR enrichment (raises the API rate limit and reaches private repos). Falls back to the GITHUB_TOKEN/GH_TOKEN environment variable."
+        },
+        "promptconduit.restore.mode": {
+          "type": "string",
+          "enum": ["auto", "prompt", "off"],
+          "enumDescriptions": [
+            "On startup, silently reopen interrupted Claude Code sessions in this workspace (a summary notification confirms what was restored).",
+            "On startup, ask before reopening interrupted sessions.",
+            "Never auto-restore. You can still run 'PromptConduit: Restore AI Sessions' manually."
+          ],
+          "default": "auto",
+          "description": "Reopen Claude Code sessions that were interrupted when the editor restarted, in the exact directory they ran in (worktrees included). Sessions still running are never touched."
+        },
+        "promptconduit.restore.sinceHours": {
+          "type": "number",
+          "default": 12,
+          "description": "How far back to look for interrupted sessions to restore, in hours."
         }
       }
     }
