@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import { CoachingViewProvider } from "./coachingFeed";
 import { EventsFeedViewProvider } from "./eventsFeed";
+import { StreamViewProvider } from "./streamFeed";
 import { CostPanel } from "./panel";
 import { CostStatusBar } from "./statusBar";
 import { CostWatcher, resolveBinary } from "./watcher";
@@ -36,6 +37,17 @@ export function activate(context: vscode.ExtensionContext): void {
     coaching,
   );
 
+  // Docked live Stream panel (WebviewView) — a per-session tail of
+  // ~/.promptconduit/events.jsonl that auto-follows the most recently active AI
+  // session (Cursor agent tab / Claude Code), with a manual pin to lock onto one.
+  const stream = new StreamViewProvider();
+  context.subscriptions.push(
+    vscode.window.registerWebviewViewProvider(StreamViewProvider.viewId, stream, {
+      webviewOptions: { retainContextWhenHidden: true },
+    }),
+    stream,
+  );
+
   context.subscriptions.push(
     vscode.commands.registerCommand("promptconduit.cost.showDetails", () => {
       CostPanel.show(statusBar?.session, statusBar?.lastRequest, statusBar?.recentRequests);
@@ -46,6 +58,16 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
     vscode.commands.registerCommand("promptconduit.coaching.showTab", () => {
       void vscode.commands.executeCommand(`${CoachingViewProvider.viewId}.focus`);
+    }),
+    vscode.commands.registerCommand("promptconduit.stream.showFeed", () => {
+      // Reveal/focus the docked Stream panel (auto-registered <viewId>.focus).
+      void vscode.commands.executeCommand(`${StreamViewProvider.viewId}.focus`);
+    }),
+    vscode.commands.registerCommand("promptconduit.stream.pinSession", () => {
+      void stream.pinSession();
+    }),
+    vscode.commands.registerCommand("promptconduit.stream.followActive", () => {
+      stream.followActive();
     }),
     vscode.commands.registerCommand("promptconduit.visualizer.show", () => {
       VisualizerPanel.show(context.extensionUri);

@@ -107,6 +107,42 @@ export const sampleTelemetryLines: string[] = [
 
 export const sampleTelemetryJsonl = sampleTelemetryLines.join("\n") + "\n";
 
+// ---------- stream panel (per-session envelopes) ----------
+// Like the telemetry lines, but each envelope carries a session key in
+// native_payload so the Stream panel can group + follow per session. Two Cursor
+// agent tabs (conversation_id) interleave with a Claude Code session (session_id);
+// tab-B produces the newest event, so it is the auto-followed session.
+
+function streamEnvelope(
+  tool: string,
+  hookEvent: string,
+  isoTs: string,
+  np: Record<string, unknown>,
+  repo = "editor-extension",
+  branch = "feat/live-stream-panel",
+): string {
+  return JSON.stringify({
+    envelope_version: "1.2",
+    cli_version: "dev",
+    tool,
+    hook_event: hookEvent,
+    captured_at: isoTs,
+    native_payload: np,
+    enrichment: { git: { repo_name: repo, branch } },
+  });
+}
+
+export const sampleStreamLines: string[] = [
+  streamEnvelope("cursor", "beforeSubmitPrompt", "2026-06-30T17:00:00Z", { conversation_id: "tab-A", session_id: "sess-A" }),
+  streamEnvelope("cursor", "beforeShellExecution", "2026-06-30T17:00:04Z", { conversation_id: "tab-A", session_id: "sess-A" }),
+  streamEnvelope("claude-code", "UserPromptSubmit", "2026-06-30T17:00:10Z", { session_id: "cc-1" }),
+  streamEnvelope("claude-code", "PreToolUse", "2026-06-30T17:00:12Z", { session_id: "cc-1" }),
+  streamEnvelope("cursor", "beforeSubmitPrompt", "2026-06-30T17:01:00Z", { conversation_id: "tab-B", session_id: "sess-B" }),
+  streamEnvelope("cursor", "afterAgentResponse", "2026-06-30T17:01:20Z", { conversation_id: "tab-B", session_id: "sess-B" }),
+];
+
+export const sampleStreamJsonl = sampleStreamLines.join("\n") + "\n";
+
 // ---------- coaching (rich native_payload envelopes) ----------
 // Realistic Claude Code hook payloads (shapes verified against real captured
 // data) exercising every coaching signal: plan vs auto mode, slash commands, an

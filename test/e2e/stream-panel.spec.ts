@@ -28,16 +28,14 @@ async function webviewWithText(win: Page, text: string, timeoutMs: number) {
   throw new Error(`No webview containing "${text}" found within ${timeoutMs}ms${lastErr ? ` (last: ${lastErr})` : ""}`);
 }
 
-// End-to-end test of the docked Telemetry panel, driving the REAL Cursor editor.
+// End-to-end test of the docked Stream panel, driving the REAL Cursor editor.
 //
-// Runs in CI only (see .github/workflows/e2e-cursor.yml): CI extracts the Cursor
-// AppImage and points CURSOR_BIN at its Electron binary and EXT_DEV_PATH at this
-// repo (compiled). This test seeds a temp HOME with a known events.jsonl, boots
-// Cursor under xvfb with our extension loaded from source, focuses the Telemetry
-// panel, asserts the seeded rows in the webview, and screenshots it.
-//
-// The panel reads ~/.promptconduit/events.jsonl, so a temp HOME = deterministic
-// input with no CLI run and no real AI session.
+// Same harness as telemetry-panel.spec.ts (CI only, see e2e-cursor.yml): a temp
+// HOME with a seeded events.jsonl gives deterministic input with no CLI run.
+// The Stream panel groups events by session and follows the most-recently-active
+// one, so we seed three sessions with increasing timestamps — the Cursor "tab-B"
+// conversation is newest, so it must be the followed (auto-following) session,
+// and the other sessions' events must NOT render.
 
 const CURSOR_BIN = process.env.CURSOR_BIN; // extracted Cursor Electron binary
 const EXT_DEV_PATH = process.env.EXT_DEV_PATH ?? process.cwd(); // repo root (has out/)
@@ -46,19 +44,24 @@ function writeSeededHome(): string {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "pc-home-"));
   const dir = path.join(home, ".promptconduit");
   fs.mkdirSync(dir, { recursive: true });
-  const now = new Date().toISOString();
+  const base = Date.now();
+  const at = (offsetSec: number) => new Date(base + offsetSec * 1000).toISOString();
   const events = [
-    { tool: "claude-code", hook_event: "UserPromptSubmit" },
-    { tool: "claude-code", hook_event: "PreToolUse" },
-    { tool: "cursor", hook_event: "Stop" },
+    // claude-code session cc-1 (oldest)
+    { tool: "claude-code", hook_event: "UserPromptSubmit", np: { session_id: "cc-1" }, ts: at(0) },
+    // cursor tab-A
+    { tool: "cursor", hook_event: "beforeShellExecution", np: { conversation_id: "tab-A", session_id: "sess-A" }, ts: at(10) },
+    // cursor tab-B (newest → followed)
+    { tool: "cursor", hook_event: "beforeSubmitPrompt", np: { conversation_id: "tab-B", session_id: "sess-B" }, ts: at(20) },
+    { tool: "cursor", hook_event: "afterAgentResponse", np: { conversation_id: "tab-B", session_id: "sess-B" }, ts: at(25) },
   ].map((e) =>
     JSON.stringify({
       envelope_version: "1.2",
       cli_version: "e2e",
       tool: e.tool,
       hook_event: e.hook_event,
-      captured_at: now,
-      native_payload: {},
+      captured_at: e.ts,
+      native_payload: e.np,
       enrichment: { git: { repo_name: "demo-repo", branch: "main" } },
     }),
   );
@@ -76,7 +79,7 @@ function launchEnv(home: string): NodeJS.ProcessEnv {
   return env;
 }
 
-test("Telemetry panel renders seeded events in Cursor", async () => {
+test("Stream panel follows the most-recently-active session in Cursor", async () => {
   test.skip(!CURSOR_BIN, "CURSOR_BIN not set — run via the e2e-cursor workflow");
 
   const home = writeSeededHome();
@@ -85,8 +88,6 @@ test("Telemetry panel renders seeded events in Cursor", async () => {
   const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "pc-ws-"));
   fs.mkdirSync("out/screenshots", { recursive: true });
 
-  // Suppress the welcome/get-started editor so the workbench (and our panel)
-  // aren't hidden behind it in the window screenshot.
   const userDir = path.join(userDataDir, "User");
   fs.mkdirSync(userDir, { recursive: true });
   fs.writeFileSync(
@@ -99,7 +100,6 @@ test("Telemetry panel renders seeded events in Cursor", async () => {
     }),
   );
 
-  // Flags + env from microsoft/vscode-test via ruifigueira/vscode-test-playwright.
   const app = await electron.launch({
     executablePath: CURSOR_BIN!,
     args: [
@@ -121,34 +121,30 @@ test("Telemetry panel renders seeded events in Cursor", async () => {
   const win = await app.firstWindow();
   await win.waitForLoadState("domcontentloaded");
   await win.waitForTimeout(8_000); // workbench + onStartupFinished activation
-  // Best-effort: dismiss any welcome/login tab covering the workbench.
   await win.keyboard.press("Escape");
   await win.waitForTimeout(1_000);
-  await win.screenshot({ path: "out/screenshots/01-cursor-loaded.png" });
+  await win.screenshot({ path: "out/screenshots/stream-01-cursor-loaded.png" });
 
-  // Focus our docked view via the command palette (F1 is steadier than Ctrl+Shift+P).
+  // Focus our docked view via the command palette.
   await win.keyboard.press("F1");
   await win.locator(".quick-input-widget").waitFor({ timeout: 15_000 });
-  await win.keyboard.type("PromptConduit: Show Telemetry Panel");
+  await win.keyboard.type("PromptConduit: Show Stream Panel");
   await win.waitForTimeout(500);
   await win.keyboard.press("Enter");
   await win.waitForTimeout(3_000);
-  await win.screenshot({ path: "out/screenshots/02-panel-opened.png" });
+  await win.screenshot({ path: "out/screenshots/stream-02-panel-opened.png" });
 
-  // Grab the Telemetry view's webview by content (not DOM order — the panel hosts
-  // several PromptConduit webviews).
-  const webview = await webviewWithText(win, "AI telemetry", 30_000);
-  await expect(webview.getByText("AI telemetry")).toBeVisible();
-  // Two distinct seeded events (unique text → one match each).
-  await expect(webview.getByText("UserPromptSubmit")).toBeVisible();
-  await expect(webview.getByText("PreToolUse")).toBeVisible();
-  // All three seeded rows share repo "demo-repo" → exactly one Repo cell each.
-  await expect(webview.getByText("demo-repo")).toHaveCount(3);
+  // Grab the Stream view's webview by content (not DOM order — the panel hosts
+  // several PromptConduit webviews). The followed session is tab-B (newest).
+  const webview = await webviewWithText(win, "auto-following", 30_000);
+  await expect(webview.getByText("auto-following")).toBeVisible();
+  await expect(webview.getByText("afterAgentResponse")).toBeVisible();
+  await expect(webview.getByText("beforeSubmitPrompt")).toBeVisible();
+  // Other sessions' unique events must be absent while following tab-B.
+  await expect(webview.getByText("UserPromptSubmit")).toHaveCount(0);
+  await expect(webview.getByText("beforeShellExecution")).toHaveCount(0);
 
-  // Debug captures only (uploaded on failure). On a fresh CI profile these are
-  // occluded by Cursor's login wall — see README; the assertions above are the
-  // real gate, not these images.
-  await win.screenshot({ path: "out/screenshots/03-window.png" });
-  await webview.locator("body").screenshot({ path: "out/screenshots/04-webview-frame.png" });
+  await win.screenshot({ path: "out/screenshots/stream-03-window.png" });
+  await webview.locator("body").screenshot({ path: "out/screenshots/stream-04-webview-frame.png" });
   await app.close();
 });
