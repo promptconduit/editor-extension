@@ -7,6 +7,7 @@ import { CostStatusBar } from "./statusBar";
 import { CostWatcher, resolveBinary } from "./watcher";
 import { VisualizerPanel } from "./visualizerPanel";
 import { UpdatePromptController } from "./updatePrompt";
+import { SessionRestoreController, makeRestoreDeps } from "./sessionRestore";
 
 let statusBar: CostStatusBar | undefined;
 let watcher: CostWatcher | undefined;
@@ -83,6 +84,23 @@ export function activate(context: vscode.ExtensionContext): void {
       VisualizerPanel.show(context.extensionUri);
     }),
   );
+
+  // Bring interrupted AI sessions back to life. On startup this reopens Claude
+  // Code sessions that were active before the editor restarted (which kills the
+  // terminals) — in the exact directory they ran in, worktrees included — via
+  // the CLI engine (`promptconduit sessions --json`). Mode is configurable
+  // (auto / prompt / off); a manual command lets the user pick any time.
+  const restore = new SessionRestoreController(
+    makeRestoreDeps(context, () =>
+      resolveBinary(cfg().get<string>("binaryPath", "")),
+    ),
+  );
+  context.subscriptions.push(
+    vscode.commands.registerCommand("promptconduit.restore.sessions", () => {
+      void restore.runManual();
+    }),
+  );
+  void restore.runStartup();
 
   const start = () => {
     stopWatcher();
