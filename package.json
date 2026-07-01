@@ -2,7 +2,7 @@
   "name": "promptconduit",
   "displayName": "PromptConduit",
   "description": "Local, real-time visibility into your AI coding sessions — live token cost in the status bar, a 3D Orchestration Theater that replays how your agents work, and an offline Agent Coaching report. 100% local.",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "publisher": "promptconduit",
   "license": "MIT",
   "engines": {
@@ -52,10 +52,38 @@
         "title": "PromptConduit: Show Agent Coaching"
       },
       {
+        "command": "promptconduit.stream.showFeed",
+        "title": "PromptConduit: Show Stream Panel"
+      },
+      {
+        "command": "promptconduit.stream.pinSession",
+        "title": "PromptConduit: Pin Session",
+        "icon": "$(pin)"
+      },
+      {
+        "command": "promptconduit.stream.followActive",
+        "title": "PromptConduit: Follow Active Session",
+        "icon": "$(sync)"
+      },
+      {
         "command": "promptconduit.visualizer.show",
         "title": "PromptConduit: Show Orchestration Theater"
       }
     ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "promptconduit.stream.pinSession",
+          "when": "view == promptconduit.stream",
+          "group": "navigation"
+        },
+        {
+          "command": "promptconduit.stream.followActive",
+          "when": "view == promptconduit.stream",
+          "group": "navigation"
+        }
+      ]
+    },
     "viewsContainers": {
       "panel": [
         {
@@ -67,6 +95,12 @@
     },
     "views": {
       "promptconduitTelemetry": [
+        {
+          "id": "promptconduit.stream",
+          "name": "Stream",
+          "type": "webview",
+          "contextualTitle": "PromptConduit Stream"
+        },
         {
           "id": "promptconduit.telemetry",
           "name": "Telemetry",

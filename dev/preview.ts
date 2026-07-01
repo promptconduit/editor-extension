@@ -12,13 +12,14 @@ import { fileURLToPath } from "node:url";
 import { landingHtml } from "../src/landing";
 import { renderBreakdownHtml } from "../src/panel";
 import { buildFeedHtml, parseLine } from "../src/eventsFeed";
+import { buildStreamHtml, parseStreamLine, type StreamEvent } from "../src/streamFeed";
 import { signalsSummary } from "../src/statusBar";
 import { parseEnvelopeLine, reduceToSnapshot, reduceToTrends } from "../src/coaching/derive";
 import { buildCoachingInsights } from "../src/coaching/insights";
 import { renderCoachingHtml } from "../src/coaching/render";
 import { demoScene } from "../src/visualizer/demo";
 import { SCENE_CSS, SCENE_BODY } from "../src/visualizer/chrome";
-import { sampleTelemetryLines, sampleCoachingLines, sampleEvents, heavySummary, cleanSummary } from "./fixtures";
+import { sampleTelemetryLines, sampleCoachingLines, sampleStreamLines, sampleEvents, heavySummary, cleanSummary } from "./fixtures";
 
 // VS Code webview theme variables (dark-ish) so server-rendered HTML that styles
 // itself with var(--vscode-*) looks right in a plain browser.
@@ -49,6 +50,31 @@ fs.mkdirSync(outDir, { recursive: true });
 const events = sampleTelemetryLines
   .map(parseLine)
   .filter((e): e is NonNullable<typeof e> => e !== null);
+
+// Stream panel: group the parsed events by session, then render the
+// auto-followed session — whichever produced the newest event — exactly as the
+// live StreamController does.
+const streamEvents = sampleStreamLines
+  .map(parseStreamLine)
+  .filter((e): e is StreamEvent => e !== null);
+const streamBuf = (() => {
+  const bySession = new Map<string, StreamEvent[]>();
+  for (const e of streamEvents) {
+    const list = bySession.get(e.sessionKey) ?? [];
+    list.push(e);
+    bySession.set(e.sessionKey, list);
+  }
+  let best: { key: string; tool: string; events: StreamEvent[] } | undefined;
+  let newest = -Infinity;
+  for (const [key, list] of bySession) {
+    const activity = Math.max(...list.map((e) => Date.parse(e.capturedAt) || 0));
+    if (activity >= newest) {
+      newest = activity;
+      best = { key, tool: list[list.length - 1].tool, events: list };
+    }
+  }
+  return best;
+})();
 
 // Cost breakdown panel in its main states: a heavy session (every tip + edge
 // case fires), a lean clean session, the zero-state landing, and an unpriced
@@ -83,6 +109,9 @@ const pages: Record<string, string> = {
   "coaching-empty.html": themed(renderCoachingHtml(undefined), true),
   "telemetry.html": themed(buildFeedHtml(events), true),
   "telemetry-empty.html": themed(buildFeedHtml([]), true),
+  "stream.html": themed(buildStreamHtml(streamBuf, false), true),
+  "stream-pinned.html": themed(buildStreamHtml(streamBuf, true), true),
+  "stream-empty.html": themed(buildStreamHtml(undefined, false), true),
   "landing.html": themed(landingHtml(), false),
   "tooltip.html": themed(
     `<h3>Status-bar tooltip headline <code>signalsSummary()</code></h3>
