@@ -3,10 +3,9 @@ import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 
-// Find the panel webview whose inner frame contains `text`. Several PromptConduit
-// views (Stream, Telemetry, Coaching) render webviews in the same panel, so
-// selecting by DOM order (`.first()`) is fragile — it shifts when views are added
-// or reordered. Scan by content instead so each spec targets its own view.
+// Find the webview whose inner frame contains `text`. Multiple PromptConduit
+// surfaces render webviews in the workbench, so selecting by DOM order
+// (`.first()`) is fragile. Scan by content instead so each spec targets its own.
 async function webviewWithText(win: Page, text: string, timeoutMs: number) {
   const deadline = Date.now() + timeoutMs;
   let lastErr: unknown;
@@ -28,10 +27,9 @@ async function webviewWithText(win: Page, text: string, timeoutMs: number) {
   throw new Error(`No webview containing "${text}" found within ${timeoutMs}ms${lastErr ? ` (last: ${lastErr})` : ""}`);
 }
 
-// End-to-end test of the docked Stream panel, driving the REAL Cursor editor.
-//
-// Same harness as telemetry-panel.spec.ts (CI only, see e2e-cursor.yml): a temp
-// HOME with a seeded events.jsonl gives deterministic input with no CLI run.
+// End-to-end test of the Stream editor-tab panel, driving the REAL Cursor
+// editor (CI only, see e2e-cursor.yml): a temp HOME with a seeded v2
+// events.jsonl gives deterministic input with no CLI run.
 // The Stream panel groups events by session and follows the most-recently-active
 // one, so we seed three sessions with increasing timestamps — the Cursor "tab-B"
 // conversation is newest, so it must be the followed (auto-following) session,
@@ -46,23 +44,26 @@ function writeSeededHome(): string {
   fs.mkdirSync(dir, { recursive: true });
   const base = Date.now();
   const at = (offsetSec: number) => new Date(base + offsetSec * 1000).toISOString();
+  let seq = 0;
   const events = [
     // claude-code session cc-1 (oldest)
-    { tool: "claude-code", hook_event: "UserPromptSubmit", np: { session_id: "cc-1" }, ts: at(0) },
+    { tool: "claude-code", hook_event: "UserPromptSubmit", session: "cc-1", raw: {}, ts: at(0) },
     // cursor tab-A
-    { tool: "cursor", hook_event: "beforeShellExecution", np: { conversation_id: "tab-A", session_id: "sess-A" }, ts: at(10) },
+    { tool: "cursor", hook_event: "beforeShellExecution", session: "sess-A", raw: { conversation_id: "tab-A" }, ts: at(10) },
     // cursor tab-B (newest → followed)
-    { tool: "cursor", hook_event: "beforeSubmitPrompt", np: { conversation_id: "tab-B", session_id: "sess-B" }, ts: at(20) },
-    { tool: "cursor", hook_event: "afterAgentResponse", np: { conversation_id: "tab-B", session_id: "sess-B" }, ts: at(25) },
+    { tool: "cursor", hook_event: "beforeSubmitPrompt", session: "sess-B", raw: { conversation_id: "tab-B" }, ts: at(20) },
+    { tool: "cursor", hook_event: "afterAgentResponse", session: "sess-B", raw: { conversation_id: "tab-B" }, ts: at(25) },
   ].map((e) =>
     JSON.stringify({
-      envelope_version: "1.2",
+      schema: 2,
+      event_id: `e2e-evt-${++seq}`,
+      session_id: e.session,
       cli_version: "e2e",
       tool: e.tool,
       hook_event: e.hook_event,
       captured_at: e.ts,
-      native_payload: e.np,
-      enrichment: { git: { repo_name: "demo-repo", branch: "main" } },
+      raw_event: { session_id: e.session, ...e.raw },
+      enrichments: { vcs: { repo: "promptconduit/demo-repo", branch: "main" } },
     }),
   );
   fs.writeFileSync(path.join(dir, "events.jsonl"), events.join("\n") + "\n");
@@ -125,7 +126,7 @@ test("Stream panel follows the most-recently-active session in Cursor", async ()
   await win.waitForTimeout(1_000);
   await win.screenshot({ path: "out/screenshots/stream-01-cursor-loaded.png" });
 
-  // Focus our docked view via the command palette.
+  // Open the Stream editor tab via the command palette.
   await win.keyboard.press("F1");
   await win.locator(".quick-input-widget").waitFor({ timeout: 15_000 });
   await win.keyboard.type("PromptConduit: Show Stream Panel");
@@ -134,8 +135,8 @@ test("Stream panel follows the most-recently-active session in Cursor", async ()
   await win.waitForTimeout(3_000);
   await win.screenshot({ path: "out/screenshots/stream-02-panel-opened.png" });
 
-  // Grab the Stream view's webview by content (not DOM order — the panel hosts
-  // several PromptConduit webviews). The followed session is tab-B (newest).
+  // Grab the Stream webview by content (not DOM order). The followed session is
+  // tab-B (newest).
   const webview = await webviewWithText(win, "auto-following", 30_000);
   await expect(webview.getByText("auto-following")).toBeVisible();
   await expect(webview.getByText("afterAgentResponse")).toBeVisible();

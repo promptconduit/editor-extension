@@ -10,7 +10,7 @@ from a headless shell — here it becomes a downloadable CI artifact.
 CI only (Cursor + xvfb don't run on macOS): trigger the **E2E (Cursor)** workflow
 (`.github/workflows/e2e-cursor.yml`). Screenshots land in the
 `cursor-e2e-artifacts` artifact (uploaded even on failure):
-`01-cursor-loaded.png`, `02-panel-opened.png`, `telemetry-panel.png`.
+`stream-01-cursor-loaded.png` … `stream-04-webview-frame.png`.
 
 ## How it works
 
@@ -52,7 +52,7 @@ unauthenticated CI profile, Cursor paints a full-window "Log In / Sign Up" gate
 over the workbench that `workbench.startupEditor:none` + Escape do **not**
 dismiss. The panel still renders in the DOM underneath (hence the green
 assertions), but `screenshot()` captures the occluding login pixels — so
-`telemetry-panel.png` shows the login screen, not the panel.
+the panel screenshots show the login screen, not the panel.
 
 To get pixel screenshots in Cursor you'd need to **authenticate it in CI** —
 inject a Cursor auth/session token (as a secret) into the user-data-dir before
