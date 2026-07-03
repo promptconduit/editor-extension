@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.12.0
+
+- **Envelope v2 — one file, one schema (breaking).** Every surface now reads
+  the CLI's v2 envelopes from `~/.promptconduit/events.jsonl`: per-request cost
+  arrives as the `cost` enrichment on Stop events, so the
+  `promptconduit cost watch --json` subprocess (and its separate wire schema)
+  is gone. Requires CLI ≥ 0.9 (envelope v2); pre-v2 log lines are skipped.
+- **Multi-session AI Cost Breakdown.** The breakdown panel now covers EVERY
+  tracked session — Claude Code and Cursor side by side. The hero sums the
+  counterfactual API cost across sessions; a new **By session** section lists
+  each one (tool badge, workspace, request count, total) with expandable
+  per-prompt rows and per-model tables. Session totals are accumulated locally
+  and survive editor restarts (bounded history read on startup).
+- **Panels moved to editor tabs.** The bottom-panel "PromptConduit" container
+  is gone. **Stream** (now with a Repo column — the old Telemetry view is
+  folded in) and **Agent Coaching** open as editor tabs like the Cost
+  Breakdown; Stream's pin/follow moved into in-panel links, and the `$(pulse)
+  Stream` status-bar button remains the entry point.
+- Stream rows show `repo @ branch` from the envelope's `vcs` enrichment
+  (normalized provider/repo/PR links computed by the CLI).
+
 ## 0.11.0
 
 - **Bottom-right "Stream" button.** A new `$(pulse) Stream` item in the status

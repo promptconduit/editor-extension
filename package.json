@@ -2,7 +2,7 @@
   "name": "promptconduit",
   "displayName": "PromptConduit",
   "description": "Local, real-time visibility into your AI coding sessions — live token cost in the status bar, a 3D Orchestration Theater that replays how your agents work, and an offline Agent Coaching report. 100% local.",
-  "version": "0.11.1",
+  "version": "0.12.0",
   "publisher": "promptconduit",
   "license": "MIT",
   "engines": {
@@ -44,10 +44,6 @@
         "title": "PromptConduit: Show Cost Breakdown"
       },
       {
-        "command": "promptconduit.events.showFeed",
-        "title": "PromptConduit: Show Telemetry Panel"
-      },
-      {
         "command": "promptconduit.coaching.showTab",
         "title": "PromptConduit: Show Agent Coaching"
       },
@@ -74,51 +70,6 @@
         "title": "PromptConduit: Restore AI Sessions"
       }
     ],
-    "menus": {
-      "view/title": [
-        {
-          "command": "promptconduit.stream.pinSession",
-          "when": "view == promptconduit.stream",
-          "group": "navigation"
-        },
-        {
-          "command": "promptconduit.stream.followActive",
-          "when": "view == promptconduit.stream",
-          "group": "navigation"
-        }
-      ]
-    },
-    "viewsContainers": {
-      "panel": [
-        {
-          "id": "promptconduitTelemetry",
-          "title": "PromptConduit",
-          "icon": "resources/telemetry.svg"
-        }
-      ]
-    },
-    "views": {
-      "promptconduitTelemetry": [
-        {
-          "id": "promptconduit.stream",
-          "name": "Stream",
-          "type": "webview",
-          "contextualTitle": "PromptConduit Stream"
-        },
-        {
-          "id": "promptconduit.telemetry",
-          "name": "Telemetry",
-          "type": "webview",
-          "contextualTitle": "PromptConduit Telemetry"
-        },
-        {
-          "id": "promptconduit.coaching",
-          "name": "Coaching",
-          "type": "webview",
-          "contextualTitle": "PromptConduit Agent Coaching"
-        }
-      ]
-    },
     "configuration": {
       "title": "PromptConduit",
       "properties": {
@@ -130,7 +81,7 @@
         "promptconduit.cost.binaryPath": {
           "type": "string",
           "default": "",
-          "description": "Path to the promptconduit CLI. Leave blank to auto-detect on PATH and common Homebrew locations."
+          "description": "Path to the promptconduit CLI (used by session restore). Leave blank to auto-detect on PATH and common Homebrew locations."
         },
         "promptconduit.visualizer.githubEnrichment": {
           "type": "string",

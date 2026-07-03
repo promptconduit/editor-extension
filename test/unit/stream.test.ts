@@ -8,12 +8,20 @@ import {
 } from "../../src/streamFeed";
 import { sampleStreamLines } from "../../dev/fixtures";
 
-function envelope(np: Record<string, unknown>, extra: Record<string, unknown> = {}): string {
+function envelope(
+  ids: { session_id?: string; conversation_id?: string },
+  extra: Record<string, unknown> = {},
+): string {
   return JSON.stringify({
+    schema: 2,
+    event_id: "evt-1",
+    ...(ids.session_id ? { session_id: ids.session_id } : {}),
     tool: "cursor",
     hook_event: "beforeSubmitPrompt",
     captured_at: "2026-06-30T17:00:00Z",
-    native_payload: np,
+    cli_version: "dev",
+    raw_event: { ...(ids.conversation_id !== undefined ? { conversation_id: ids.conversation_id } : {}) },
+    enrichments: { vcs: { repo: "promptconduit/cli", branch: "main" } },
     ...extra,
   });
 }
@@ -24,6 +32,8 @@ function mk(p: Partial<StreamEvent>): StreamEvent {
     tool: "cursor",
     hookEvent: "beforeSubmitPrompt",
     capturedAt: "2026-06-30T17:00:00Z",
+    repo: "promptconduit/cli",
+    branch: "main",
     ...p,
   };
 }
@@ -39,20 +49,26 @@ describe("parseStreamLine", () => {
     expect(parseStreamLine(envelope({ conversation_id: "", session_id: "cc-1" }))?.sessionKey).toBe("cc-1");
   });
 
-  it("extracts tool, hook event, and captured_at", () => {
+  it("extracts tool, hook event, captured_at, and repo/branch from vcs", () => {
     const ev = parseStreamLine(
       envelope({ session_id: "s" }, { tool: "claude-code", hook_event: "PreToolUse", captured_at: "2026-06-30T18:00:00Z" }),
     );
-    expect(ev).toMatchObject({ tool: "claude-code", hookEvent: "PreToolUse", capturedAt: "2026-06-30T18:00:00Z" });
+    expect(ev).toMatchObject({
+      tool: "claude-code",
+      hookEvent: "PreToolUse",
+      capturedAt: "2026-06-30T18:00:00Z",
+      repo: "promptconduit/cli",
+      branch: "main",
+    });
   });
 
-  it("returns null for blank, malformed, non-object, or session-less lines", () => {
+  it("returns null for blank, malformed, non-object, pre-v2, or session-less lines", () => {
     expect(parseStreamLine("")).toBeNull();
     expect(parseStreamLine("   ")).toBeNull();
     expect(parseStreamLine("{not json")).toBeNull();
     expect(parseStreamLine("42")).toBeNull();
     expect(parseStreamLine(envelope({}))).toBeNull(); // no session key
-    expect(parseStreamLine(JSON.stringify({ tool: "cursor" }))).toBeNull(); // no native_payload
+    expect(parseStreamLine(JSON.stringify({ tool: "cursor", native_payload: { session_id: "s" } }))).toBeNull(); // v1 line
   });
 });
 

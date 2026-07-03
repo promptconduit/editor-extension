@@ -1,10 +1,33 @@
 import { describe, it, expect } from "vitest";
-import { renderBreakdownHtml } from "../../src/panel";
+import { renderBreakdownHtml, BreakdownView } from "../../src/panel";
+import { ConversationView } from "../../src/state";
 import { cleanSummary, heavySummary, sampleEvents } from "../../dev/fixtures";
 import type { CostEvent, SessionSummary } from "../../src/types";
 
+function conv(p: {
+  key: string;
+  summary: SessionSummary;
+  tool?: string;
+  lastEvent?: CostEvent;
+  recent?: CostEvent[];
+  lastActivity?: number;
+}): ConversationView {
+  return {
+    key: p.key,
+    tool: p.tool ?? p.summary.tool,
+    summary: p.summary,
+    lastEvent: p.lastEvent,
+    recent: p.recent ?? [],
+    lastActivity: p.lastActivity ?? Date.parse(p.summary.updated_at) ?? 0,
+  };
+}
+
+function view(conversations: ConversationView[], activeKey?: string): BreakdownView {
+  return { conversations, activeKey: activeKey ?? conversations[0]?.key };
+}
+
 describe("renderBreakdownHtml — zero state", () => {
-  const html = renderBreakdownHtml(undefined, undefined, []);
+  const html = renderBreakdownHtml(view([]));
 
   it("shows the landing document when nothing has happened yet", () => {
     expect(html).toContain("AI Session Cost");
@@ -18,7 +41,9 @@ describe("renderBreakdownHtml — zero state", () => {
 });
 
 describe("renderBreakdownHtml — priced session", () => {
-  const html = renderBreakdownHtml(heavySummary, sampleEvents[2], sampleEvents);
+  const html = renderBreakdownHtml(
+    view([conv({ key: "s-heavy", summary: heavySummary, lastEvent: sampleEvents[2], recent: sampleEvents })]),
+  );
 
   it("leads with the counterfactual API-cost framing", () => {
     expect(html).toContain("This session would cost");
@@ -28,6 +53,7 @@ describe("renderBreakdownHtml — priced session", () => {
   });
 
   it("renders every section of the breakdown", () => {
+    expect(html).toContain("By session");
     expect(html).toContain("Cost per prompt");
     expect(html).toContain("What's driving your cost");
     expect(html).toContain("Make it cheaper");
@@ -50,10 +76,39 @@ describe("renderBreakdownHtml — priced session", () => {
   });
 });
 
+describe("renderBreakdownHtml — multiple sessions", () => {
+  const html = renderBreakdownHtml(
+    view(
+      [
+        conv({ key: "s2", summary: cleanSummary, lastEvent: sampleEvents[2], recent: [sampleEvents[2]] }),
+        conv({ key: "s-heavy", summary: heavySummary, recent: sampleEvents.slice(0, 2) }),
+      ],
+      "s2",
+    ),
+  );
+
+  it("sums the hero across every session", () => {
+    // 0.92 + 0.21 = 1.13
+    expect(html).toContain("$1.13");
+    expect(html).toContain("These 2 sessions would cost");
+  });
+
+  it("shows one card per session with both tool badges", () => {
+    expect(html).toContain("Cursor");
+    expect(html).toContain("Claude Code");
+    expect((html.match(/details class="session"/g) ?? []).length).toBe(2);
+  });
+
+  it("marks the active session and opens its card", () => {
+    expect(html).toContain("active-pill");
+    expect(html).toContain(`details class="session" open`);
+  });
+});
+
 describe("renderBreakdownHtml — tool awareness", () => {
   it("frames a Cursor session against generic API rates and the Cursor sub", () => {
     const cursor: SessionSummary = { ...cleanSummary, tool: "cursor" };
-    const html = renderBreakdownHtml(cursor, undefined, []);
+    const html = renderBreakdownHtml(view([conv({ key: "c", summary: cursor })]));
     expect(html).toContain("API pay-as-you-go rates");
     expect(html).not.toContain("Claude API pay-as-you-go rates");
   });
@@ -70,9 +125,9 @@ describe("renderBreakdownHtml — unpriced session", () => {
       ],
       signals: undefined,
     };
-    const html = renderBreakdownHtml(unpriced, undefined, []);
+    const html = renderBreakdownHtml(view([conv({ key: "u", summary: unpriced })]));
     expect(html).toContain("Unpriced");
-    expect(html).toContain("Tokens tracked this session");
+    expect(html).toContain("Tokens tracked");
     expect(html).toContain("Reading these numbers");
   });
 });
@@ -84,7 +139,9 @@ describe("renderBreakdownHtml — escaping", () => {
       model: "<script>alert(1)</script>",
       request_id: "evil-1",
     };
-    const html = renderBreakdownHtml(heavySummary, evil, [evil]);
+    const html = renderBreakdownHtml(
+      view([conv({ key: "e", summary: heavySummary, lastEvent: evil, recent: [evil] })]),
+    );
     expect(html).toContain("&lt;script&gt;");
     expect(html).not.toContain("<script>alert(1)</script>");
   });

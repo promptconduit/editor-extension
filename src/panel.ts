@@ -1,9 +1,17 @@
 import * as vscode from "vscode";
+import { ConversationView } from "./state";
 import { CostEvent, SessionSummary, ToolId, ToolSummary } from "./types";
 import { buildTips } from "./tips";
 import { buildEdgeCases } from "./edgeCases";
 import { landingHtml } from "./landing";
 import { anchorHtml, escapeHtml, learnMoreSectionHtml } from "./html";
+
+/** Everything the breakdown renders: every conversation plus the active key. */
+export interface BreakdownView {
+  /** Conversations, most-recently-active first. */
+  conversations: ConversationView[];
+  activeKey?: string;
+}
 
 // Full precision for per-request and per-model rows.
 function fmtUSD(n: number): string {
@@ -36,16 +44,23 @@ function toolName(tool: ToolId): string {
   }
 }
 
-// "Claude API pay-as-you-go rates" vs the tool-agnostic phrasing for others.
+// "Claude API pay-as-you-go rates" vs the tool-agnostic phrasing for others
+// (Cursor, or a mix of tools — the empty-string primary).
 function ratesLabel(tool: ToolId): string {
-  return tool === "cursor"
-    ? "API pay-as-you-go rates"
-    : "Claude API pay-as-you-go rates";
+  return tool === "claude-code"
+    ? "Claude API pay-as-you-go rates"
+    : "API pay-as-you-go rates";
 }
 
 // The subscription a user is likely on for this tool.
 function subscriptionName(tool: ToolId): string {
-  return tool === "cursor" ? "Cursor" : "Claude";
+  if (tool === "cursor") {
+    return "Cursor";
+  }
+  if (tool === "claude-code") {
+    return "Claude";
+  }
+  return "Claude or Cursor";
 }
 
 // How accurate the token counts are, as a short badge label.
@@ -86,25 +101,30 @@ function totalTokens(s: SessionSummary | undefined): number {
 // ---- section renderers (pure; data in, HTML out) ----
 
 // The hero: the counterfactual API cost framed as "what this would have cost
-// without your subscription" — the headline ask. Priced sessions show the
-// dollar figure; a tokens-but-no-rate session shows "Unpriced" and points at the
+// without your subscription" — the headline ask, now summed ACROSS every
+// tracked session (Claude Code and Cursor together). Priced usage shows the
+// dollar figure; tokens-but-no-rate shows "Unpriced" and points at the
 // edge-case section rather than a misleading $0.00.
-function heroHtml(session: SessionSummary | undefined, lastEvent: CostEvent | undefined, tool: ToolId): string {
-  const cost = session?.totals.cost_total ?? 0;
-  const tokens = totalTokens(session);
-  const source = session?.source ?? lastEvent?.source ?? "—";
+function heroHtml(view: BreakdownView): string {
+  const totalCost = view.conversations.reduce((s, c) => s + c.summary.totals.cost_total, 0);
+  const tokens = view.conversations.reduce((s, c) => s + totalTokens(c.summary), 0);
+  const tools = [...new Set(view.conversations.map((c) => c.tool).filter(Boolean))];
+  const sources = [...new Set(view.conversations.map((c) => c.summary.source).filter(Boolean))];
+  const n = view.conversations.length;
+  const scope = n === 1 ? "This session" : `These ${n} sessions`;
   const badges =
-    `<span class="badge">${escapeHtml(toolName(tool))}</span>` +
-    `<span class="badge subtle">${escapeHtml(sourceLabel(source))}</span>`;
+    tools.map((t) => `<span class="badge">${escapeHtml(toolName(t))}</span>`).join("") +
+    sources.map((s) => `<span class="badge subtle">${escapeHtml(sourceLabel(s))}</span>`).join("");
+  const primaryTool: ToolId = tools.length === 1 ? tools[0] : "";
 
-  if (cost > 0) {
+  if (totalCost > 0) {
     return `
     <header class="hero">
       <div class="hero-badges">${badges}</div>
-      <p class="hero-eyebrow">This session would cost</p>
-      <div class="hero-amount">${fmtUSDHero(cost)}</div>
-      <p class="hero-sub">at ${escapeHtml(ratesLabel(tool))}.</p>
-      <p class="hero-note">If you're on a ${escapeHtml(subscriptionName(tool))} subscription, this usage
+      <p class="hero-eyebrow">${escapeHtml(scope)} would cost</p>
+      <div class="hero-amount">${fmtUSDHero(totalCost)}</div>
+      <p class="hero-sub">at ${escapeHtml(ratesLabel(primaryTool))}.</p>
+      <p class="hero-note">If you're on a ${escapeHtml(subscriptionName(primaryTool))} subscription, this usage
         is already included — this is what the same tokens would bill à la carte.</p>
     </header>`;
   }
@@ -112,7 +132,7 @@ function heroHtml(session: SessionSummary | undefined, lastEvent: CostEvent | un
   return `
     <header class="hero">
       <div class="hero-badges">${badges}</div>
-      <p class="hero-eyebrow">Tokens tracked this session</p>
+      <p class="hero-eyebrow">Tokens tracked</p>
       <div class="hero-amount muted">Unpriced</div>
       <p class="hero-sub">${num(tokens)} tokens, but no rate to turn them into dollars —
         see <em>Reading these numbers</em> below.</p>
@@ -163,6 +183,64 @@ function perPromptHtml(recent: CostEvent[]): string {
       <p class="muted small">Each row is one request to the model, newest first. The bar shows its
         share of the most expensive prompt — click a row for the token split.</p>
       ${rows}
+    </section>`;
+}
+
+// Short, human-friendly session id (keep the tail, the most distinctive part).
+function shortKey(key: string): string {
+  return key.length > 12 ? `…${key.slice(-8)}` : key;
+}
+
+function lastActiveLabel(ms: number): string {
+  if (!Number.isFinite(ms) || ms <= 0) {
+    return "";
+  }
+  return new Date(ms).toLocaleTimeString();
+}
+
+// One conversation's card: header line (tool, workspace, id, totals) plus an
+// expandable body with its per-prompt rows and per-model table. The active
+// session renders open; the rest collapsed.
+function sessionCardHtml(c: ConversationView, isActive: boolean): string {
+  const s = c.summary;
+  const cost = s.totals.cost_total > 0 ? fmtUSDHero(s.totals.cost_total) : "unpriced";
+  const workspace = c.lastEvent?.cwd_base ? escapeHtml(c.lastEvent.cwd_base) : "";
+  const requests = c.recent.length;
+  const when = lastActiveLabel(c.lastActivity);
+  const activePill = isActive ? `<span class="badge active-pill">active</span>` : "";
+  const meta = [workspace, `${requests} request${requests === 1 ? "" : "s"}`, when]
+    .filter(Boolean)
+    .join(" · ");
+  return `
+    <details class="session"${isActive ? " open" : ""}>
+      <summary>
+        <span class="session-head">
+          <span class="badge">${escapeHtml(toolName(c.tool))}</span>
+          <span class="session-cost">${cost}</span>
+          <span class="muted">${meta}</span>
+          <span class="muted session-id">${escapeHtml(shortKey(c.key))}</span>
+          ${activePill}
+        </span>
+      </summary>
+      ${perPromptHtml(c.recent)}
+      ${byModelHtml(s)}
+    </details>`;
+}
+
+// Every tracked session, active first — the multi-session core of the panel.
+function sessionsHtml(view: BreakdownView): string {
+  if (view.conversations.length === 0) {
+    return "";
+  }
+  const cards = view.conversations
+    .map((c) => sessionCardHtml(c, c.key === view.activeKey))
+    .join("");
+  return `
+    <section>
+      <h2>By session</h2>
+      <p class="muted small">Every session PromptConduit has tracked locally, most recent first —
+        Claude Code and Cursor side by side. Expand one for its prompts and models.</p>
+      ${cards}
     </section>`;
 }
 
@@ -278,28 +356,31 @@ function byModelHtml(session: SessionSummary | undefined): string {
 /**
  * Pure renderer for the cost breakdown document. Exported so the webview preview
  * and unit tests can render it without a live editor. Returns the zero-state
- * landing document when the active conversation has produced nothing yet.
+ * landing document when nothing has been tracked yet.
+ *
+ * Multi-session: the hero sums every conversation; "By session" lists them all
+ * (Claude Code + Cursor); the educational sections (drivers/tips/edge cases)
+ * are computed from the ACTIVE session, where advice is actionable.
  */
-export function renderBreakdownHtml(
-  session: SessionSummary | undefined,
-  lastEvent: CostEvent | undefined,
-  recent: CostEvent[] = [],
-): string {
-  if (!session && !lastEvent && recent.length === 0) {
+export function renderBreakdownHtml(view: BreakdownView): string {
+  if (view.conversations.length === 0) {
     return landingDocument();
   }
-  const tool: ToolId = session?.tool ?? lastEvent?.tool ?? "";
+  const active =
+    view.conversations.find((c) => c.key === view.activeKey) ?? view.conversations[0];
+  const session = active.summary;
+  const lastEvent = active.lastEvent;
+  const tool: ToolId = active.tool ?? "";
   const body = `
   <main class="report">
-    ${heroHtml(session, lastEvent, tool)}
-    ${perPromptHtml(recent)}
+    ${heroHtml(view)}
+    ${sessionsHtml(view)}
     ${driversHtml(session)}
     ${tipsHtml(session, lastEvent)}
     ${edgeCasesHtml(session, lastEvent)}
-    ${byModelHtml(session)}
     ${learnMoreSectionHtml(tool)}
     <footer class="muted">
-      Computed entirely on your machine from local transcripts. None of your data is sent anywhere.
+      Computed entirely on your machine from the local event log. None of your data is sent anywhere.
     </footer>
   </main>`;
   return documentShell(body);
@@ -350,6 +431,18 @@ const STYLES = `
   .hero-amount.muted { font-size: 1.8rem; }
   .hero-sub { margin: 0.2rem 0; }
   .hero-note { margin: 0.5rem 0 0; max-width: 38rem; color: var(--vscode-descriptionForeground); font-size: 0.9rem; }
+
+  /* Sessions */
+  details.session { border: 1px solid var(--vscode-panel-border); border-radius: 0.4rem;
+                    padding: 0.4rem 0.8rem; margin-bottom: 0.55rem;
+                    background: var(--vscode-textBlockQuote-background); }
+  details.session > summary { cursor: pointer; }
+  .session-head { display: inline-flex; gap: 0.55rem; align-items: baseline; flex-wrap: wrap; }
+  .session-cost { font-weight: 650; font-variant-numeric: tabular-nums; }
+  .session-id { font-size: 0.78rem; }
+  .badge.active-pill { background: var(--vscode-charts-green, #3fb950); color: #fff; }
+  details.session section { margin-left: 0.2rem; }
+  details.session h2 { font-size: 0.85rem; margin: 1rem 0 0.4rem; }
 
   /* Cost per prompt */
   details.prompt { border-bottom: 1px solid var(--vscode-panel-border); padding: 0.5rem 0; }
@@ -418,14 +511,10 @@ export class CostPanel {
   private readonly panel: vscode.WebviewPanel;
   private disposed = false;
 
-  static show(
-    session: SessionSummary | undefined,
-    lastEvent: CostEvent | undefined,
-    recent: CostEvent[] = [],
-  ): void {
+  static show(view: BreakdownView): void {
     if (CostPanel.current && !CostPanel.current.disposed) {
       CostPanel.current.panel.reveal(vscode.ViewColumn.Active);
-      CostPanel.current.update(session, lastEvent, recent);
+      CostPanel.current.update(view);
       return;
     }
     const panel = vscode.window.createWebviewPanel(
@@ -435,17 +524,13 @@ export class CostPanel {
       { enableScripts: false, retainContextWhenHidden: true },
     );
     CostPanel.current = new CostPanel(panel);
-    CostPanel.current.update(session, lastEvent, recent);
+    CostPanel.current.update(view);
   }
 
   /** Push fresh data into an already-open panel (called on new records). */
-  static refresh(
-    session: SessionSummary | undefined,
-    lastEvent: CostEvent | undefined,
-    recent: CostEvent[] = [],
-  ): void {
+  static refresh(view: BreakdownView): void {
     if (CostPanel.current && !CostPanel.current.disposed) {
-      CostPanel.current.update(session, lastEvent, recent);
+      CostPanel.current.update(view);
     }
   }
 
@@ -459,11 +544,7 @@ export class CostPanel {
     });
   }
 
-  private update(
-    session: SessionSummary | undefined,
-    lastEvent: CostEvent | undefined,
-    recent: CostEvent[],
-  ): void {
-    this.panel.webview.html = renderBreakdownHtml(session, lastEvent, recent);
+  private update(view: BreakdownView): void {
+    this.panel.webview.html = renderBreakdownHtml(view);
   }
 }

@@ -2,7 +2,7 @@ import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 
-// Raw line tail of the local event log. Unlike eventsFeed.ts's EventsTail (which
+// Raw line tail of the local event log. Unlike the per-panel TailReader (which
 // only ever keeps the last ~200 lines for the live telemetry feed), this reads a
 // BOUNDED FULL HISTORY once on startup so the coaching tab can build real trends
 // offline, then tails appended bytes for live updates. It emits raw JSONL lines;

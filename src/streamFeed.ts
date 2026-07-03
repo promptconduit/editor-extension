@@ -1,19 +1,26 @@
 import * as vscode from "vscode";
 import { ConversationStore } from "./state";
+import { parseEnvelopeV2 } from "./envelope";
 import { TailReader } from "./visualizer/tailReader";
 import { eventsJsonlPath, logDisabled } from "./visualizer/paths";
 
 // Keep memory bounded — we only ever render the tail of one session.
 const MAX_EVENTS = 200;
-// Match statusBar.ts / eventsFeed.ts: coalesce bursty appends into one render.
+// Coalesce bursty appends into one render (matches statusBar.ts).
 const RENDER_THROTTLE_MS = 250;
 
-/** One raw event, scoped to the session that produced it. */
+const PIN_COMMAND = "promptconduit.stream.pinSession";
+const FOLLOW_COMMAND = "promptconduit.stream.followActive";
+
+/** One event, scoped to the session that produced it. */
 export interface StreamEvent {
   sessionKey: string;
   tool: string;
   hookEvent: string;
   capturedAt: string;
+  /** Repo slug + branch from the envelope's vcs enrichment ("" when absent). */
+  repo: string;
+  branch: string;
 }
 
 /** A session's live buffer plus the metadata the picker/header need. */
@@ -32,50 +39,31 @@ export interface SessionInfo {
   lastActivity: number;
 }
 
-// Parse one JSONL envelope line into a StreamEvent. Returns null for blanks,
-// malformed JSON, non-object lines, or envelopes with no resolvable session key,
-// so a single bad line never breaks the stream. Mirrors eventsFeed.parseLine but
-// additionally pulls the session/conversation id out of native_payload.
+// Parse one v2 envelope line into a StreamEvent. Returns null for blanks,
+// malformed JSON, pre-v2 lines, or envelopes with no resolvable session key,
+// so a single bad line never breaks the stream.
 export function parseStreamLine(line: string): StreamEvent | null {
-  const trimmed = line.trim();
-  if (!trimmed) {
+  const env = parseEnvelopeV2(line);
+  if (!env) {
     return null;
   }
-  let obj: unknown;
-  try {
-    obj = JSON.parse(trimmed);
-  } catch {
-    return null;
-  }
-  if (typeof obj !== "object" || obj === null) {
-    return null;
-  }
-  const rec = obj as {
-    tool?: unknown;
-    hook_event?: unknown;
-    captured_at?: unknown;
-    native_payload?: { conversation_id?: unknown; session_id?: unknown };
-  };
-  const np = rec.native_payload ?? {};
   // Same rule the status bar uses: Cursor's per-tab conversation_id when present,
-  // else the per-session session_id (Claude Code).
+  // else the envelope's session_id.
   const sessionKey = ConversationStore.key({
-    conversation_id: str(np.conversation_id),
-    session_id: str(np.session_id),
+    conversation_id: typeof env.raw.conversation_id === "string" ? env.raw.conversation_id : "",
+    session_id: env.sessionId,
   });
   if (!sessionKey) {
     return null;
   }
   return {
     sessionKey,
-    tool: str(rec.tool),
-    hookEvent: str(rec.hook_event),
-    capturedAt: str(rec.captured_at),
+    tool: env.tool,
+    hookEvent: env.hookEvent,
+    capturedAt: env.capturedAt,
+    repo: env.vcs.repo ?? "",
+    branch: env.vcs.branch ?? "",
   };
-}
-
-function str(v: unknown): string {
-  return typeof v === "string" ? v : "";
 }
 
 // Parse an ISO timestamp to epoch ms; NaN when absent/unparseable.
@@ -182,7 +170,7 @@ export class StreamState {
 /**
  * StreamController wires the pure StreamState to the live tail of events.jsonl
  * and a throttled HTML render. Host-agnostic: it pushes finished HTML to a sink.
- * Server-rendered (enableScripts:false).
+ * Server-rendered (enableScripts:false; pin/follow are command: links).
  */
 export class StreamController {
   private readonly tail: TailReader<StreamEvent>;
@@ -236,7 +224,7 @@ export class StreamController {
   }
 
   // Render now, then coalesce a single trailing render if more events arrive
-  // inside the throttle window (mirrors eventsFeed.ts).
+  // inside the throttle window.
   private scheduleRender(): void {
     if (this.throttle) {
       this.pending = true;
@@ -261,39 +249,58 @@ export class StreamController {
 }
 
 /**
- * StreamViewProvider hosts the live per-session stream as a docked WebviewView in
- * Cursor's bottom "PromptConduit" panel (view id `promptconduit.stream`). One
- * StreamController per resolved view, torn down when the view is disposed. The
- * pin / follow-active commands drive it via the small forwarding methods below.
+ * StreamPanel hosts the live per-session stream as an editor-tab webview (the
+ * same surface as the AI Cost Breakdown — the docked bottom-panel container was
+ * removed with envelope v2). A single reused panel; show() reveals it. Pin /
+ * Follow live as command: links in the rendered header since editor tabs have
+ * no view title bar.
  */
-export class StreamViewProvider implements vscode.WebviewViewProvider, vscode.Disposable {
-  public static readonly viewId = "promptconduit.stream";
-  private controller: StreamController | undefined;
+export class StreamPanel {
+  private static current: StreamPanel | undefined;
+  private readonly panel: vscode.WebviewPanel;
+  private readonly controller: StreamController;
+  private disposed = false;
 
-  resolveWebviewView(view: vscode.WebviewView): void {
-    view.webview.options = { enableScripts: false };
-    this.controller?.dispose();
-    const controller = new StreamController((html) => {
-      view.webview.html = html;
+  static show(): void {
+    if (StreamPanel.current && !StreamPanel.current.disposed) {
+      StreamPanel.current.panel.reveal(vscode.ViewColumn.Active);
+      return;
+    }
+    StreamPanel.current = new StreamPanel();
+  }
+
+  /** The open panel, if any (the pin/follow commands act on it). */
+  static get active(): StreamPanel | undefined {
+    return StreamPanel.current && !StreamPanel.current.disposed ? StreamPanel.current : undefined;
+  }
+
+  private constructor() {
+    this.panel = vscode.window.createWebviewPanel(
+      "promptconduitStream",
+      "PromptConduit Stream",
+      vscode.ViewColumn.Active,
+      {
+        enableScripts: false,
+        retainContextWhenHidden: true,
+        enableCommandUris: [PIN_COMMAND, FOLLOW_COMMAND],
+      },
+    );
+    this.controller = new StreamController((html) => {
+      this.panel.webview.html = html;
     });
-    this.controller = controller;
-    view.onDidDispose(() => {
-      controller.dispose();
-      if (this.controller === controller) {
-        this.controller = undefined;
+    this.panel.onDidDispose(() => {
+      this.disposed = true;
+      this.controller.dispose();
+      if (StreamPanel.current === this) {
+        StreamPanel.current = undefined;
       }
     });
-    controller.start();
+    this.controller.start();
   }
 
   /** Open a QuickPick of recent sessions and pin the chosen one. */
   async pinSession(): Promise<void> {
-    const controller = this.controller;
-    if (!controller) {
-      void vscode.window.showInformationMessage("Open the PromptConduit Stream panel first.");
-      return;
-    }
-    const sessions = controller.listSessions();
+    const sessions = this.controller.listSessions();
     if (sessions.length === 0) {
       void vscode.window.showInformationMessage("No sessions yet — run an AI coding session first.");
       return;
@@ -304,25 +311,16 @@ export class StreamViewProvider implements vscode.WebviewViewProvider, vscode.Di
         description: `${s.count} event${s.count === 1 ? "" : "s"}`,
         key: s.key,
       })),
-      { placeHolder: "Pin the Stream panel to a session (stops auto-following)" },
+      { placeHolder: "Pin the Stream to a session (stops auto-following)" },
     );
     if (pick) {
-      controller.pin(pick.key);
+      this.controller.pin(pick.key);
     }
   }
 
   /** Resume auto-following the most-recently-active session. */
   followActive(): void {
-    if (!this.controller) {
-      void vscode.window.showInformationMessage("Open the PromptConduit Stream panel first.");
-      return;
-    }
     this.controller.unpin();
-  }
-
-  dispose(): void {
-    this.controller?.dispose();
-    this.controller = undefined;
   }
 }
 
@@ -332,9 +330,9 @@ export function shortId(key: string): string {
   return key.length > 12 ? `…${key.slice(-8)}` : key;
 }
 
-// Build the stream HTML for the followed session. Newest-first, compact for the
-// bottom panel, script-free (server-rendered). `buf` is undefined when no session
-// is being followed yet (empty / disabled state).
+// Build the stream HTML for the followed session. Newest-first, script-free
+// (server-rendered; the pin/follow links are command: URIs the host allows).
+// `buf` is undefined when no session is being followed yet.
 export function buildStreamHtml(
   buf: { key: string; tool: string; events: StreamEvent[] } | undefined,
   pinned: boolean,
@@ -347,17 +345,21 @@ export function buildStreamHtml(
 <head>
 <meta charset="UTF-8" />
 <style>
-  body { font-family: var(--vscode-font-family); color: var(--vscode-editor-foreground); padding: 0.4rem 0.6rem; }
-  h1 { font-size: 0.95rem; margin: 0 0 0.15rem; }
+  body { font-family: var(--vscode-font-family); color: var(--vscode-editor-foreground); padding: 0.6rem 1rem; }
+  h1 { font-size: 1.05rem; margin: 0 0 0.15rem; }
   .muted { color: var(--vscode-descriptionForeground); }
   .pill { display: inline-block; font-size: 0.72rem; padding: 0.05rem 0.45rem; border-radius: 0.6rem;
           background: var(--vscode-badge-background); color: var(--vscode-badge-foreground); margin-left: 0.35rem; }
+  .actions { margin: 0.2rem 0 0; font-size: 0.85rem; }
+  .actions a { color: var(--vscode-textLink-foreground); text-decoration: none; margin-right: 1rem; }
+  .actions a:hover { text-decoration: underline; }
   table { border-collapse: collapse; width: 100%; margin-top: 0.5rem; }
   th, td { text-align: left; padding: 0.25rem 0.5rem; border-bottom: 1px solid var(--vscode-panel-border); vertical-align: top; }
   th { color: var(--vscode-descriptionForeground); font-weight: 600; position: sticky; top: 0; background: var(--vscode-editor-background); }
   td.time, th.time { white-space: nowrap; font-variant-numeric: tabular-nums; }
   .tool, .hook { display: inline-block; font-size: 0.78rem; padding: 0.1rem 0.5rem; border-radius: 0.5rem;
                  background: var(--vscode-badge-background); color: var(--vscode-badge-foreground); }
+  td.repo { font-size: 0.82rem; color: var(--vscode-descriptionForeground); }
   .empty { margin-top: 1rem; }
   code { background: var(--vscode-textCodeBlock-background); padding: 0.1rem 0.35rem; border-radius: 0.35rem; }
   footer { margin-top: 1rem; font-size: 0.8rem; }
@@ -373,13 +375,20 @@ export function buildStreamHtml(
 </html>`;
 }
 
+function actionsHtml(pinned: boolean): string {
+  const pin = `<a href="command:${PIN_COMMAND}">📌 Pin a session…</a>`;
+  const follow = pinned ? `<a href="command:${FOLLOW_COMMAND}">↻ Follow active session</a>` : "";
+  return `<p class="actions">${pin}${follow}</p>`;
+}
+
 function buildHeader(
   buf: { key: string; tool: string; events: StreamEvent[] } | undefined,
   pinned: boolean,
 ): string {
   if (!buf) {
     return `<h1>Live stream</h1>
-  <p class="muted">Following the most recently active AI session.</p>`;
+  <p class="muted">Following the most recently active AI session.</p>
+  ${actionsHtml(pinned)}`;
   }
   const tool = escape(buf.tool || "session");
   const id = escape(shortId(buf.key));
@@ -389,9 +398,17 @@ function buildHeader(
   return `<h1>${tool} <span class="muted">${id}</span> ${mode}</h1>
   <p class="muted">Live events for this session — newest first. ${
     pinned
-      ? "Use <em>Follow Active Session</em> to resume auto-switching."
+      ? "Use <em>Follow active session</em> to resume auto-switching."
       : "Switches as you work in another agent tab."
-  }</p>`;
+  }</p>
+  ${actionsHtml(pinned)}`;
+}
+
+function repoLabel(e: StreamEvent): string {
+  if (!e.repo) {
+    return "—";
+  }
+  return e.branch ? `${e.repo} @ ${e.branch}` : e.repo;
 }
 
 function rowsHtml(events: StreamEvent[]): string {
@@ -404,6 +421,7 @@ function rowsHtml(events: StreamEvent[]): string {
         <td class="time">${escape(fmtTime(e.capturedAt))}</td>
         <td><span class="tool">${escape(e.tool || "—")}</span></td>
         <td><span class="hook">${escape(e.hookEvent || "—")}</span></td>
+        <td class="repo">${escape(repoLabel(e))}</td>
       </tr>`,
     )
     .join("");
@@ -413,7 +431,7 @@ function tableHtml(rows: string): string {
   return `<table>
     <thead>
       <tr>
-        <th class="time">Time</th><th>Tool</th><th>Event</th>
+        <th class="time">Time</th><th>Tool</th><th>Event</th><th>Repo</th>
       </tr>
     </thead>
     <tbody>

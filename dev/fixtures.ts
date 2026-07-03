@@ -1,15 +1,14 @@
 // Shared sample data for unit tests, the webview preview, and `npm run dev`
 // seeding. Realistic enough to exercise the cost logic (tips/signals/state) and
-// the telemetry feed without running the CLI or a real AI session.
+// the panels without running the CLI or a real AI session. All envelope lines
+// are v2 (schema: 2) — the single payload shape everything reads.
 
-import { CostEvent, CostRecord, SessionSummary } from "../src/types";
+import { CostEvent, SessionSummary } from "../src/types";
 
-// ---------- cost feed (CostEvent / SessionSummary) ----------
+// ---------- cost model records (internal shapes) ----------
 
 function ev(p: Partial<CostEvent> & Pick<CostEvent, "session_id" | "request_id" | "ts">): CostEvent {
   return {
-    v: 2,
-    kind: "cost_event",
     tool: "cursor",
     model: "claude-4.5-sonnet",
     model_priced: true,
@@ -32,8 +31,6 @@ export const sampleEvents: CostEvent[] = [
 // A heavy session that trips every cost-reduction tip (low cache hit, lots of
 // fresh input, premium tier, high tool volume, an unpriced model).
 export const heavySummary: SessionSummary = {
-  v: 2,
-  kind: "session_summary",
   session_id: "s-heavy",
   tool: "claude-code",
   source: "exact",
@@ -57,8 +54,6 @@ export const heavySummary: SessionSummary = {
 
 // A lean, well-cached session that should produce NO tips.
 export const cleanSummary: SessionSummary = {
-  v: 2,
-  kind: "session_summary",
   session_id: "s-clean",
   tool: "cursor",
   source: "exact",
@@ -79,71 +74,122 @@ export const cleanSummary: SessionSummary = {
   },
 };
 
-export const sampleRecords: CostRecord[] = [...sampleEvents, heavySummary, cleanSummary];
+// ---------- v2 envelope lines (events.jsonl) ----------
 
-// ---------- telemetry feed (events.jsonl envelopes) ----------
+let eventSeq = 0;
 
-function envelope(tool: string, hookEvent: string, isoTs: string, repo: string, branch = "main") {
+interface EnvelopeOpts {
+  sessionId?: string;
+  promptId?: string;
+  raw?: Record<string, unknown>;
+  enrichments?: Record<string, unknown>;
+  repo?: string;
+  branch?: string;
+  worktree?: boolean;
+  cliVersion?: string;
+}
+
+/** Build one v2 events.jsonl line. */
+export function v2Envelope(tool: string, hookEvent: string, isoTs: string, opts: EnvelopeOpts = {}): string {
+  eventSeq += 1;
+  const enrichments: Record<string, unknown> = {
+    vcs: {
+      type: "github",
+      repo: opts.repo ?? "promptconduit/editor-extension",
+      branch: opts.branch ?? "main",
+      ...(opts.worktree ? { worktree: { is_worktree: true, path: "/worktrees/x" } } : {}),
+    },
+    trace: { trace_id: "ct".padEnd(32, "0"), span_id: "sp".padEnd(16, "0") },
+    env: { os: "darwin", arch: "arm64" },
+    ...(opts.enrichments ?? {}),
+  };
   return JSON.stringify({
-    envelope_version: "1.2",
-    cli_version: "dev",
+    schema: 2,
+    event_id: `evt-${String(eventSeq).padStart(4, "0")}`,
+    ...(opts.sessionId ? { session_id: opts.sessionId } : {}),
+    ...(opts.promptId ? { prompt_id: opts.promptId } : {}),
     tool,
     hook_event: hookEvent,
     captured_at: isoTs,
-    native_payload: {},
-    enrichment: { git: { repo_name: repo, branch } },
+    cli_version: opts.cliVersion ?? "dev",
+    raw_event: { ...(opts.sessionId ? { session_id: opts.sessionId } : {}), hook_event_name: hookEvent, ...(opts.raw ?? {}) },
+    enrichments,
   });
 }
 
-// Raw events.jsonl lines (newest last, as appended), for the Telemetry panel.
+// Raw events.jsonl lines (newest last, as appended).
 export const sampleTelemetryLines: string[] = [
-  envelope("claude-code", "SessionStart", "2026-06-27T17:00:00Z", "promptconduit"),
-  envelope("claude-code", "UserPromptSubmit", "2026-06-27T17:00:05Z", "promptconduit"),
-  envelope("claude-code", "PreToolUse", "2026-06-27T17:00:07Z", "promptconduit"),
-  envelope("claude-code", "PostToolUse", "2026-06-27T17:00:09Z", "promptconduit"),
-  envelope("cursor", "afterAgentResponse", "2026-06-27T17:01:10Z", "editor-extension", "feat/local-dx"),
-  envelope("claude-code", "Stop", "2026-06-27T17:01:30Z", "promptconduit"),
+  v2Envelope("claude-code", "SessionStart", "2026-06-27T17:00:00Z", { sessionId: "cc-t", repo: "promptconduit/platform" }),
+  v2Envelope("claude-code", "UserPromptSubmit", "2026-06-27T17:00:05Z", { sessionId: "cc-t", repo: "promptconduit/platform" }),
+  v2Envelope("claude-code", "PreToolUse", "2026-06-27T17:00:07Z", { sessionId: "cc-t", repo: "promptconduit/platform" }),
+  v2Envelope("claude-code", "PostToolUse", "2026-06-27T17:00:09Z", { sessionId: "cc-t", repo: "promptconduit/platform" }),
+  v2Envelope("cursor", "afterAgentResponse", "2026-06-27T17:01:10Z", { sessionId: "cur-t", branch: "feat/local-dx" }),
+  v2Envelope("claude-code", "Stop", "2026-06-27T17:01:30Z", { sessionId: "cc-t", repo: "promptconduit/platform" }),
 ];
 
 export const sampleTelemetryJsonl = sampleTelemetryLines.join("\n") + "\n";
 
 // ---------- stream panel (per-session envelopes) ----------
-// Like the telemetry lines, but each envelope carries a session key in
-// native_payload so the Stream panel can group + follow per session. Two Cursor
-// agent tabs (conversation_id) interleave with a Claude Code session (session_id);
-// tab-B produces the newest event, so it is the auto-followed session.
-
-function streamEnvelope(
-  tool: string,
-  hookEvent: string,
-  isoTs: string,
-  np: Record<string, unknown>,
-  repo = "editor-extension",
-  branch = "feat/live-stream-panel",
-): string {
-  return JSON.stringify({
-    envelope_version: "1.2",
-    cli_version: "dev",
-    tool,
-    hook_event: hookEvent,
-    captured_at: isoTs,
-    native_payload: np,
-    enrichment: { git: { repo_name: repo, branch } },
-  });
-}
+// Two Cursor agent tabs (conversation_id in raw_event) interleave with a Claude
+// Code session; tab-B produces the newest event, so it is the auto-followed one.
 
 export const sampleStreamLines: string[] = [
-  streamEnvelope("cursor", "beforeSubmitPrompt", "2026-06-30T17:00:00Z", { conversation_id: "tab-A", session_id: "sess-A" }),
-  streamEnvelope("cursor", "beforeShellExecution", "2026-06-30T17:00:04Z", { conversation_id: "tab-A", session_id: "sess-A" }),
-  streamEnvelope("claude-code", "UserPromptSubmit", "2026-06-30T17:00:10Z", { session_id: "cc-1" }),
-  streamEnvelope("claude-code", "PreToolUse", "2026-06-30T17:00:12Z", { session_id: "cc-1" }),
-  streamEnvelope("cursor", "beforeSubmitPrompt", "2026-06-30T17:01:00Z", { conversation_id: "tab-B", session_id: "sess-B" }),
-  streamEnvelope("cursor", "afterAgentResponse", "2026-06-30T17:01:20Z", { conversation_id: "tab-B", session_id: "sess-B" }),
+  v2Envelope("cursor", "beforeSubmitPrompt", "2026-06-30T17:00:00Z", { sessionId: "sess-A", raw: { conversation_id: "tab-A" } }),
+  v2Envelope("cursor", "beforeShellExecution", "2026-06-30T17:00:04Z", { sessionId: "sess-A", raw: { conversation_id: "tab-A" } }),
+  v2Envelope("claude-code", "UserPromptSubmit", "2026-06-30T17:00:10Z", { sessionId: "cc-1" }),
+  v2Envelope("claude-code", "PreToolUse", "2026-06-30T17:00:12Z", { sessionId: "cc-1" }),
+  v2Envelope("cursor", "beforeSubmitPrompt", "2026-06-30T17:01:00Z", { sessionId: "sess-B", raw: { conversation_id: "tab-B" } }),
+  v2Envelope("cursor", "afterAgentResponse", "2026-06-30T17:01:20Z", { sessionId: "sess-B", raw: { conversation_id: "tab-B" } }),
 ];
 
 export const sampleStreamJsonl = sampleStreamLines.join("\n") + "\n";
 
-// ---------- coaching (rich native_payload envelopes) ----------
+// ---------- cost enrichment envelopes ----------
+// End-of-turn events carrying the `cost` slug, the way the CLI emits them since
+// envelope v2 (Claude Code: on Stop, possibly several requests per turn;
+// Cursor: one request per stop/afterAgentResponse).
+
+export function costEnvelope(
+  tool: string,
+  isoTs: string,
+  sessionId: string,
+  requests: Array<Record<string, unknown>>,
+  opts: EnvelopeOpts = {},
+): string {
+  const totalUSD = requests.reduce((s, r) => {
+    const usd = (r.usd ?? {}) as Record<string, unknown>;
+    return s + (typeof usd.total === "number" ? usd.total : 0);
+  }, 0);
+  return v2Envelope(tool, tool === "cursor" ? "stop" : "Stop", isoTs, {
+    sessionId,
+    ...opts,
+    enrichments: {
+      cost: { requests, totals: { usd: totalUSD, currency: "USD" } },
+      ...(opts.enrichments ?? {}),
+    },
+  });
+}
+
+export function costRequest(p: Partial<Record<string, unknown>> & { request_id: string }): Record<string, unknown> {
+  return {
+    model: "claude-4.5-sonnet",
+    model_priced: true,
+    source: "exact",
+    tokens: { input: 8000, output: 1200, cache_read: 24000, cache_write: 1500 },
+    usd: { input: 0.024, output: 0.018, cache_read: 0.0072, cache_write: 0.0056, total: 0.0548, currency: "USD" },
+    signals: {
+      cache_hit_rate: 0.72,
+      cache_miss_cost_share: 0.54,
+      input_token_share: 0.24,
+      tier: "standard",
+      model_priced: true,
+      tool_calls: 3,
+    },
+    ...p,
+  };
+}
+
+// ---------- coaching (rich raw_event envelopes) ----------
 // Realistic Claude Code hook payloads (shapes verified against real captured
 // data) exercising every coaching signal: plan vs auto mode, slash commands, an
 // MCP tool, a Skill invocation, two parallel subagents, a worktree, a hard
@@ -163,15 +209,13 @@ function cEnv(
     extra.agent_id = opts.agentId;
     extra.agent_type = opts.agentType ?? "";
   }
-  return JSON.stringify({
-    envelope_version: "1.2",
-    cli_version: "dev",
-    tool: "claude-code",
-    hook_event: hookEvent,
-    captured_at: isoTs,
-    correlation: { trace_id: "ct-" + session, span_id: "sp" },
-    enrichment: { git: { repo_name: "promptconduit", branch: "feat/coaching", is_worktree: opts.worktree ?? false } },
-    native_payload: { session_id: session, hook_event_name: hookEvent, ...extra, ...np },
+  return v2Envelope("claude-code", hookEvent, isoTs, {
+    sessionId: session,
+    repo: "promptconduit/promptconduit",
+    branch: "feat/coaching",
+    worktree: opts.worktree ?? false,
+    raw: { ...extra, ...np },
+    enrichments: { trace: { trace_id: ("ct-" + session).padEnd(32, "0"), span_id: "sp".padEnd(16, "0") } },
   });
 }
 
