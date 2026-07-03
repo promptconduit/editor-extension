@@ -8,7 +8,8 @@ import * as vscode from "vscode";
 // the processes are gone. This module asks the CLI engine (`promptconduit
 // sessions --json`) what was recently active, drops anything still running or
 // outside this workspace, and reopens each one in a terminal at its exact cwd
-// (worktree-aware) running `claude --resume <id>`.
+// (worktree-aware) running `claude --resume <id>`, re-attaching any extra
+// `--add-dir` directories the session worked in.
 
 export type RestoreMode = "auto" | "prompt" | "off";
 
@@ -23,6 +24,10 @@ export interface RestorableSession {
   last_active: string;
   event_count: number;
   alive: boolean;
+  // Directories the session worked in outside its launch dir (cwd) — passed
+  // back to `claude --resume` as --add-dir so a session that reached across
+  // repos comes back with the same working set.
+  add_dirs?: string[];
 }
 
 /** Parse `promptconduit sessions --json` output. Tolerant of empty/garbage. */
@@ -75,6 +80,26 @@ export function selectToRestore(
       !restoredIds.has(s.session_id) &&
       isUnderAny(s.cwd, roots),
   );
+}
+
+/** Quote a path for the terminal iff it needs it (spaces or shell chars). */
+function quotePath(p: string): string {
+  return /^[\w@%+=:,./~-]+$/.test(p) ? p : `"${p.replace(/(["\\$`])/g, "\\$1")}"`;
+}
+
+/**
+ * The shell command that reopens a session: `claude --resume <id>`, plus an
+ * --add-dir for each directory it worked in outside its launch dir (mirrors
+ * the CLI's resumeArgs in cmd/resume.go).
+ */
+export function resumeCommand(s: RestorableSession): string {
+  const parts = ["claude", "--resume", s.session_id];
+  for (const dir of s.add_dirs ?? []) {
+    if (typeof dir === "string" && dir) {
+      parts.push("--add-dir", quotePath(dir));
+    }
+  }
+  return parts.join(" ");
 }
 
 /** A short, friendly label for a session (branch + last prompt or dir). */
@@ -273,7 +298,7 @@ export function makeRestoreDeps(
       });
       // sendText runs the command whether or not the terminal is focused, so we
       // don't steal focus by showing each one — the summary toast tells the user.
-      term.sendText(`claude --resume ${s.session_id}`);
+      term.sendText(resumeCommand(s));
     },
     getRoots: () => (vscode.workspace.workspaceFolders ?? []).map((f) => f.uri.fsPath),
     getMode: () => cfg().get<RestoreMode>("mode", "auto"),

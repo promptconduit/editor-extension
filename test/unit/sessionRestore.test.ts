@@ -4,6 +4,7 @@ import {
   isUnderAny,
   selectToRestore,
   sessionLabel,
+  resumeCommand,
   pruneLedger,
   type RestorableSession,
 } from "../../src/sessionRestore";
@@ -99,6 +100,25 @@ describe("sessionLabel", () => {
   });
   it("falls back to repo/dir when no branch", () => {
     expect(sessionLabel(sess({ branch: undefined, repo: "myrepo", last_prompt: undefined }))).toBe("myrepo");
+  });
+});
+
+describe("resumeCommand", () => {
+  it("is a plain --resume when the session has no add_dirs", () => {
+    expect(resumeCommand(sess({ session_id: "abc-123" }))).toBe("claude --resume abc-123");
+  });
+  it("re-attaches each add_dir", () => {
+    const s = sess({ session_id: "abc", add_dirs: ["/ws/cli", "/ws/editor-extension"] });
+    expect(resumeCommand(s)).toBe(
+      "claude --resume abc --add-dir /ws/cli --add-dir /ws/editor-extension",
+    );
+  });
+  it("quotes dirs with spaces and skips malformed entries", () => {
+    const s = sess({
+      session_id: "abc",
+      add_dirs: ["/ws/My Project", "", 7 as unknown as string],
+    });
+    expect(resumeCommand(s)).toBe('claude --resume abc --add-dir "/ws/My Project"');
   });
 });
 
