@@ -1,6 +1,6 @@
-// Tolerant, defensive view of the CLI's RawEventEnvelope (v1.x). Mirrors the
-// parse philosophy in eventsFeed.ts: every accessor is guarded so one malformed
-// field never throws, and a bad line yields null rather than aborting a stream.
+// Tolerant, defensive view of the CLI's v2 event envelope: every accessor is
+// guarded so one malformed field never throws, and a bad line yields null
+// rather than aborting a stream. Pre-v2 lines are skipped.
 // See cli/internal/envelope/envelope.go.
 
 export interface GitContext {
@@ -72,12 +72,18 @@ export function parseEnvelope(line: string): RawEnvelope | null {
   }
   if (typeof raw !== "object" || raw === null) return null;
   const rec = raw as Record<string, unknown>;
+  if (typeof rec.schema !== "number" || rec.schema < 2) return null; // pre-v2 line
 
-  const enrichment = obj(rec.enrichment);
-  // Prefer enrichment.*; fall back to the deprecated top-level mirrors (v1.0/1.1).
-  const gitSrc = obj(enrichment.git ?? rec.git);
-  const corrSrc = obj(enrichment.correlation ?? rec.correlation);
-  const native = obj(rec.native_payload) as NativePayload;
+  const enrichments = obj(rec.enrichments);
+  const vcs = obj(enrichments.vcs);
+  const commit = obj(vcs.commit);
+  const corrSrc = obj(enrichments.trace);
+  const native = obj(rec.raw_event) as NativePayload;
+  // Keep the envelope's lifted session_id reachable through the native view
+  // (older consumers read native.session_id).
+  if (!native.session_id && typeof rec.session_id === "string") {
+    native.session_id = rec.session_id;
+  }
 
   return {
     tool: str(rec.tool),
@@ -85,11 +91,11 @@ export function parseEnvelope(line: string): RawEnvelope | null {
     capturedAt: str(rec.captured_at),
     native,
     git: {
-      repo_name: str(gitSrc.repo_name) || undefined,
-      branch: str(gitSrc.branch) || undefined,
-      commit_hash: str(gitSrc.commit_hash) || undefined,
-      commit_message: str(gitSrc.commit_message) || undefined,
-      remote_url: str(gitSrc.remote_url) || undefined,
+      repo_name: str(vcs.repo) || undefined,
+      branch: str(vcs.branch) || undefined,
+      commit_hash: str(commit.hash) || undefined,
+      commit_message: str(commit.message) || undefined,
+      remote_url: str(vcs.remote_url) || undefined,
     },
     correlation: {
       trace_id: str(corrSrc.trace_id) || undefined,

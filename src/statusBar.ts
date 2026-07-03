@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { ConversationStore } from "./state";
+import { ConversationStore, ConversationView } from "./state";
 import { CostEvent, SessionSummary } from "./types";
 
 const SHOW_DETAILS_COMMAND = "promptconduit.cost.showDetails";
@@ -93,6 +93,16 @@ export class CostStatusBar {
     return this.store.activeRecent;
   }
 
+  /** Every conversation, most-recently-active first (multi-session panel). */
+  get conversations(): ConversationView[] {
+    return this.store.list();
+  }
+
+  /** Key of the most-recently-active conversation. */
+  get activeConversationKey(): string | undefined {
+    return this.store.activeKey;
+  }
+
   show(): void {
     this.item.show();
   }
@@ -103,11 +113,6 @@ export class CostStatusBar {
 
   updateFromEvent(ev: CostEvent): void {
     this.store.recordEvent(ev);
-    this.scheduleRender();
-  }
-
-  updateFromSummary(s: SessionSummary): void {
-    this.store.recordSummary(s);
     this.scheduleRender();
   }
 

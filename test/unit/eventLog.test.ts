@@ -9,11 +9,15 @@ let dir: string;
 
 function line(hookEvent: string, sessionId: string): string {
   return JSON.stringify({
+    schema: 2,
+    event_id: `evt-${hookEvent}-${sessionId}`,
+    session_id: sessionId,
     tool: "claude-code",
     hook_event: hookEvent,
     captured_at: new Date().toISOString(),
-    native_payload: { session_id: sessionId },
-    enrichment: { correlation: { trace_id: "t" } },
+    cli_version: "dev",
+    raw_event: { session_id: sessionId },
+    enrichments: { trace: { trace_id: "t" } },
   });
 }
 

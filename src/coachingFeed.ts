@@ -111,32 +111,41 @@ export class CoachingController {
 }
 
 /**
- * Hosts the coaching report as a docked WebviewView in the bottom panel,
- * alongside the Telemetry view (both under the "PromptConduit" container). One
- * CoachingController per resolved view, torn down when the view is disposed.
+ * Hosts the coaching report as an editor-tab webview (same surface as the AI
+ * Cost Breakdown — the docked bottom-panel container was removed with envelope
+ * v2). A single reused panel; show() reveals it.
  */
-export class CoachingViewProvider implements vscode.WebviewViewProvider, vscode.Disposable {
-  public static readonly viewId = "promptconduit.coaching";
-  private controller: CoachingController | undefined;
+export class CoachingPanel {
+  private static current: CoachingPanel | undefined;
+  private readonly panel: vscode.WebviewPanel;
+  private readonly controller: CoachingController;
+  private disposed = false;
 
-  resolveWebviewView(view: vscode.WebviewView): void {
-    view.webview.options = { enableScripts: false };
-    this.controller?.dispose();
-    const controller = new CoachingController((html) => {
-      view.webview.html = html;
-    });
-    this.controller = controller;
-    view.onDidDispose(() => {
-      controller.dispose();
-      if (this.controller === controller) {
-        this.controller = undefined;
-      }
-    });
-    controller.start();
+  static show(): void {
+    if (CoachingPanel.current && !CoachingPanel.current.disposed) {
+      CoachingPanel.current.panel.reveal(vscode.ViewColumn.Active);
+      return;
+    }
+    CoachingPanel.current = new CoachingPanel();
   }
 
-  dispose(): void {
-    this.controller?.dispose();
-    this.controller = undefined;
+  private constructor() {
+    this.panel = vscode.window.createWebviewPanel(
+      "promptconduitCoaching",
+      "Agent Coaching",
+      vscode.ViewColumn.Active,
+      { enableScripts: false, retainContextWhenHidden: true },
+    );
+    this.controller = new CoachingController((html) => {
+      this.panel.webview.html = html;
+    });
+    this.panel.onDidDispose(() => {
+      this.disposed = true;
+      this.controller.dispose();
+      if (CoachingPanel.current === this) {
+        CoachingPanel.current = undefined;
+      }
+    });
+    this.controller.start();
   }
 }

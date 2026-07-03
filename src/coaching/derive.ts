@@ -139,9 +139,14 @@ export function parseEnvelopeLine(line: string): ParsedEvent | null {
   if (!env) {
     return null;
   }
-  const np = asObj(env.native_payload) ?? {};
-  const corr = asObj(env.correlation) ?? asObj(asObj(env.enrichment)?.correlation) ?? {};
-  const git = asObj(asObj(env.enrichment)?.git) ?? asObj(env.git) ?? {};
+  if ((asNum(env.schema) ?? 0) < 2) {
+    return null; // pre-v2 line (retired shape)
+  }
+  const np = asObj(env.raw_event) ?? {};
+  const enrichments = asObj(env.enrichments) ?? {};
+  const corr = asObj(enrichments.trace) ?? {};
+  const vcs = asObj(enrichments.vcs) ?? {};
+  const worktree = asObj(vcs.worktree) ?? {};
 
   const hookEvent = canonHook(asStr(env.hook_event) ?? "");
   const capturedAt = asStr(env.captured_at) ?? "";
@@ -168,17 +173,17 @@ export function parseEnvelopeLine(line: string): ParsedEvent | null {
   }
 
   return {
-    sessionId: asStr(np.session_id) ?? asStr(corr.trace_id) ?? "",
+    sessionId: asStr(env.session_id) ?? asStr(np.session_id) ?? asStr(corr.trace_id) ?? "",
     traceId: asStr(corr.trace_id) ?? "",
     tool: asStr(env.tool) ?? "",
     hookEvent,
     capturedAt,
     capturedMs: Number.isFinite(capturedMs) ? capturedMs : 0,
     permissionMode: asStr(np.permission_mode),
-    repo: asStr(git.repo_name),
-    branch: asStr(git.branch),
-    isWorktree: asBool(git.is_worktree),
-    worktreePath: asStr(np.worktree_path) ?? asStr(git.worktree_path),
+    repo: asStr(vcs.repo),
+    branch: asStr(vcs.branch),
+    isWorktree: asBool(worktree.is_worktree),
+    worktreePath: asStr(np.worktree_path) ?? asStr(worktree.path),
     agentId: asStr(np.agent_id),
     agentType: asStr(np.agent_type),
     isInterrupt: asBool(np.is_interrupt),

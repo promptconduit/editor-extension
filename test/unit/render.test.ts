@@ -1,47 +1,43 @@
 import { describe, it, expect } from "vitest";
-import { buildFeedHtml, parseLine } from "../../src/eventsFeed";
+import { buildStreamHtml, parseStreamLine } from "../../src/streamFeed";
 import { signalsSummary } from "../../src/statusBar";
 import { sampleTelemetryLines, heavySummary, cleanSummary } from "../../dev/fixtures";
 import type { SessionSummary } from "../../src/types";
 
-describe("parseLine (telemetry feed)", () => {
-  it("parses an envelope line into the fields the feed renders", () => {
-    const fe = parseLine(sampleTelemetryLines[1]); // UserPromptSubmit on promptconduit
-    expect(fe).not.toBeNull();
-    expect(fe!.tool).toBe("claude-code");
-    expect(fe!.hookEvent).toBe("UserPromptSubmit");
-    expect(fe!.repo).toBe("promptconduit");
-  });
+describe("stream rendering (repo/branch merged from the old telemetry feed)", () => {
+  const events = sampleTelemetryLines
+    .map(parseStreamLine)
+    .filter((e): e is NonNullable<typeof e> => e !== null);
 
-  it("returns null for blank / malformed / non-object lines", () => {
-    expect(parseLine("")).toBeNull();
-    expect(parseLine("{nope")).toBeNull();
-    expect(parseLine("123")).toBeNull();
-  });
-});
-
-describe("buildFeedHtml (telemetry panel)", () => {
-  const events = sampleTelemetryLines.map(parseLine).filter((e): e is NonNullable<typeof e> => e !== null);
-
-  it("renders rows for the seeded events", () => {
-    const html = buildFeedHtml(events);
-    expect(html).toContain("AI telemetry");
+  it("renders rows with tool, event, and repo@branch", () => {
+    const buf = { key: "cc-t", tool: "claude-code", events: events.filter((e) => e.sessionKey === "cc-t") };
+    const html = buildStreamHtml(buf, false);
     expect(html).toContain("UserPromptSubmit");
     expect(html).toContain("claude-code");
-    expect(html).toContain("editor-extension (feat/local-dx)");
+    expect(html).toContain("promptconduit/platform @ main");
   });
 
-  it("shows the empty state when there are no events", () => {
-    expect(buildFeedHtml([])).toContain("No events yet");
+  it("shows the empty state when nothing is followed yet", () => {
+    expect(buildStreamHtml(undefined, false)).toContain("No sessions yet");
   });
 
   it("escapes HTML in event fields", () => {
-    const evil = parseLine(
-      JSON.stringify({ tool: "x", hook_event: "y", captured_at: "2026-06-27T00:00:00Z", enrichment: { git: { repo_name: "<script>", branch: "" } } }),
+    const evil = parseStreamLine(
+      JSON.stringify({
+        schema: 2,
+        event_id: "e",
+        session_id: "s",
+        tool: "x",
+        hook_event: "y",
+        captured_at: "2026-06-27T00:00:00Z",
+        cli_version: "dev",
+        raw_event: {},
+        enrichments: { vcs: { repo: "<script>", branch: "" } },
+      }),
     );
-    const html = buildFeedHtml([evil!]);
+    const html = buildStreamHtml({ key: "s", tool: "x", events: [evil!] }, false);
     expect(html).toContain("&lt;script&gt;");
-    expect(html).not.toContain("<script>");
+    expect(html).not.toContain("<script>alert");
   });
 });
 

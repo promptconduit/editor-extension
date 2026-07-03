@@ -21,21 +21,24 @@ function writeSeededHome(): string {
   fs.mkdirSync(dir, { recursive: true });
   const t0 = Date.parse("2026-01-01T00:00:00Z");
   const at = (s: number) => new Date(t0 + s * 1000).toISOString();
-  const git = {
-    repo_name: "editor-extension",
+  const vcs = {
+    repo: "promptconduit/editor-extension",
     branch: "feat/15-theater",
-    commit_message: "feat: theater (Closes #42)",
+    commit: { message: "feat: theater (Closes #42)" },
     remote_url: "git@github.com:promptconduit/editor-extension.git",
   };
+  let seq = 0;
   const line = (s: number, hook_event: string, native: Record<string, unknown>) =>
     JSON.stringify({
-      envelope_version: "1.2",
+      schema: 2,
+      event_id: `e2e-evt-${++seq}`,
+      session_id: "e2e",
       cli_version: "e2e",
       tool: "claude-code",
       hook_event,
       captured_at: at(s),
-      native_payload: { session_id: "e2e", ...native },
-      enrichment: { git, correlation: { trace_id: "e2e" } },
+      raw_event: { session_id: "e2e", ...native },
+      enrichments: { vcs, trace: { trace_id: "e2e" } },
     });
   const events = [
     line(0, "SessionStart", { model: "claude-opus-4-8" }),

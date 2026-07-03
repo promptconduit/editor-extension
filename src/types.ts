@@ -1,24 +1,13 @@
-// Mirrors the CLI's cost data contract (cli/internal/cost/event.go).
-//
-// Versioning & forward-compatibility:
-// The CLI stamps every record with `v`. The CLI auto-updates, so it will often
-// run AHEAD of this extension — if we hard-rejected any version we didn't author
-// against, a newer CLI would silently blank the panel. The cost-feed contract is
-// ADDITIVE-ONLY (new fields are added with omitempty; existing field meanings
-// never change without a major bump), so instead we accept any record with
-// `v >= MIN_SCHEMA` and read fields defensively (every new field is optional and
-// guarded). That keeps a v3+/vN CLI readable here. SCHEMA_VERSION is simply the
-// newest version this build fully understands; bump it (and add the fields) when
-// you teach the extension new fields. If the contract ever makes a BREAKING
-// change, raise MIN_SCHEMA to gate it.
+// Internal cost model. Since envelope v2 the extension no longer consumes a
+// dedicated cost wire feed: per-request costs arrive as the `cost` enrichment
+// on ~/.promptconduit/events.jsonl envelopes (see envelope.ts, which maps them
+// into these shapes), and session summaries are accumulated locally by
+// ConversationStore (state.ts). Field vocabulary mirrors the CLI's
+// cli/internal/enrich/cost.go so the mapping stays obvious.
 
-export const SCHEMA_VERSION = 2; // newest version this build fully understands
-export const MIN_SCHEMA = 1; // oldest version we still read
-
-// Source tool of a cost record. The known values mirror the CLI's tool ids
-// (cli/internal/cost/event.go: ToolClaudeCode / ToolCursor); the open string
-// keeps autocomplete for those while still accepting any future tool the CLI
-// adds without an extension change.
+// Source tool of a cost record. The known values mirror the CLI's tool ids;
+// the open string keeps autocomplete for those while still accepting any
+// future tool the CLI adds without an extension change.
 export type ToolId = "claude-code" | "cursor" | (string & {});
 
 export interface Tokens {
@@ -37,7 +26,7 @@ export interface Cost {
   currency: string;
 }
 
-// ToolSummary: content-free per-request tool-call summary (names only; v2+).
+// ToolSummary: content-free per-request tool-call summary (names only).
 // `by_name` is omitted when no tools ran or names aren't derivable (Cursor).
 export interface ToolSummary {
   total: number;
@@ -46,8 +35,8 @@ export interface ToolSummary {
 
 export type ModelTier = "premium" | "standard" | "economy" | "unknown";
 
-// Signals: derived cost-reduction metrics computed by the CLI (numbers only;
-// v2+). On a CostEvent they describe one request; on a SessionSummary they are
+// Signals: derived cost-reduction metrics computed by the CLI (numbers only).
+// On a CostEvent they describe one request; on a SessionSummary they are
 // recomputed from the session's accumulated totals.
 export interface Signals {
   cache_hit_rate: number; // [0,1] cache_read / (cache_read + cache_write + input)
@@ -59,11 +48,9 @@ export interface Signals {
 }
 
 export interface CostEvent {
-  v: number;
-  kind: "cost_event";
   tool: string;
   session_id: string;
-  conversation_id?: string; // Cursor per-tab key; absent for Claude Code (v2+)
+  conversation_id?: string; // Cursor per-tab key; absent for Claude Code
   request_id: string;
   ts: string;
   model: string;
@@ -72,8 +59,8 @@ export interface CostEvent {
   tokens: Tokens;
   cost: Cost;
   cwd_base: string;
-  tools?: ToolSummary; // v2+
-  signals?: Signals; // v2+
+  tools?: ToolSummary;
+  signals?: Signals;
 }
 
 export interface ModelTotal {
@@ -93,8 +80,6 @@ export interface SessionTotal {
 }
 
 export interface SessionSummary {
-  v: number;
-  kind: "session_summary";
   session_id: string;
   tool: string;
   source: string;
@@ -102,34 +87,6 @@ export interface SessionSummary {
   updated_at: string;
   totals: SessionTotal;
   by_model: ModelTotal[];
-  tools?: ToolSummary; // v2+
-  signals?: Signals; // v2+
-}
-
-export type CostRecord = CostEvent | SessionSummary;
-
-export function parseRecord(line: string): CostRecord | null {
-  const trimmed = line.trim();
-  if (!trimmed) {
-    return null;
-  }
-  let obj: unknown;
-  try {
-    obj = JSON.parse(trimmed);
-  } catch {
-    return null;
-  }
-  if (typeof obj !== "object" || obj === null) {
-    return null;
-  }
-  const rec = obj as Partial<CostRecord>;
-  // Accept any known-or-newer additive version; reject only missing/older shapes
-  // we can't safely read. New fields beyond SCHEMA_VERSION are simply ignored.
-  if (typeof rec.v !== "number" || rec.v < MIN_SCHEMA) {
-    return null;
-  }
-  if (rec.kind === "cost_event" || rec.kind === "session_summary") {
-    return rec as CostRecord;
-  }
-  return null;
+  tools?: ToolSummary;
+  signals?: Signals;
 }

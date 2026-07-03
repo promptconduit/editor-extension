@@ -185,11 +185,15 @@ describe("per-session state machines", () => {
   // interruption of A's open turn.
   function env(session: string, hook: string, ts: string, extra: Record<string, unknown> = {}): string {
     return JSON.stringify({
+      schema: 2,
+      event_id: `evt-${session}-${ts}`,
+      session_id: session,
       tool: "claude-code",
       hook_event: hook,
       captured_at: ts,
-      correlation: { trace_id: "t-" + session },
-      native_payload: { session_id: session, hook_event_name: hook, ...extra },
+      cli_version: "dev",
+      raw_event: { session_id: session, hook_event_name: hook, ...extra },
+      enrichments: { trace: { trace_id: "t-" + session } },
     });
   }
   const interleaved = [

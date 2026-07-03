@@ -1,68 +1,22 @@
 import * as vscode from "vscode";
-import { CoachingViewProvider } from "./coachingFeed";
-import { EventsFeedViewProvider } from "./eventsFeed";
-import { StreamViewProvider } from "./streamFeed";
-import { CostPanel } from "./panel";
+import { CoachingPanel } from "./coachingFeed";
+import { StreamPanel } from "./streamFeed";
+import { BreakdownView, CostPanel } from "./panel";
 import { CostStatusBar } from "./statusBar";
-import { CostWatcher, resolveBinary } from "./watcher";
+import { CostFeedController } from "./costFeed";
+import { resolveBinary } from "./binary";
 import { VisualizerPanel } from "./visualizerPanel";
 import { UpdatePromptController } from "./updatePrompt";
 import { SessionRestoreController, makeRestoreDeps } from "./sessionRestore";
 
 let statusBar: CostStatusBar | undefined;
-let watcher: CostWatcher | undefined;
-let missingBinaryWarned = false;
+let costFeed: CostFeedController | undefined;
 
 export function activate(context: vscode.ExtensionContext): void {
   const cfg = () => vscode.workspace.getConfiguration("promptconduit.cost");
 
   statusBar = new CostStatusBar();
   context.subscriptions.push(statusBar);
-
-  // Docked telemetry panel (WebviewView) in Cursor's bottom panel — a live tail
-  // of ~/.promptconduit/events.jsonl.
-  const telemetry = new EventsFeedViewProvider();
-  context.subscriptions.push(
-    vscode.window.registerWebviewViewProvider(EventsFeedViewProvider.viewId, telemetry, {
-      webviewOptions: { retainContextWhenHidden: true },
-    }),
-    telemetry,
-  );
-
-  // Docked coaching panel (WebviewView) next to Telemetry — a fully offline
-  // agent-skills report derived from the local event log.
-  const coaching = new CoachingViewProvider();
-  context.subscriptions.push(
-    vscode.window.registerWebviewViewProvider(CoachingViewProvider.viewId, coaching, {
-      webviewOptions: { retainContextWhenHidden: true },
-    }),
-    coaching,
-  );
-
-  // Docked live Stream panel (WebviewView) — a per-session tail of
-  // ~/.promptconduit/events.jsonl that auto-follows the most recently active AI
-  // session (Cursor agent tab / Claude Code), with a manual pin to lock onto one.
-  const stream = new StreamViewProvider();
-  context.subscriptions.push(
-    vscode.window.registerWebviewViewProvider(StreamViewProvider.viewId, stream, {
-      webviewOptions: { retainContextWhenHidden: true },
-    }),
-    stream,
-  );
-
-  // Bottom-right status-bar entry point for the Stream panel. Priority 99 seats
-  // it just to the right of the cost item (100). Clicking it reveals the docked
-  // Stream tab, which renders its own empty states, so it's useful even before
-  // any events have flowed.
-  const streamButton = vscode.window.createStatusBarItem(
-    vscode.StatusBarAlignment.Right,
-    99,
-  );
-  streamButton.text = "$(pulse) Stream";
-  streamButton.tooltip = "Open the live PromptConduit event stream (human-readable JSON)";
-  streamButton.command = "promptconduit.stream.showFeed";
-  streamButton.show();
-  context.subscriptions.push(streamButton);
 
   // When the CLI updates this extension on disk after a self-upgrade, offer a
   // one-click **Reload Window** to apply it — a reload keeps the pty host alive,
@@ -73,26 +27,43 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(updates);
   updates.start();
 
+  // Bottom-right status-bar entry point for the Stream panel. Priority 99 seats
+  // it just to the right of the cost item (100).
+  const streamButton = vscode.window.createStatusBarItem(
+    vscode.StatusBarAlignment.Right,
+    99,
+  );
+  streamButton.text = "$(pulse) Stream";
+  streamButton.tooltip = "Open the live PromptConduit event stream";
+  streamButton.command = "promptconduit.stream.showFeed";
+  streamButton.show();
+  context.subscriptions.push(streamButton);
+
+  const breakdownView = (): BreakdownView => ({
+    conversations: statusBar?.conversations ?? [],
+    activeKey: statusBar?.activeConversationKey,
+  });
+
   context.subscriptions.push(
     vscode.commands.registerCommand("promptconduit.cost.showDetails", () => {
-      CostPanel.show(statusBar?.session, statusBar?.lastRequest, statusBar?.recentRequests);
-    }),
-    vscode.commands.registerCommand("promptconduit.events.showFeed", () => {
-      // Reveal/focus the docked telemetry panel (auto-registered <viewId>.focus).
-      void vscode.commands.executeCommand(`${EventsFeedViewProvider.viewId}.focus`);
+      CostPanel.show(breakdownView());
     }),
     vscode.commands.registerCommand("promptconduit.coaching.showTab", () => {
-      void vscode.commands.executeCommand(`${CoachingViewProvider.viewId}.focus`);
+      CoachingPanel.show();
     }),
     vscode.commands.registerCommand("promptconduit.stream.showFeed", () => {
-      // Reveal/focus the docked Stream panel (auto-registered <viewId>.focus).
-      void vscode.commands.executeCommand(`${StreamViewProvider.viewId}.focus`);
+      StreamPanel.show();
     }),
     vscode.commands.registerCommand("promptconduit.stream.pinSession", () => {
-      void stream.pinSession();
+      const panel = StreamPanel.active;
+      if (!panel) {
+        StreamPanel.show();
+        return;
+      }
+      void panel.pinSession();
     }),
     vscode.commands.registerCommand("promptconduit.stream.followActive", () => {
-      stream.followActive();
+      StreamPanel.active?.followActive();
     }),
     vscode.commands.registerCommand("promptconduit.visualizer.show", () => {
       VisualizerPanel.show(context.extensionUri);
@@ -116,77 +87,46 @@ export function activate(context: vscode.ExtensionContext): void {
   );
   void restore.runStartup();
 
+  // Cost ingestion: since envelope v2 the per-request costs live on the local
+  // event log (enrichments.cost on events.jsonl), so the status bar and the
+  // breakdown panel read the same file every other surface does — no CLI
+  // subprocess required.
   const start = () => {
-    stopWatcher();
+    stopCostFeed();
     if (!cfg().get<boolean>("enabled", true)) {
       statusBar?.hide();
       return;
     }
-    const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-    if (!cwd) {
-      // No folder open — nothing to scope to; hide until one is.
-      statusBar?.hide();
-      return;
-    }
-    const binary = resolveBinary(cfg().get<string>("binaryPath", ""));
-    if (!binary) {
-      warnMissingBinary();
-      statusBar?.hide();
-      return;
-    }
     statusBar?.show();
-    watcher = new CostWatcher(binary, cwd, {
-      onRecord: (rec) => {
-        if (rec.kind === "cost_event") {
-          statusBar?.updateFromEvent(rec);
-        } else {
-          statusBar?.updateFromSummary(rec);
-        }
-        CostPanel.refresh(statusBar?.session, statusBar?.lastRequest, statusBar?.recentRequests);
+    costFeed = new CostFeedController({
+      onEvent: (ev) => {
+        statusBar?.updateFromEvent(ev);
+        CostPanel.refresh(breakdownView());
       },
-      onError: (msg) => console.error(`[promptconduit] ${msg}`),
     });
-    watcher.start();
+    costFeed.start();
   };
 
-  // React to config changes and to the user opening a different folder.
+  // React to config changes.
   context.subscriptions.push(
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration("promptconduit.cost")) {
         start();
       }
     }),
-    vscode.workspace.onDidChangeWorkspaceFolders(() => start()),
-    { dispose: stopWatcher },
+    { dispose: stopCostFeed },
   );
 
   start();
 }
 
 export function deactivate(): void {
-  stopWatcher();
+  stopCostFeed();
 }
 
-function stopWatcher(): void {
-  if (watcher) {
-    watcher.stop();
-    watcher = undefined;
+function stopCostFeed(): void {
+  if (costFeed) {
+    costFeed.dispose();
+    costFeed = undefined;
   }
-}
-
-function warnMissingBinary(): void {
-  if (missingBinaryWarned) {
-    return;
-  }
-  missingBinaryWarned = true;
-  void vscode.window
-    .showWarningMessage(
-      "PromptConduit cost: the `promptconduit` CLI wasn't found. Install it to see realtime cost.",
-      "Copy install command",
-    )
-    .then((choice) => {
-      if (choice === "Copy install command") {
-        void vscode.env.clipboard.writeText("brew install promptconduit/tap/promptconduit");
-      }
-    });
 }

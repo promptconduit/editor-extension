@@ -10,8 +10,9 @@ import * as fs from "node:fs";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { landingHtml } from "../src/landing";
-import { renderBreakdownHtml } from "../src/panel";
-import { buildFeedHtml, parseLine } from "../src/eventsFeed";
+import { renderBreakdownHtml, type BreakdownView } from "../src/panel";
+import type { ConversationView } from "../src/state";
+import type { CostEvent, SessionSummary } from "../src/types";
 import { buildStreamHtml, parseStreamLine, type StreamEvent } from "../src/streamFeed";
 import { signalsSummary } from "../src/statusBar";
 import { parseEnvelopeLine, reduceToSnapshot, reduceToTrends } from "../src/coaching/derive";
@@ -19,7 +20,7 @@ import { buildCoachingInsights } from "../src/coaching/insights";
 import { renderCoachingHtml } from "../src/coaching/render";
 import { demoScene } from "../src/visualizer/demo";
 import { SCENE_CSS, SCENE_BODY } from "../src/visualizer/chrome";
-import { sampleTelemetryLines, sampleCoachingLines, sampleStreamLines, sampleEvents, heavySummary, cleanSummary } from "./fixtures";
+import { sampleCoachingLines, sampleStreamLines, sampleEvents, heavySummary, cleanSummary } from "./fixtures";
 
 // VS Code webview theme variables (dark-ish) so server-rendered HTML that styles
 // itself with var(--vscode-*) looks right in a plain browser.
@@ -46,10 +47,6 @@ function themed(html: string, fullDoc: boolean): string {
 
 const outDir = fileURLToPath(new URL("./preview-out/", import.meta.url));
 fs.mkdirSync(outDir, { recursive: true });
-
-const events = sampleTelemetryLines
-  .map(parseLine)
-  .filter((e): e is NonNullable<typeof e> => e !== null);
 
 // Stream panel: group the parsed events by session, then render the
 // auto-followed session — whichever produced the newest event — exactly as the
@@ -79,7 +76,7 @@ const streamBuf = (() => {
 // Cost breakdown panel in its main states: a heavy session (every tip + edge
 // case fires), a lean clean session, the zero-state landing, and an unpriced
 // (tokens-but-no-rate) session.
-const unpricedSummary = {
+const unpricedSummary: SessionSummary = {
   ...cleanSummary,
   source: "estimate",
   totals: { input: 6000, output: 1200, cache_read: 0, cache_write: 0, cost_total: 0, currency: "USD" },
@@ -88,6 +85,22 @@ const unpricedSummary = {
   ],
   signals: undefined,
 };
+
+// Assemble BreakdownViews the way the live store does: one ConversationView
+// per session, most-recently-active first.
+function conv(key: string, summary: SessionSummary, lastEvent?: CostEvent, recent: CostEvent[] = []): ConversationView {
+  return {
+    key,
+    tool: summary.tool,
+    summary,
+    lastEvent,
+    recent,
+    lastActivity: Date.parse(summary.updated_at) || 0,
+  };
+}
+function bview(conversations: ConversationView[]): BreakdownView {
+  return { conversations, activeKey: conversations[0]?.key };
+}
 
 // Coaching tab: derive the report from the rich sample envelopes, exactly as the
 // live tab does from events.jsonl.
@@ -101,14 +114,27 @@ if (coachingSnapshot) {
 const coachingTrends = reduceToTrends(coachingEvents, 0);
 
 const pages: Record<string, string> = {
-  "breakdown-heavy.html": themed(renderBreakdownHtml(heavySummary, sampleEvents[2], sampleEvents), true),
-  "breakdown-clean.html": themed(renderBreakdownHtml(cleanSummary, sampleEvents[2], sampleEvents.slice(2)), true),
-  "breakdown-unpriced.html": themed(renderBreakdownHtml(unpricedSummary, undefined, []), true),
-  "breakdown-zero.html": themed(renderBreakdownHtml(undefined, undefined, []), true),
+  "breakdown-heavy.html": themed(
+    renderBreakdownHtml(bview([conv("s-heavy", heavySummary, sampleEvents[2], sampleEvents)])),
+    true,
+  ),
+  "breakdown-multi.html": themed(
+    renderBreakdownHtml(
+      bview([
+        conv("s-clean", cleanSummary, sampleEvents[2], sampleEvents.slice(2)),
+        conv("s-heavy", heavySummary, sampleEvents[1], sampleEvents.slice(0, 2)),
+      ]),
+    ),
+    true,
+  ),
+  "breakdown-clean.html": themed(
+    renderBreakdownHtml(bview([conv("s-clean", cleanSummary, sampleEvents[2], sampleEvents.slice(2))])),
+    true,
+  ),
+  "breakdown-unpriced.html": themed(renderBreakdownHtml(bview([conv("s-unpriced", unpricedSummary)])), true),
+  "breakdown-zero.html": themed(renderBreakdownHtml(bview([])), true),
   "coaching-rich.html": themed(renderCoachingHtml(coachingSnapshot, coachingTrends), true),
   "coaching-empty.html": themed(renderCoachingHtml(undefined), true),
-  "telemetry.html": themed(buildFeedHtml(events), true),
-  "telemetry-empty.html": themed(buildFeedHtml([]), true),
   "stream.html": themed(buildStreamHtml(streamBuf, false), true),
   "stream-pinned.html": themed(buildStreamHtml(streamBuf, true), true),
   "stream-empty.html": themed(buildStreamHtml(undefined, false), true),
