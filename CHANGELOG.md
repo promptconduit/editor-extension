@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.12.1
+
+- **Accurate per-session request count.** The AI Cost Breakdown no longer caps a
+  session's history at 50 requests, so the header shows the true count and no
+  prompt is dropped from the data. The per-prompt list renders the newest 100
+  rows (with a "+N older prompts not shown" note) to keep the panel responsive;
+  full history remains in `~/.promptconduit/events.jsonl`.
+
 ## 0.12.0
 
 - **Envelope v2 — one file, one schema (breaking).** Every surface now reads
