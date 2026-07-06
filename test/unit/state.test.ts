@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { ConversationStore, ACTIVE_KEY_DEBOUNCE_MS } from "../../src/state";
+import { parseEnvelopeV2 } from "../../src/envelope";
+import { sampleEnrichmentLines } from "../../dev/fixtures";
 import { sampleEvents } from "../../dev/fixtures";
 import type { CostEvent } from "../../src/types";
 
@@ -179,5 +181,25 @@ describe("ConversationStore active debounce", () => {
     expect(store.activeKey).toBe("A");
     vi.advanceTimersByTime(ACTIVE_KEY_DEBOUNCE_MS);
     expect(store.activeKey).toBe("B");
+  });
+});
+
+describe("ConversationStore enrichment slugs", () => {
+  it("accumulates diff and subagent stats from envelopes", () => {
+    const store = new ConversationStore();
+    for (const line of sampleEnrichmentLines) {
+      const env = parseEnvelopeV2(line);
+      if (env) {
+        store.recordEnvelope(env);
+      }
+    }
+    const view = store.viewForKey("cc-enrich");
+    expect(view?.diff).toMatchObject({ files_changed: 3, insertions: 120, deletions: 40 });
+    expect(view?.subagents).toMatchObject({
+      count: 2,
+      totalDurationMs: 190000,
+      totalUsd: 0.31,
+      dominantType: "Explore",
+    });
   });
 });

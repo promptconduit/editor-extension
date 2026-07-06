@@ -9,6 +9,16 @@
 // focus, pin, or debounced activity); the all-sessions view uses list().
 
 import { CostEvent, ModelTotal, SessionSummary, Signals, Tokens } from "./types";
+import { DiffEnrichment, EnvelopeV2, subagentFrom, diffFrom } from "./envelope";
+
+/** Aggregated subagent stats for a session (from SubagentStop enrichments). */
+export interface SessionSubagentSummary {
+  count: number;
+  totalDurationMs: number;
+  totalUsd: number;
+  /** Most-used agent type across completed subagents. */
+  dominantType: string;
+}
 
 /** Everything the panel needs to render one conversation. */
 export interface ConversationView {
@@ -19,6 +29,10 @@ export interface ConversationView {
   /** Recent turns, oldest first. */
   recent: CostEvent[];
   lastActivity: number;
+  /** Latest diff stats from a turn-end event (Stop / SessionEnd). */
+  diff?: DiffEnrichment;
+  /** Rolled-up subagent usage for the session. */
+  subagents?: SessionSubagentSummary;
 }
 
 export type FocusSource = "terminal" | "activity" | "pinned";
@@ -39,6 +53,11 @@ interface ConversationState {
   startedAt: string;
   updatedAt: string;
   lastActivity: number;
+  diff?: DiffEnrichment;
+  subagentCount: number;
+  subagentDurationMs: number;
+  subagentUsd: number;
+  subagentByType: Map<string, number>;
 }
 
 // Debounce rapid activity flips when concurrent Cursor agents run.
@@ -122,6 +141,10 @@ export class ConversationStore {
         startedAt: "",
         updatedAt: "",
         lastActivity: -Infinity,
+        subagentCount: 0,
+        subagentDurationMs: 0,
+        subagentUsd: 0,
+        subagentByType: new Map(),
       };
       this.byKey.set(key, state);
     }
@@ -227,6 +250,63 @@ export class ConversationStore {
     this.recordRecent(state, ev);
     this.accumulate(state, ev);
     this.touch(state, this.activityFrom(ev.ts));
+  }
+
+  /** Apply non-cost enrichment slugs (diff, subagent) from a v2 envelope. */
+  recordEnvelope(env: EnvelopeV2): void {
+    const rawSession =
+      typeof env.raw.session_id === "string" ? env.raw.session_id : "";
+    const key = ConversationStore.key({
+      conversation_id: typeof env.raw.conversation_id === "string" ? env.raw.conversation_id : "",
+      session_id: env.sessionId || rawSession,
+    });
+    if (!key) {
+      return;
+    }
+    const state = this.ensure(key);
+    if (env.tool) {
+      state.tool = env.tool;
+    }
+
+    const diff = diffFrom(env);
+    if (diff && (env.hookEvent === "Stop" || env.hookEvent === "SessionEnd")) {
+      state.diff = diff;
+    }
+
+    const sub = subagentFrom(env);
+    if (sub?.phase === "stop") {
+      state.subagentCount += 1;
+      if (sub.duration_ms && sub.duration_ms > 0) {
+        state.subagentDurationMs += sub.duration_ms;
+      }
+      if (sub.usd?.total && sub.usd.total > 0) {
+        state.subagentUsd += sub.usd.total;
+      }
+      const t = sub.agent_type || "agent";
+      state.subagentByType.set(t, (state.subagentByType.get(t) ?? 0) + 1);
+    }
+
+    this.touch(state, this.activityFrom(env.capturedAt));
+  }
+
+  private subagentSummary(state: ConversationState): SessionSubagentSummary | undefined {
+    if (state.subagentCount <= 0) {
+      return undefined;
+    }
+    let dominantType = "";
+    let best = 0;
+    for (const [t, n] of state.subagentByType) {
+      if (n > best) {
+        best = n;
+        dominantType = t;
+      }
+    }
+    return {
+      count: state.subagentCount,
+      totalDurationMs: state.subagentDurationMs,
+      totalUsd: state.subagentUsd,
+      dominantType,
+    };
   }
 
   private recordRecent(state: ConversationState, ev: CostEvent): void {
@@ -338,6 +418,8 @@ export class ConversationStore {
       lastEvent: state.lastEvent,
       recent: state.recent,
       lastActivity: state.lastActivity,
+      diff: state.diff,
+      subagents: this.subagentSummary(state),
     };
   }
 

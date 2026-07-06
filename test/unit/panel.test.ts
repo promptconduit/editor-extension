@@ -11,6 +11,8 @@ function conv(p: {
   lastEvent?: CostEvent;
   recent?: CostEvent[];
   lastActivity?: number;
+  diff?: { files_changed?: number; insertions?: number; deletions?: number };
+  subagents?: { count: number; totalDurationMs: number; totalUsd: number; dominantType: string };
 }): ConversationView {
   return {
     key: p.key,
@@ -19,6 +21,8 @@ function conv(p: {
     lastEvent: p.lastEvent,
     recent: p.recent ?? [],
     lastActivity: p.lastActivity ?? Date.parse(p.summary.updated_at) ?? 0,
+    diff: p.diff,
+    subagents: p.subagents,
   };
 }
 
@@ -124,6 +128,24 @@ describe("renderBreakdownHtml — multiple sessions", () => {
   it("marks the active session and opens its card", () => {
     expect(html).toContain("active-pill");
     expect(html).toContain(`details class="session" open`);
+  });
+
+  it("shows diff and subagent enrichment lines on session cards", () => {
+    const html = renderBreakdownHtml(
+      view([
+        conv({
+          key: "cc-enrich",
+          summary: cleanSummary,
+          diff: { files_changed: 3, insertions: 120, deletions: 40 },
+          subagents: { count: 2, totalDurationMs: 190000, totalUsd: 0.31, dominantType: "Explore" },
+        }),
+      ]),
+    );
+    expect(html).toContain("+120/−40 across 3 files");
+    expect(html).toContain("2 subagents");
+    expect(html).toContain("Explore");
+    expect(html).toContain("190s");
+    expect(html).toContain("$0.31");
   });
 });
 

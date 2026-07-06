@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import { ConversationStore, ConversationView, FocusSource } from "./state";
 import { CostEvent, SessionSummary } from "./types";
+import { EnvelopeV2 } from "./envelope";
 import { shortId } from "./streamFeed";
 
 const SHOW_DETAILS_COMMAND = "promptconduit.cost.showDetails";
@@ -171,6 +172,11 @@ export class CostStatusBar {
 
   updateFromEvent(ev: CostEvent): void {
     this.store.recordEvent(ev);
+    this.scheduleRender();
+  }
+
+  updateFromEnvelope(env: EnvelopeV2): void {
+    this.store.recordEnvelope(env);
     this.scheduleRender();
   }
 

@@ -6,7 +6,7 @@ import {
   shortId,
   type StreamEvent,
 } from "../../src/streamFeed";
-import { sampleStreamLines } from "../../dev/fixtures";
+import { sampleStreamLines, sampleEnrichmentLines } from "../../dev/fixtures";
 
 function envelope(
   ids: { session_id?: string; conversation_id?: string },
@@ -34,6 +34,8 @@ function mk(p: Partial<StreamEvent>): StreamEvent {
     capturedAt: "2026-06-30T17:00:00Z",
     repo: "promptconduit/cli",
     branch: "main",
+    subagentBadge: "",
+    toolsSummary: "",
     ...p,
   };
 }
@@ -59,7 +61,16 @@ describe("parseStreamLine", () => {
       capturedAt: "2026-06-30T18:00:00Z",
       repo: "promptconduit/cli",
       branch: "main",
+      subagentBadge: "",
+      toolsSummary: "",
     });
+  });
+
+  it("reads subagent badge and tools summary from enrichment slugs", () => {
+    const subStart = parseStreamLine(sampleEnrichmentLines[0]);
+    expect(subStart?.subagentBadge).toBe("Explore start");
+    const tools = parseStreamLine(sampleEnrichmentLines[4]);
+    expect(tools?.toolsSummary).toBe("3 tools · 1 failed");
   });
 
   it("returns null for blank, malformed, non-object, pre-v2, or session-less lines", () => {
