@@ -11,6 +11,13 @@ import { Cost, CostEvent, Signals, Tokens, ToolSummary } from "./types";
 
 export const MIN_ENVELOPE_SCHEMA = 2;
 
+/** The open PR for the current branch (subset of the CLI's vcs `pr` object). */
+export interface VCSPullRequest {
+  number?: number;
+  title?: string;
+  state?: string; // open, merged, closed
+}
+
 /** The "vcs" enrichment slug (subset the extension renders). */
 export interface VCSEnrichment {
   type?: string;
@@ -18,12 +25,21 @@ export interface VCSEnrichment {
   repo_url?: string;
   branch?: string;
   branch_url?: string;
+  default_branch?: string;
+  pr?: VCSPullRequest;
   pr_url?: string;
   commit_hash?: string;
   commit_message?: string;
   remote_url?: string;
   is_worktree?: boolean;
   worktree_path?: string;
+  // Working-tree state (CLI omits zero/false values).
+  dirty?: boolean;
+  staged?: number;
+  unstaged?: number;
+  untracked?: number;
+  ahead?: number;
+  behind?: number;
 }
 
 /** The "trace" enrichment slug. */
@@ -179,12 +195,27 @@ export function parseEnvelopeV2(line: string): EnvelopeV2 | null {
       repo_url: str(vcsSrc.repo_url) || undefined,
       branch: str(vcsSrc.branch) || undefined,
       branch_url: str(vcsSrc.branch_url) || undefined,
+      default_branch: str(vcsSrc.default_branch) || undefined,
+      pr:
+        Object.keys(pr).length > 0
+          ? {
+              number: num(pr.number) || undefined,
+              title: str(pr.title) || undefined,
+              state: str(pr.state) || undefined,
+            }
+          : undefined,
       pr_url: str(pr.url) || undefined,
       commit_hash: str(commit.hash) || undefined,
       commit_message: str(commit.message) || undefined,
       remote_url: str(vcsSrc.remote_url) || undefined,
       is_worktree: worktree.is_worktree === true || undefined,
       worktree_path: str(worktree.path) || undefined,
+      dirty: vcsSrc.dirty === true || undefined,
+      staged: num(vcsSrc.staged) || undefined,
+      unstaged: num(vcsSrc.unstaged) || undefined,
+      untracked: num(vcsSrc.untracked) || undefined,
+      ahead: num(vcsSrc.ahead) || undefined,
+      behind: num(vcsSrc.behind) || undefined,
     },
     trace: {
       trace_id: str(traceSrc.trace_id) || undefined,
