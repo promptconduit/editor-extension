@@ -15,7 +15,9 @@ import { parseEnvelopeV2, costEventsFrom } from "../src/envelope";
 import { buildCostPanelState } from "../src/costPanel/viewModel";
 import { COST_PANEL_CSS } from "../src/costPanel/styles";
 import type { CostPanelState } from "../src/costPanel/protocol";
-import { buildStreamHtml, parseStreamLine, type StreamEvent } from "../src/streamFeed";
+import { buildStreamPanelState, parseStreamLine, StreamState } from "../src/streamFeed";
+import { STREAM_PANEL_CSS } from "../src/streamPanel/styles";
+import type { StreamPanelState } from "../src/streamPanel/protocol";
 import { signalsSummary } from "../src/statusBar";
 import { parseEnvelopeLine, reduceToSnapshot, reduceToTrends } from "../src/coaching/derive";
 import { buildCoachingInsights } from "../src/coaching/insights";
@@ -57,30 +59,44 @@ function themed(html: string, fullDoc: boolean): string {
 const outDir = fileURLToPath(new URL("./preview-out/", import.meta.url));
 fs.mkdirSync(outDir, { recursive: true });
 
-// Stream panel: group the parsed events by session, then render the
-// auto-followed session — whichever produced the newest event — exactly as the
-// live StreamController does.
-const streamEvents = sampleStreamLines
-  .map(parseStreamLine)
-  .filter((e): e is StreamEvent => e !== null);
-const streamBuf = (() => {
-  const bySession = new Map<string, StreamEvent[]>();
-  for (const e of streamEvents) {
-    const list = bySession.get(e.sessionKey) ?? [];
-    list.push(e);
-    bySession.set(e.sessionKey, list);
+// Stream panel: run the sample lines through the REAL pipeline (parseStreamLine
+// → StreamState → buildStreamPanelState) and load the actual esbuild webview
+// bundle with the same vscode-api shim as the cost panel — expansion, raw JSON
+// highlighting, and copy all work.
+function streamPanelStateFromFixtures(pinKey?: string): StreamPanelState {
+  const s = new StreamState();
+  for (const line of sampleStreamLines) {
+    const ev = parseStreamLine(line);
+    if (ev) s.record(ev);
   }
-  let best: { key: string; tool: string; events: StreamEvent[] } | undefined;
-  let newest = -Infinity;
-  for (const [key, list] of bySession) {
-    const activity = Math.max(...list.map((e) => Date.parse(e.capturedAt) || 0));
-    if (activity >= newest) {
-      newest = activity;
-      best = { key, tool: list[list.length - 1].tool, events: list };
-    }
-  }
-  return best;
-})();
+  if (pinKey) s.pin(pinKey);
+  return buildStreamPanelState(s, 1, false);
+}
+
+function streamPanelPage(state: StreamPanelState): string {
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8" />
+<style>${THEME}${STREAM_PANEL_CSS}</style></head>
+<body>
+<div id="app"></div>
+<script>
+  const STATE = { type: "state", state: ${JSON.stringify(state)} };
+  window.acquireVsCodeApi = function () {
+    return {
+      postMessage: function (msg) {
+        if (msg && msg.type === "ready") {
+          window.dispatchEvent(new MessageEvent("message", { data: STATE }));
+        }
+        if (msg && msg.type === "open_external" && msg.url) {
+          window.open(msg.url, "_blank");
+        }
+      },
+      getState() {}, setState() {},
+    };
+  };
+</script>
+<script src="../../media/streamPanel.js"></script>
+</body></html>`;
+}
 
 // Cost Breakdown detail report: run the story fixture through the REAL
 // pipeline (ConversationStore -> buildCostPanelState) and load the actual
@@ -144,9 +160,9 @@ const pages: Record<string, string> = {
   "breakdown-zero.html": costPanelPage(buildCostPanelState(new ConversationStore(), "session")),
   "coaching-rich.html": themed(renderCoachingHtml(coachingSnapshot, coachingTrends), true),
   "coaching-empty.html": themed(renderCoachingHtml(undefined), true),
-  "stream.html": themed(buildStreamHtml(streamBuf, false), true),
-  "stream-pinned.html": themed(buildStreamHtml(streamBuf, true), true),
-  "stream-empty.html": themed(buildStreamHtml(undefined, false), true),
+  "stream.html": streamPanelPage(streamPanelStateFromFixtures()),
+  "stream-pinned.html": streamPanelPage(streamPanelStateFromFixtures("cc-1")),
+  "stream-empty.html": streamPanelPage(buildStreamPanelState(new StreamState(), 1, false)),
   "landing.html": themed(landingHtml(), false),
   "tooltip.html": themed(
     `<h3>Status-bar tooltip headline <code>signalsSummary()</code></h3>

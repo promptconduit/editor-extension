@@ -27,13 +27,15 @@ async function webviewWithText(win: Page, text: string, timeoutMs: number) {
   throw new Error(`No webview containing "${text}" found within ${timeoutMs}ms${lastErr ? ` (last: ${lastErr})` : ""}`);
 }
 
-// End-to-end test of the Stream editor-tab panel, driving the REAL Cursor
-// editor (CI only, see e2e-cursor.yml): a temp HOME with a seeded v2
-// events.jsonl gives deterministic input with no CLI run.
+// End-to-end test of the Stream editor-tab panel (a scripted webview since
+// v0.16.0), driving the REAL Cursor editor (CI only, see e2e-cursor.yml): a
+// temp HOME with a seeded v2 events.jsonl gives deterministic input with no
+// CLI run.
 // The Stream panel groups events by session and follows the most-recently-active
 // one, so we seed three sessions with increasing timestamps — the Cursor "tab-B"
 // conversation is newest, so it must be the followed (auto-following) session,
-// and the other sessions' events must NOT render.
+// and the other sessions' events must NOT render. Rows expand into the event's
+// raw envelope JSON, and the header shows the full copyable conversation id.
 
 const CURSOR_BIN = process.env.CURSOR_BIN; // extracted Cursor Electron binary
 const EXT_DEV_PATH = process.env.EXT_DEV_PATH ?? process.cwd(); // repo root (has out/)
@@ -62,7 +64,7 @@ function writeSeededHome(): string {
       tool: e.tool,
       hook_event: e.hook_event,
       captured_at: e.ts,
-      raw_event: { session_id: e.session, ...e.raw },
+      raw_event: { session_id: e.session, hook_event_name: e.hook_event, ...e.raw },
       enrichments: { vcs: { repo: "promptconduit/demo-repo", branch: "main" } },
     }),
   );
@@ -135,17 +137,33 @@ test("Stream panel follows the most-recently-active session in Cursor", async ()
   await win.waitForTimeout(3_000);
   await win.screenshot({ path: "out/screenshots/stream-02-panel-opened.png" });
 
-  // Grab the Stream webview by content (not DOM order). The followed session is
-  // tab-B (newest).
+  // Grab the Stream webview by content (not DOM order; nested iframe walk like
+  // cost-panel.spec.ts). The followed session is tab-B (newest).
   const webview = await webviewWithText(win, "auto-following", 30_000);
+  // Scope hook-name assertions to the row badge — the same strings also appear
+  // inside each row's (hidden) raw-JSON tape.
+  const hookBadge = (hook: string) => webview.locator("details.evt .hook", { hasText: hook });
   await expect(webview.getByText("auto-following")).toBeVisible();
-  await expect(webview.getByText("afterAgentResponse")).toBeVisible();
-  await expect(webview.getByText("beforeSubmitPrompt")).toBeVisible();
+  await expect(hookBadge("afterAgentResponse")).toBeVisible();
+  await expect(hookBadge("beforeSubmitPrompt")).toBeVisible();
   // Other sessions' unique events must be absent while following tab-B.
-  await expect(webview.getByText("UserPromptSubmit")).toHaveCount(0);
-  await expect(webview.getByText("beforeShellExecution")).toHaveCount(0);
+  await expect(hookBadge("UserPromptSubmit")).toHaveCount(0);
+  await expect(hookBadge("beforeShellExecution")).toHaveCount(0);
+
+  // The explicit session identity: full conversation id + its copy button.
+  await expect(webview.getByText("conversation_id (Cursor tab)")).toBeVisible();
+  await expect(webview.locator("code.skey", { hasText: "tab-B" })).toBeVisible();
+  await expect(webview.getByRole("button", { name: "Copy id" })).toBeVisible();
 
   await win.screenshot({ path: "out/screenshots/stream-03-window.png" });
-  await webview.locator("body").screenshot({ path: "out/screenshots/stream-04-webview-frame.png" });
+
+  // Expand a row (click its summary) → the raw envelope JSON tape appears.
+  await hookBadge("afterAgentResponse").click();
+  await win.waitForTimeout(500);
+  await expect(webview.getByText('"hook_event_name"', { exact: false }).first()).toBeVisible();
+  await expect(webview.getByRole("button", { name: "Copy JSON" }).first()).toBeVisible();
+  await win.screenshot({ path: "out/screenshots/stream-04-row-expanded.png" });
+
+  await webview.locator("body").screenshot({ path: "out/screenshots/stream-05-webview-frame.png" });
   await app.close();
 });

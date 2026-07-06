@@ -3,18 +3,34 @@ import { ConversationStore } from "./state";
 import { parseEnvelopeV2, subagentFrom, toolsFrom } from "./envelope";
 import { TailReader } from "./visualizer/tailReader";
 import { eventsJsonlPath, logDisabled } from "./visualizer/paths";
+import { makeNonce, webviewCsp, webviewShellHtml, isSafeHttpUrl } from "./webviewHost";
+import { STREAM_PANEL_CSS } from "./streamPanel/styles";
+import type { StreamPanelState, WebviewMessage } from "./streamPanel/protocol";
 
 // Keep memory bounded — we only ever render the tail of one session.
-const MAX_EVENTS = 200;
+export const MAX_EVENTS = 200;
+// At most this many concurrent session buffers; beyond it the least-recently-
+// active session is evicted entirely.
+export const MAX_SESSIONS = 30;
+// Per-event raw JSON cap (matches promptGroup's RAW_JSON_MAX).
+export const RAW_JSON_MAX = 32 * 1024;
+// Per-session raw JSON budget; over it, rawJson is evicted from the session's
+// OLDEST events first (metadata is never evicted).
+export const SESSION_RAW_BUDGET = 2 * 1024 * 1024;
 // Coalesce bursty appends into one render (matches statusBar.ts).
 const RENDER_THROTTLE_MS = 250;
 
-const PIN_COMMAND = "promptconduit.stream.pinSession";
-const FOLLOW_COMMAND = "promptconduit.stream.followActive";
+/** Commands a webview button may invoke, mapped to real extension commands. */
+const COMMAND_MAP: Record<string, string> = {
+  pinSession: "promptconduit.stream.pinSession",
+  followActive: "promptconduit.stream.followActive",
+};
 
 /** One event, scoped to the session that produced it. */
 export interface StreamEvent {
   sessionKey: string;
+  /** Envelope event_id (row identity for expansion state and copy). */
+  eventId: string;
   tool: string;
   hookEvent: string;
   capturedAt: string;
@@ -25,13 +41,25 @@ export interface StreamEvent {
   subagentBadge: string;
   /** Tools summary from the tools slug when present (e.g. "3 tools · 1 failed"). */
   toolsSummary: string;
+  /**
+   * Pretty-printed envelope JSON (hook_event, prompt_id, captured_at,
+   * raw_event, enrichments), truncated at RAW_JSON_MAX. Undefined once evicted
+   * by the per-session raw budget.
+   */
+  rawJson?: string;
+  rawTruncated: boolean;
+  /** True when the session key came from raw.conversation_id (a Cursor tab). */
+  keyIsConversationId: boolean;
 }
 
 /** A session's live buffer plus the metadata the picker/header need. */
 interface SessionBuf {
   key: string;
   tool: string;
+  keyIsConversationId: boolean;
   events: StreamEvent[];
+  /** Sum of retained rawJson lengths, enforced against SESSION_RAW_BUDGET. */
+  rawBytes: number;
   lastActivity: number;
 }
 
@@ -53,8 +81,10 @@ export function parseStreamLine(line: string): StreamEvent | null {
   }
   // Same rule the status bar uses: Cursor's per-tab conversation_id when present,
   // else the envelope's session_id.
+  const conversationId =
+    typeof env.raw.conversation_id === "string" ? env.raw.conversation_id : "";
   const sessionKey = ConversationStore.key({
-    conversation_id: typeof env.raw.conversation_id === "string" ? env.raw.conversation_id : "",
+    conversation_id: conversationId,
     session_id: env.sessionId,
   });
   if (!sessionKey) {
@@ -76,8 +106,32 @@ export function parseStreamLine(line: string): StreamEvent | null {
         ? `${tools.total} tool${tools.total === 1 ? "" : "s"} · ${failed} failed`
         : `${tools.total} tool${tools.total === 1 ? "" : "s"}`;
   }
+  // Pretty-printed raw record (same shape and 32 KiB cap as promptGroup's
+  // attachRaw, so the two panels show the exact same inspector payload).
+  let rawJson: string | undefined;
+  let rawTruncated = false;
+  try {
+    rawJson = JSON.stringify(
+      {
+        hook_event: env.hookEvent,
+        prompt_id: env.promptId || undefined,
+        captured_at: env.capturedAt,
+        raw_event: env.raw,
+        enrichments: env.enrichments,
+      },
+      null,
+      2,
+    );
+  } catch {
+    rawJson = undefined; // non-serializable — keep the metadata anyway
+  }
+  if (rawJson !== undefined && rawJson.length > RAW_JSON_MAX) {
+    rawJson = rawJson.slice(0, RAW_JSON_MAX);
+    rawTruncated = true;
+  }
   return {
     sessionKey,
+    eventId: env.eventId || `${env.hookEvent}@${env.capturedAt}`,
     tool: env.tool,
     hookEvent: env.hookEvent,
     capturedAt: env.capturedAt,
@@ -85,6 +139,9 @@ export function parseStreamLine(line: string): StreamEvent | null {
     branch: env.vcs.branch ?? "",
     subagentBadge,
     toolsSummary,
+    rawJson,
+    rawTruncated,
+    keyIsConversationId: conversationId.length > 0,
   };
 }
 
@@ -111,9 +168,27 @@ export class StreamState {
     if (ev.tool) {
       buf.tool = ev.tool;
     }
+    buf.keyIsConversationId = ev.keyIsConversationId;
     buf.events.push(ev);
+    buf.rawBytes += ev.rawJson?.length ?? 0;
     if (buf.events.length > MAX_EVENTS) {
-      buf.events.shift();
+      const dropped = buf.events.shift();
+      if (dropped?.rawJson !== undefined) {
+        buf.rawBytes -= dropped.rawJson.length;
+      }
+    }
+    // Enforce the per-session raw budget: strip rawJson from the OLDEST events
+    // first, keeping the row metadata so the table never loses history.
+    if (buf.rawBytes > SESSION_RAW_BUDGET) {
+      for (const e of buf.events) {
+        if (buf.rawBytes <= SESSION_RAW_BUDGET) {
+          break;
+        }
+        if (e.rawJson !== undefined) {
+          buf.rawBytes -= e.rawJson.length;
+          e.rawJson = undefined;
+        }
+      }
     }
     this.touch(buf, this.activityFrom(ev.capturedAt));
   }
@@ -149,7 +224,9 @@ export class StreamState {
   }
 
   /** The followed session's buffer, or undefined when nothing is followed yet. */
-  followedBuf(): SessionBuf | undefined {
+  followedBuf():
+    | { key: string; tool: string; keyIsConversationId: boolean; events: StreamEvent[] }
+    | undefined {
     const key = this.followedKey;
     return key ? this.bySession.get(key) : undefined;
   }
@@ -157,10 +234,46 @@ export class StreamState {
   private ensure(key: string): SessionBuf {
     let buf = this.bySession.get(key);
     if (!buf) {
-      buf = { key, tool: "", events: [], lastActivity: -Infinity };
+      buf = { key, tool: "", keyIsConversationId: false, events: [], rawBytes: 0, lastActivity: -Infinity };
       this.bySession.set(key, buf);
+      this.evictSessions(buf);
     }
     return buf;
+  }
+
+  // Bound the number of session buffers: evict the least-recently-active
+  // session entirely (never the one just created for the incoming event).
+  private evictSessions(keep: SessionBuf): void {
+    while (this.bySession.size > MAX_SESSIONS) {
+      let victim: SessionBuf | undefined;
+      for (const b of this.bySession.values()) {
+        if (b === keep) {
+          continue;
+        }
+        if (!victim || b.lastActivity < victim.lastActivity) {
+          victim = b;
+        }
+      }
+      if (!victim) {
+        return;
+      }
+      this.bySession.delete(victim.key);
+      if (this.activeKey === victim.key) {
+        this.recomputeActive();
+      }
+    }
+  }
+
+  // Re-derive activeKey/newestActivity after an eviction removed the active buf.
+  private recomputeActive(): void {
+    this.activeKey = undefined;
+    this.newestActivity = -Infinity;
+    for (const b of this.bySession.values()) {
+      if (b.lastActivity >= this.newestActivity) {
+        this.newestActivity = b.lastActivity;
+        this.activeKey = b.key;
+      }
+    }
   }
 
   // Resolve a record's activity time in epoch ms; records with no parseable
@@ -188,9 +301,37 @@ export class StreamState {
 }
 
 /**
+ * Build the serializable webview state for the followed session. Pure given
+ * its inputs (the preview and tests pass `logDisabled` explicitly; the live
+ * controller reads the env flag).
+ */
+export function buildStreamPanelState(
+  state: StreamState,
+  revision: number,
+  disabled: boolean,
+): StreamPanelState {
+  const buf = state.followedBuf();
+  return {
+    revision,
+    pinned: state.isPinned,
+    logDisabled: disabled,
+    session: buf
+      ? {
+          key: buf.key,
+          tool: buf.tool,
+          keyIsConversationId: buf.keyIsConversationId,
+          count: buf.events.length,
+        }
+      : undefined,
+    events: buf ? [...buf.events] : [],
+  };
+}
+
+/**
  * StreamController wires the pure StreamState to the live tail of events.jsonl
- * and a throttled HTML render. Host-agnostic: it pushes finished HTML to a sink.
- * Server-rendered (enableScripts:false; pin/follow are command: links).
+ * and a throttled state push. Host-agnostic: it pushes StreamPanelState to a
+ * sink callback (the panel posts it to the webview; the preview writes it into
+ * a shim page).
  */
 export class StreamController {
   private readonly tail: TailReader<StreamEvent>;
@@ -198,15 +339,16 @@ export class StreamController {
   private disposed = false;
   private pending = false;
   private throttle: NodeJS.Timeout | undefined;
+  private revision = 0;
 
-  constructor(private readonly setHtml: (html: string) => void) {
+  constructor(private readonly push: (state: StreamPanelState) => void) {
     this.tail = new TailReader<StreamEvent>(eventsJsonlPath(), parseStreamLine, (events) =>
       this.ingest(events),
     );
   }
 
   start(): void {
-    this.render(); // paint the empty / disabled state immediately
+    this.render(); // push the empty / disabled state immediately
     if (!logDisabled()) {
       this.tail.start();
     }
@@ -264,29 +406,32 @@ export class StreamController {
     if (this.disposed) {
       return;
     }
-    this.setHtml(buildStreamHtml(this.state.followedBuf(), this.state.isPinned));
+    this.revision += 1;
+    this.push(buildStreamPanelState(this.state, this.revision, logDisabled()));
   }
 }
 
 /**
- * StreamPanel hosts the live per-session stream as an editor-tab webview (the
- * same surface as the AI Cost Breakdown — the docked bottom-panel container was
- * removed with envelope v2). A single reused panel; show() reveals it. Pin /
- * Follow live as command: links in the rendered header since editor tabs have
- * no view title bar.
+ * StreamPanel hosts the live per-session stream as a scripted editor-tab
+ * webview (same host pattern as the AI Cost Breakdown: strict CSP + nonce,
+ * esbuild bundle from media/, ready/pendingState handshake). A single reused
+ * panel; show() reveals it. Pin / Follow are webview toolbar buttons that post
+ * `command` messages, routed to the real extension commands.
  */
 export class StreamPanel {
   private static current: StreamPanel | undefined;
   private readonly panel: vscode.WebviewPanel;
   private readonly controller: StreamController;
   private disposed = false;
+  private ready = false;
+  private lastState: StreamPanelState | undefined;
 
-  static show(): void {
+  static show(extensionUri: vscode.Uri): void {
     if (StreamPanel.current && !StreamPanel.current.disposed) {
       StreamPanel.current.panel.reveal(vscode.ViewColumn.Active);
       return;
     }
-    StreamPanel.current = new StreamPanel();
+    StreamPanel.current = new StreamPanel(extensionUri);
   }
 
   /** The open panel, if any (the pin/follow commands act on it). */
@@ -294,20 +439,35 @@ export class StreamPanel {
     return StreamPanel.current && !StreamPanel.current.disposed ? StreamPanel.current : undefined;
   }
 
-  private constructor() {
+  private constructor(extensionUri: vscode.Uri) {
     this.panel = vscode.window.createWebviewPanel(
       "promptconduitStream",
       "PromptConduit Stream",
       vscode.ViewColumn.Active,
       {
-        enableScripts: false,
+        enableScripts: true,
         retainContextWhenHidden: true,
-        enableCommandUris: [PIN_COMMAND, FOLLOW_COMMAND],
+        localResourceRoots: [vscode.Uri.joinPath(extensionUri, "media")],
       },
     );
-    this.controller = new StreamController((html) => {
-      this.panel.webview.html = html;
+
+    const nonce = makeNonce();
+    const scriptUri = this.panel.webview
+      .asWebviewUri(vscode.Uri.joinPath(extensionUri, "media", "streamPanel.js"))
+      .toString();
+    this.panel.webview.html = webviewShellHtml({
+      csp: webviewCsp(this.panel.webview, nonce),
+      nonce,
+      scriptUri,
+      title: "PromptConduit Stream",
+      headHtml: `<style nonce="${nonce}">${STREAM_PANEL_CSS}</style>`,
+      bodyHtml: `<div id="app"></div>`,
     });
+
+    this.panel.webview.onDidReceiveMessage((msg: WebviewMessage) => {
+      void this.onMessage(msg);
+    });
+    this.controller = new StreamController((state) => this.push(state));
     this.panel.onDidDispose(() => {
       this.disposed = true;
       this.controller.dispose();
@@ -316,6 +476,35 @@ export class StreamPanel {
       }
     });
     this.controller.start();
+  }
+
+  private push(state: StreamPanelState): void {
+    this.lastState = state;
+    if (!this.ready) {
+      return; // delivered on "ready"
+    }
+    void this.panel.webview.postMessage({ type: "state", state });
+  }
+
+  private async onMessage(msg: WebviewMessage): Promise<void> {
+    switch (msg.type) {
+      case "ready":
+        this.ready = true;
+        if (this.lastState) {
+          void this.panel.webview.postMessage({ type: "state", state: this.lastState });
+        }
+        break;
+      case "open_external":
+        if (isSafeHttpUrl(msg.url)) {
+          await vscode.env.openExternal(vscode.Uri.parse(msg.url));
+        }
+        break;
+      case "command":
+        if (COMMAND_MAP[msg.id]) {
+          await vscode.commands.executeCommand(COMMAND_MAP[msg.id]);
+        }
+        break;
+    }
   }
 
   /** Open a QuickPick of recent sessions and pin the chosen one. */
@@ -344,169 +533,8 @@ export class StreamPanel {
   }
 }
 
-// Short, human-friendly session id for the header and picker (keep the tail,
-// which is the most distinctive part of a uuid/hash).
+// Short, human-friendly session id for the picker and status bar (keep the
+// tail, which is the most distinctive part of a uuid/hash).
 export function shortId(key: string): string {
   return key.length > 12 ? `…${key.slice(-8)}` : key;
-}
-
-// Build the stream HTML for the followed session. Newest-first, script-free
-// (server-rendered; the pin/follow links are command: URIs the host allows).
-// `buf` is undefined when no session is being followed yet.
-export function buildStreamHtml(
-  buf: { key: string; tool: string; events: StreamEvent[] } | undefined,
-  pinned: boolean,
-): string {
-  const header = buildHeader(buf, pinned);
-  const body = buf && buf.events.length > 0 ? tableHtml(rowsHtml(buf.events)) : emptyHtml(buf);
-
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8" />
-<style>
-  body { font-family: var(--vscode-font-family); color: var(--vscode-editor-foreground); padding: 0.6rem 1rem; }
-  h1 { font-size: 1.05rem; margin: 0 0 0.15rem; }
-  .muted { color: var(--vscode-descriptionForeground); }
-  .pill { display: inline-block; font-size: 0.72rem; padding: 0.05rem 0.45rem; border-radius: 0.6rem;
-          background: var(--vscode-badge-background); color: var(--vscode-badge-foreground); margin-left: 0.35rem; }
-  .actions { margin: 0.2rem 0 0; font-size: 0.85rem; }
-  .actions a { color: var(--vscode-textLink-foreground); text-decoration: none; margin-right: 1rem; }
-  .actions a:hover { text-decoration: underline; }
-  table { border-collapse: collapse; width: 100%; margin-top: 0.5rem; }
-  th, td { text-align: left; padding: 0.25rem 0.5rem; border-bottom: 1px solid var(--vscode-panel-border); vertical-align: top; }
-  th { color: var(--vscode-descriptionForeground); font-weight: 600; position: sticky; top: 0; background: var(--vscode-editor-background); }
-  td.time, th.time { white-space: nowrap; font-variant-numeric: tabular-nums; }
-  .tool, .hook { display: inline-block; font-size: 0.78rem; padding: 0.1rem 0.5rem; border-radius: 0.5rem;
-                 background: var(--vscode-badge-background); color: var(--vscode-badge-foreground); }
-  .subagent-badge { display: inline-block; font-size: 0.72rem; padding: 0.05rem 0.4rem; border-radius: 0.5rem;
-                    margin-left: 0.25rem; background: var(--vscode-charts-purple, #a78bfa); color: #fff; }
-  td.repo, td.tools { font-size: 0.82rem; color: var(--vscode-descriptionForeground); }
-  .empty { margin-top: 1rem; }
-  code { background: var(--vscode-textCodeBlock-background); padding: 0.1rem 0.35rem; border-radius: 0.35rem; }
-  footer { margin-top: 1rem; font-size: 0.8rem; }
-</style>
-</head>
-<body>
-  ${header}
-  ${body}
-  <footer class="muted">
-    Read straight from the local log on your machine. None of your data is sent anywhere.
-  </footer>
-</body>
-</html>`;
-}
-
-function actionsHtml(pinned: boolean): string {
-  const pin = `<a href="command:${PIN_COMMAND}">📌 Pin a session…</a>`;
-  const follow = pinned ? `<a href="command:${FOLLOW_COMMAND}">↻ Follow active session</a>` : "";
-  return `<p class="actions">${pin}${follow}</p>`;
-}
-
-function buildHeader(
-  buf: { key: string; tool: string; events: StreamEvent[] } | undefined,
-  pinned: boolean,
-): string {
-  if (!buf) {
-    return `<h1>Live stream</h1>
-  <p class="muted">Following the most recently active AI session.</p>
-  ${actionsHtml(pinned)}`;
-  }
-  const tool = escape(buf.tool || "session");
-  const id = escape(shortId(buf.key));
-  const mode = pinned
-    ? `<span class="pill">📌 pinned</span>`
-    : `<span class="pill">auto-following</span>`;
-  return `<h1>${tool} <span class="muted">${id}</span> ${mode}</h1>
-  <p class="muted">Live events for this session — newest first. ${
-    pinned
-      ? "Use <em>Follow active session</em> to resume auto-switching."
-      : "Switches as you work in another agent tab."
-  }</p>
-  ${actionsHtml(pinned)}`;
-}
-
-function repoLabel(e: StreamEvent): string {
-  if (!e.repo) {
-    return "—";
-  }
-  return e.branch ? `${e.repo} @ ${e.branch}` : e.repo;
-}
-
-function hookCell(e: StreamEvent): string {
-  const hook = escape(e.hookEvent || "—");
-  const badge = e.subagentBadge
-    ? ` <span class="subagent-badge">${escape(e.subagentBadge)}</span>`
-    : "";
-  return `<span class="hook">${hook}</span>${badge}`;
-}
-
-function rowsHtml(events: StreamEvent[]): string {
-  return events
-    .slice()
-    .reverse()
-    .map(
-      (e) => `
-      <tr>
-        <td class="time">${escape(fmtTime(e.capturedAt))}</td>
-        <td><span class="tool">${escape(e.tool || "—")}</span></td>
-        <td>${hookCell(e)}</td>
-        <td class="tools">${escape(e.toolsSummary || "—")}</td>
-        <td class="repo">${escape(repoLabel(e))}</td>
-      </tr>`,
-    )
-    .join("");
-}
-
-function tableHtml(rows: string): string {
-  return `<table>
-    <thead>
-      <tr>
-        <th class="time">Time</th><th>Tool</th><th>Event</th><th>Tools</th><th>Repo</th>
-      </tr>
-    </thead>
-    <tbody>
-      ${rows}
-    </tbody>
-  </table>`;
-}
-
-function emptyHtml(buf: { key: string } | undefined): string {
-  if (logDisabled()) {
-    return `<div class="empty muted">
-    <p>The local event log is <strong>disabled</strong> (<code>PROMPTCONDUIT_EVENT_LOG=0</code>).</p>
-    <p>Unset that variable and restart your AI tool to start streaming events.</p>
-  </div>`;
-  }
-  if (!buf) {
-    return `<div class="empty muted">
-    <p>No sessions yet. Run an AI coding session (Claude Code or a Cursor agent) with the
-    <code>promptconduit</code> CLI hooks installed and its events will stream in here within ~1s.</p>
-    <p>Waiting on <code>~/.promptconduit/events.jsonl</code>…</p>
-  </div>`;
-  }
-  return `<div class="empty muted">
-    <p>No events for this session yet. Waiting on <code>~/.promptconduit/events.jsonl</code>…</p>
-  </div>`;
-}
-
-// Render the ISO8601 captured_at as a local HH:MM:SS; fall back to the raw string
-// if it isn't parseable so we never hide an event.
-function fmtTime(iso: string): string {
-  if (!iso) {
-    return "—";
-  }
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) {
-    return iso;
-  }
-  return d.toLocaleTimeString();
-}
-
-function escape(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
 }
