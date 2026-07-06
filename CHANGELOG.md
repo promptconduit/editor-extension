@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.13.0
+
+- **Focus-aware cost breakdown (Epic 5).** The status bar and default cost
+  panel follow the **focused terminal's Claude Code session** (via new CLI
+  `sessions resolve --pid`), a **manual pin**, or debounced feed activity for
+  Cursor. Click the cost item for a **single-session** breakdown; use the new
+  `$(list-tree) All sessions` status-bar button for the multi-session overview.
+- **Pin / follow** commands for cost (`promptconduit.cost.pinSession`,
+  `promptconduit.cost.followActive`) mirror the Stream panel pattern.
+- Requires CLI with `sessions resolve` (cli ≥ next release after 0.x).
+
 ## 0.12.1
 
 - **Accurate per-session request count.** The AI Cost Breakdown no longer caps a

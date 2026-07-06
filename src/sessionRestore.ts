@@ -285,6 +285,7 @@ export function runSessionsCommand(binary: string, sinceHours: number): Promise<
 export function makeRestoreDeps(
   context: vscode.ExtensionContext,
   resolveBinary: () => string | null,
+  onTerminalCreated?: (term: vscode.Terminal, sessionId: string) => void,
 ): RestoreDeps {
   const cfg = () => vscode.workspace.getConfiguration("promptconduit.restore");
   return {
@@ -296,8 +297,7 @@ export function makeRestoreDeps(
         cwd: s.cwd,
         iconPath: new vscode.ThemeIcon("comment-discussion"),
       });
-      // sendText runs the command whether or not the terminal is focused, so we
-      // don't steal focus by showing each one — the summary toast tells the user.
+      onTerminalCreated?.(term, s.session_id);
       term.sendText(resumeCommand(s));
     },
     getRoots: () => (vscode.workspace.workspaceFolders ?? []).map((f) => f.uri.fsPath),

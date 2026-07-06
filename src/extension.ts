@@ -8,27 +8,35 @@ import { resolveBinary } from "./binary";
 import { VisualizerPanel } from "./visualizerPanel";
 import { UpdatePromptController } from "./updatePrompt";
 import { SessionRestoreController, makeRestoreDeps } from "./sessionRestore";
+import { TerminalFocusController, makeTerminalFocusDeps } from "./terminalFocus";
 
 let statusBar: CostStatusBar | undefined;
 let costFeed: CostFeedController | undefined;
+let terminalFocus: TerminalFocusController | undefined;
 
 export function activate(context: vscode.ExtensionContext): void {
   const cfg = () => vscode.workspace.getConfiguration("promptconduit.cost");
+  const resolveCli = () => resolveBinary(cfg().get<string>("binaryPath", ""));
 
   statusBar = new CostStatusBar();
   context.subscriptions.push(statusBar);
 
-  // When the CLI updates this extension on disk after a self-upgrade, offer a
-  // one-click **Reload Window** to apply it — a reload keeps the pty host alive,
-  // so terminals running Claude Code survive (a full restart would kill them).
   const updates = new UpdatePromptController(
     context.extension.packageJSON.version as string,
   );
   context.subscriptions.push(updates);
   updates.start();
 
-  // Bottom-right status-bar entry point for the Stream panel. Priority 99 seats
-  // it just to the right of the cost item (100).
+  const allSessionsButton = vscode.window.createStatusBarItem(
+    vscode.StatusBarAlignment.Right,
+    98,
+  );
+  allSessionsButton.text = "$(list-tree) All sessions";
+  allSessionsButton.tooltip = "Open the multi-session AI cost overview";
+  allSessionsButton.command = "promptconduit.cost.showAllSessions";
+  allSessionsButton.show();
+  context.subscriptions.push(allSessionsButton);
+
   const streamButton = vscode.window.createStatusBarItem(
     vscode.StatusBarAlignment.Right,
     99,
@@ -41,12 +49,33 @@ export function activate(context: vscode.ExtensionContext): void {
 
   const breakdownView = (): BreakdownView => ({
     conversations: statusBar?.conversations ?? [],
-    activeKey: statusBar?.activeConversationKey,
+    activeKey: statusBar?.displayConversationKey,
   });
+
+  const displayConversation = () =>
+    statusBar?.displayConversationKey
+      ? statusBar.storeRef.viewForKey(statusBar.displayConversationKey)
+      : undefined;
+
+  const refreshPanels = () => {
+    CostPanel.refreshSession(displayConversation());
+    CostPanel.refreshAll(breakdownView());
+  };
+
+  statusBar.setOnChange(refreshPanels);
 
   context.subscriptions.push(
     vscode.commands.registerCommand("promptconduit.cost.showDetails", () => {
-      CostPanel.show(breakdownView());
+      CostPanel.showSession(displayConversation());
+    }),
+    vscode.commands.registerCommand("promptconduit.cost.showAllSessions", () => {
+      CostPanel.showAll(breakdownView());
+    }),
+    vscode.commands.registerCommand("promptconduit.cost.pinSession", () => {
+      void statusBar?.pickAndPin();
+    }),
+    vscode.commands.registerCommand("promptconduit.cost.followActive", () => {
+      statusBar?.followActive();
     }),
     vscode.commands.registerCommand("promptconduit.coaching.showTab", () => {
       CoachingPanel.show();
@@ -70,15 +99,17 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
   );
 
-  // Bring interrupted AI sessions back to life. On startup this reopens Claude
-  // Code sessions that were active before the editor restarted (which kills the
-  // terminals) — in the exact directory they ran in, worktrees included — via
-  // the CLI engine (`promptconduit sessions --json`). Mode is configurable
-  // (auto / prompt / off); a manual command lets the user pick any time.
+  terminalFocus = new TerminalFocusController(
+    makeTerminalFocusDeps(resolveCli, (sessionKey) => {
+      statusBar?.setFocusedKey(sessionKey);
+    }),
+  );
+  context.subscriptions.push(terminalFocus);
+
   const restore = new SessionRestoreController(
-    makeRestoreDeps(context, () =>
-      resolveBinary(cfg().get<string>("binaryPath", "")),
-    ),
+    makeRestoreDeps(context, resolveCli, (term, sessionId) => {
+      terminalFocus?.registerTerminal(term, sessionId);
+    }),
   );
   context.subscriptions.push(
     vscode.commands.registerCommand("promptconduit.restore.sessions", () => {
@@ -87,10 +118,6 @@ export function activate(context: vscode.ExtensionContext): void {
   );
   void restore.runStartup();
 
-  // Cost ingestion: since envelope v2 the per-request costs live on the local
-  // event log (enrichments.cost on events.jsonl), so the status bar and the
-  // breakdown panel read the same file every other surface does — no CLI
-  // subprocess required.
   const start = () => {
     stopCostFeed();
     if (!cfg().get<boolean>("enabled", true)) {
@@ -101,13 +128,12 @@ export function activate(context: vscode.ExtensionContext): void {
     costFeed = new CostFeedController({
       onEvent: (ev) => {
         statusBar?.updateFromEvent(ev);
-        CostPanel.refresh(breakdownView());
+        refreshPanels();
       },
     });
     costFeed.start();
   };
 
-  // React to config changes.
   context.subscriptions.push(
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration("promptconduit.cost")) {
