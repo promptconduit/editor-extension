@@ -10,6 +10,7 @@ function conv(p: {
   tool?: string;
   lastEvent?: CostEvent;
   recent?: CostEvent[];
+  droppedRequests?: number;
   lastActivity?: number;
   diff?: { files_changed?: number; insertions?: number; deletions?: number };
   subagents?: { count: number; totalDurationMs: number; totalUsd: number; dominantType: string };
@@ -20,6 +21,7 @@ function conv(p: {
     summary: p.summary,
     lastEvent: p.lastEvent,
     recent: p.recent ?? [],
+    droppedRequests: p.droppedRequests ?? 0,
     lastActivity: p.lastActivity ?? Date.parse(p.summary.updated_at) ?? 0,
     diff: p.diff,
     subagents: p.subagents,
@@ -49,6 +51,18 @@ describe("renderSessionBreakdownHtml — single session", () => {
   it("shows landing when no conversation", () => {
     const html = renderSessionBreakdownHtml(undefined);
     expect(html).toContain("AI Session Cost");
+  });
+
+  it("counts store-evicted requests in the older-prompts note", () => {
+    const c = conv({
+      key: "s-heavy",
+      summary: heavySummary,
+      lastEvent: sampleEvents[2],
+      recent: sampleEvents,
+      droppedRequests: 7,
+    });
+    const html = renderSessionBreakdownHtml(c);
+    expect(html).toContain("+7 older prompts not shown");
   });
 });
 

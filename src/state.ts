@@ -28,6 +28,8 @@ export interface ConversationView {
   lastEvent?: CostEvent;
   /** Recent turns, oldest first. */
   recent: CostEvent[];
+  /** Turns evicted from `recent` by the memory cap (still counted in totals). */
+  droppedRequests: number;
   lastActivity: number;
   /** Latest diff stats from a turn-end event (Stop / SessionEnd). */
   diff?: DiffEnrichment;
@@ -43,7 +45,12 @@ interface ConversationState {
   tool: string;
   lastEvent?: CostEvent;
   recent: CostEvent[];
+  droppedRecent: number;
   counted: Set<string>;
+  // Envelope-level dedup for enrichment accumulation (diff/subagent), so a tail
+  // reset on file rotation can't double-apply. FIFO-bounded companion queue.
+  seenEnrichments: Set<string>;
+  seenEnrichmentsOrder: string[];
   totals: Tokens & { cost_total: number };
   costParts: { input: number; cache_write: number };
   byModel: Map<string, ModelTotal>;
@@ -62,6 +69,13 @@ interface ConversationState {
 
 // Debounce rapid activity flips when concurrent Cursor agents run.
 export const ACTIVE_KEY_DEBOUNCE_MS = 750;
+
+// Cap on retained per-request events per conversation. Aggregate totals stay
+// exact; only the drill-down list is bounded (older turns live in events.jsonl).
+export const MAX_RECENT_REQUESTS = 1000;
+
+// Bound on the enrichment dedup set per conversation.
+const MAX_SEEN_ENRICHMENTS = 4000;
 
 // Parse an ISO timestamp to epoch ms; NaN when absent/unparseable.
 function parseTs(ts: string | undefined): number {
@@ -105,7 +119,6 @@ export class ConversationStore {
   private readonly byKey = new Map<string, ConversationState>();
   private activeKeyRef: string | undefined;
   private newestActivity = -Infinity;
-  private seq = 0;
   private focusedKeyRef: string | undefined;
   private pinnedKeyRef: string | undefined;
   private pendingActiveKey: string | undefined;
@@ -131,7 +144,10 @@ export class ConversationStore {
         key,
         tool: "",
         recent: [],
+        droppedRecent: 0,
         counted: new Set(),
+        seenEnrichments: new Set(),
+        seenEnrichmentsOrder: [],
         totals: { input: 0, output: 0, cache_read: 0, cache_write: 0, cost_total: 0 },
         costParts: { input: 0, cache_write: 0 },
         byModel: new Map(),
@@ -151,13 +167,16 @@ export class ConversationStore {
     return state;
   }
 
+  // Resolve a record's activity time in epoch ms. Records with no parseable
+  // timestamp count as "now" (arrival time) so they compare in the same units
+  // as timestamped records — a tiny counter here would lose to any epoch value
+  // and the session could never become active or sort correctly.
   private activityFrom(ts: string | undefined): number {
     const parsed = parseTs(ts);
     if (!Number.isNaN(parsed)) {
       return parsed;
     }
-    this.seq += 1;
-    return this.seq;
+    return Math.max(Date.now(), this.newestActivity);
   }
 
   private touch(state: ConversationState, activity: number): void {
@@ -219,10 +238,19 @@ export class ConversationStore {
     return this.pinnedKeyRef;
   }
 
+  // A focused/pinned key only wins once its session has events; a terminal
+  // whose session hasn't produced anything yet falls through to pin/activity
+  // instead of rendering an empty $0.00 conversation.
+  private get liveFocusedKey(): string | undefined {
+    return this.focusedKeyRef && this.byKey.has(this.focusedKeyRef)
+      ? this.focusedKeyRef
+      : undefined;
+  }
+
   /** Key shown in the status bar and default breakdown. */
   get displayKey(): string | undefined {
-    if (this.focusedKeyRef) {
-      return this.focusedKeyRef;
+    if (this.liveFocusedKey) {
+      return this.liveFocusedKey;
     }
     if (this.pinnedKeyRef && this.byKey.has(this.pinnedKeyRef)) {
       return this.pinnedKeyRef;
@@ -231,13 +259,18 @@ export class ConversationStore {
   }
 
   get focusSource(): FocusSource {
-    if (this.pinnedKeyRef && this.byKey.has(this.pinnedKeyRef) && !this.focusedKeyRef) {
-      return "pinned";
-    }
-    if (this.focusedKeyRef) {
+    if (this.liveFocusedKey) {
       return "terminal";
     }
+    if (this.pinnedKeyRef && this.byKey.has(this.pinnedKeyRef)) {
+      return "pinned";
+    }
     return "activity";
+  }
+
+  /** Cancel the pending active-key debounce (call on extension teardown). */
+  dispose(): void {
+    this.clearActiveDebounce();
   }
 
   recordEvent(ev: CostEvent): void {
@@ -268,12 +301,30 @@ export class ConversationStore {
       state.tool = env.tool;
     }
 
+    const sub = subagentFrom(env);
+    // Dedup so a tail reset (file rotation re-read) can't double-apply
+    // diff/subagent accumulation — mirrors `counted` for cost requests.
+    const dedupKey =
+      env.eventId ||
+      (sub ? `sub:${sub.agent_id ?? ""}:${sub.phase ?? ""}` : `${env.hookEvent}:${env.capturedAt}`);
+    if (state.seenEnrichments.has(dedupKey)) {
+      this.touch(state, this.activityFrom(env.capturedAt));
+      return;
+    }
+    state.seenEnrichments.add(dedupKey);
+    state.seenEnrichmentsOrder.push(dedupKey);
+    if (state.seenEnrichmentsOrder.length > MAX_SEEN_ENRICHMENTS) {
+      const oldest = state.seenEnrichmentsOrder.shift();
+      if (oldest) {
+        state.seenEnrichments.delete(oldest);
+      }
+    }
+
     const diff = diffFrom(env);
     if (diff && (env.hookEvent === "Stop" || env.hookEvent === "SessionEnd")) {
       state.diff = diff;
     }
 
-    const sub = subagentFrom(env);
     if (sub?.phase === "stop") {
       state.subagentCount += 1;
       if (sub.duration_ms && sub.duration_ms > 0) {
@@ -318,6 +369,10 @@ export class ConversationStore {
       }
     }
     state.recent.push(ev);
+    if (state.recent.length > MAX_RECENT_REQUESTS) {
+      state.recent.shift();
+      state.droppedRecent += 1;
+    }
   }
 
   private accumulate(state: ConversationState, ev: CostEvent): void {
@@ -417,6 +472,7 @@ export class ConversationStore {
       summary: this.summarize(state),
       lastEvent: state.lastEvent,
       recent: state.recent,
+      droppedRequests: state.droppedRecent,
       lastActivity: state.lastActivity,
       diff: state.diff,
       subagents: this.subagentSummary(state),

@@ -171,13 +171,13 @@ function promptRowHtml(ev: CostEvent, maxCost: number): string {
     </details>`;
 }
 
-// How many per-prompt rows to render. Every request is retained in memory and
-// counted in the header; we cap only the rendered DOM so a long session (many
-// hundreds of prompts) doesn't build a sluggish webview. Older prompts stay on
-// disk in ~/.promptconduit/events.jsonl.
+// How many per-prompt rows to render. The store retains up to
+// MAX_RECENT_REQUESTS per conversation (totals in the header stay exact even
+// past the cap); we render fewer still so a long session doesn't build a
+// sluggish webview. Older prompts stay on disk in ~/.promptconduit/events.jsonl.
 const PROMPT_RENDER_LIMIT = 100;
 
-function perPromptHtml(recent: CostEvent[]): string {
+function perPromptHtml(recent: CostEvent[], dropped = 0): string {
   if (!recent || recent.length === 0) {
     return "";
   }
@@ -186,13 +186,13 @@ function perPromptHtml(recent: CostEvent[]): string {
   // even when it's older than the rows we render.
   const maxCost = items.reduce((m, e) => (e.model_priced ? Math.max(m, e.cost.total) : m), 0);
   const shown = items.slice(0, PROMPT_RENDER_LIMIT);
-  const hidden = items.length - shown.length;
-  const rows = shown.map((ev) => promptRowHtml(ev, maxCost)).join("");
+  const hidden = items.length - shown.length + dropped;
   const moreNote =
     hidden > 0
       ? `<p class="muted small">+${hidden} older prompt${hidden === 1 ? "" : "s"} not shown here —
         full history is kept in <code>~/.promptconduit/events.jsonl</code>.</p>`
       : "";
+  const rows = shown.map((ev) => promptRowHtml(ev, maxCost)).join("");
   return `
     <section>
       <h2>Cost per prompt</h2>
@@ -281,7 +281,7 @@ function sessionCardHtml(c: ConversationView, isActive: boolean): string {
         </span>
         ${enrichHtml}
       </summary>
-      ${perPromptHtml(c.recent)}
+      ${perPromptHtml(c.recent, c.droppedRequests)}
       ${byModelHtml(s)}
     </details>`;
 }
@@ -448,7 +448,7 @@ export function renderSessionBreakdownHtml(conv: ConversationView | undefined): 
   const body = `
   <main class="report">
     ${hero}
-    ${perPromptHtml(conv.recent)}
+    ${perPromptHtml(conv.recent, conv.droppedRequests)}
     ${driversHtml(session)}
     ${tipsHtml(session, lastEvent)}
     ${edgeCasesHtml(session, lastEvent)}
