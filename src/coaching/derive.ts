@@ -123,6 +123,59 @@ function extractToolCall(rawCall: Record<string, unknown>, failed: boolean): Too
   return call;
 }
 
+/** Map the CLI's normalized `tools` enrichment slug into coaching ToolCalls. */
+function toolCallsFromSlug(tools: Record<string, unknown>): ToolCall[] {
+  const out: ToolCall[] = [];
+  for (const c of asArr(tools.calls)) {
+    const co = asObj(c);
+    if (!co) {
+      continue;
+    }
+    const name = asStr(co.name) ?? "";
+    if (!name) {
+      continue;
+    }
+    const call: ToolCall = { name, success: co.ok !== false };
+    const skill = asStr(co.skill);
+    if (skill) {
+      call.skill = skill;
+    }
+    const agentType = asStr(co.agent_type);
+    if (SUBAGENT_TOOLS.has(name) && agentType) {
+      call.subagentType = agentType;
+    }
+    const dur = asNum(co.duration_ms);
+    if (dur && dur > 0) {
+      call.durationMs = dur;
+    }
+    out.push(call);
+  }
+  return out;
+}
+
+function toolCallsFromRaw(hookEvent: string, np: Record<string, unknown>): { toolCalls: ToolCall[]; batchSubagentCount: number } {
+  const toolCalls: ToolCall[] = [];
+  let batchSubagentCount = 0;
+  if (hookEvent === "PostToolUse") {
+    if (asStr(np.tool_name)) {
+      toolCalls.push(extractToolCall(np, false));
+    }
+  } else if (hookEvent === "PostToolUseFailure") {
+    if (asStr(np.tool_name)) {
+      toolCalls.push(extractToolCall(np, true));
+    }
+  } else if (hookEvent === "PostToolBatch") {
+    for (const c of asArr(np.tool_calls)) {
+      const co = asObj(c);
+      if (co && asStr(co.tool_name)) {
+        toolCalls.push(extractToolCall(co, false));
+      }
+    }
+    batchSubagentCount = toolCalls.filter((t) => SUBAGENT_TOOLS.has(t.name)).length;
+  }
+  return { toolCalls, batchSubagentCount };
+}
+
 /** Parse one JSONL envelope line; returns null for blanks/garbage/non-objects. */
 export function parseEnvelopeLine(line: string): ParsedEvent | null {
   const trimmed = line.trim();
@@ -152,24 +205,19 @@ export function parseEnvelopeLine(line: string): ParsedEvent | null {
   const capturedAt = asStr(env.captured_at) ?? "";
   const capturedMs = Date.parse(capturedAt);
 
-  const toolCalls: ToolCall[] = [];
+  let toolCalls: ToolCall[] = [];
   let batchSubagentCount = 0;
-  if (hookEvent === "PostToolUse") {
-    if (asStr(np.tool_name)) {
-      toolCalls.push(extractToolCall(np, false));
+  if (hookEvent === "PostToolUse" || hookEvent === "PostToolUseFailure" || hookEvent === "PostToolBatch") {
+    const toolsSlug = asObj(enrichments.tools);
+    const fromSlug = toolsSlug ? toolCallsFromSlug(toolsSlug) : [];
+    if (fromSlug.length > 0) {
+      toolCalls = fromSlug;
+      batchSubagentCount = fromSlug.filter((t) => SUBAGENT_TOOLS.has(t.name)).length;
+    } else {
+      const raw = toolCallsFromRaw(hookEvent, np);
+      toolCalls = raw.toolCalls;
+      batchSubagentCount = raw.batchSubagentCount;
     }
-  } else if (hookEvent === "PostToolUseFailure") {
-    if (asStr(np.tool_name)) {
-      toolCalls.push(extractToolCall(np, true));
-    }
-  } else if (hookEvent === "PostToolBatch") {
-    for (const c of asArr(np.tool_calls)) {
-      const co = asObj(c);
-      if (co && asStr(co.tool_name)) {
-        toolCalls.push(extractToolCall(co, false));
-      }
-    }
-    batchSubagentCount = toolCalls.filter((t) => SUBAGENT_TOOLS.has(t.name)).length;
   }
 
   return {

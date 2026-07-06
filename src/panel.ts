@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
-import { ConversationView } from "./state";
+import { ConversationView, SessionSubagentSummary } from "./state";
 import { CostEvent, SessionSummary, ToolId, ToolSummary } from "./types";
+import { DiffEnrichment } from "./envelope";
 import { buildTips } from "./tips";
 import { buildEdgeCases } from "./edgeCases";
 import { landingHtml } from "./landing";
@@ -214,6 +215,41 @@ function lastActiveLabel(ms: number): string {
   return new Date(ms).toLocaleTimeString();
 }
 
+function diffLine(diff: DiffEnrichment | undefined): string {
+  if (!diff) {
+    return "";
+  }
+  const ins = diff.insertions ?? 0;
+  const del = diff.deletions ?? 0;
+  const files = diff.files_changed ?? 0;
+  if (ins === 0 && del === 0 && files === 0) {
+    return "";
+  }
+  const fileWord = files === 1 ? "file" : "files";
+  return `+${num(ins)}/−${num(del)} across ${files} ${fileWord}`;
+}
+
+function fmtSecs(ms: number): string {
+  return `${Math.round(ms / 1000)}s`;
+}
+
+function subagentLine(sub: SessionSubagentSummary | undefined): string {
+  if (!sub || sub.count <= 0) {
+    return "";
+  }
+  const parts = [`${sub.count} subagent${sub.count === 1 ? "" : "s"}`];
+  if (sub.dominantType) {
+    parts.push(escapeHtml(sub.dominantType));
+  }
+  if (sub.totalDurationMs > 0) {
+    parts.push(fmtSecs(sub.totalDurationMs));
+  }
+  if (sub.totalUsd > 0) {
+    parts.push(fmtUSD(sub.totalUsd));
+  }
+  return parts.join(" · ");
+}
+
 // One conversation's card: header line (tool, workspace, id, totals) plus an
 // expandable body with its per-prompt rows and per-model table. The active
 // session renders open; the rest collapsed.
@@ -227,6 +263,12 @@ function sessionCardHtml(c: ConversationView, isActive: boolean): string {
   const meta = [workspace, `${requests} request${requests === 1 ? "" : "s"}`, when]
     .filter(Boolean)
     .join(" · ");
+  const diff = diffLine(c.diff);
+  const sub = subagentLine(c.subagents);
+  const enrichLines = [diff, sub].filter(Boolean);
+  const enrichHtml = enrichLines.length
+    ? `<div class="session-enrich muted small">${enrichLines.map((l) => `<span>${l}</span>`).join("")}</div>`
+    : "";
   return `
     <details class="session"${isActive ? " open" : ""}>
       <summary>
@@ -237,6 +279,7 @@ function sessionCardHtml(c: ConversationView, isActive: boolean): string {
           <span class="muted session-id">${escapeHtml(shortKey(c.key))}</span>
           ${activePill}
         </span>
+        ${enrichHtml}
       </summary>
       ${perPromptHtml(c.recent)}
       ${byModelHtml(s)}
@@ -503,6 +546,7 @@ const STYLES = `
                     background: var(--vscode-textBlockQuote-background); }
   details.session > summary { cursor: pointer; }
   .session-head { display: inline-flex; gap: 0.55rem; align-items: baseline; flex-wrap: wrap; }
+  .session-enrich { display: flex; gap: 1rem; flex-wrap: wrap; margin-top: 0.2rem; }
   .session-cost { font-weight: 650; font-variant-numeric: tabular-nums; }
   .session-id { font-size: 0.78rem; }
   .badge.active-pill { background: var(--vscode-charts-green, #3fb950); color: #fff; }

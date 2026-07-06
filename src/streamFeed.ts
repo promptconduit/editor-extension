@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 import { ConversationStore } from "./state";
-import { parseEnvelopeV2 } from "./envelope";
+import { parseEnvelopeV2, subagentFrom, toolsFrom } from "./envelope";
 import { TailReader } from "./visualizer/tailReader";
 import { eventsJsonlPath, logDisabled } from "./visualizer/paths";
 
@@ -21,6 +21,10 @@ export interface StreamEvent {
   /** Repo slug + branch from the envelope's vcs enrichment ("" when absent). */
   repo: string;
   branch: string;
+  /** Subagent badge for SubagentStart/Stop rows (e.g. "Explore start"). */
+  subagentBadge: string;
+  /** Tools summary from the tools slug when present (e.g. "3 tools · 1 failed"). */
+  toolsSummary: string;
 }
 
 /** A session's live buffer plus the metadata the picker/header need. */
@@ -56,6 +60,22 @@ export function parseStreamLine(line: string): StreamEvent | null {
   if (!sessionKey) {
     return null;
   }
+  const sub = subagentFrom(env);
+  let subagentBadge = "";
+  if (env.hookEvent === "SubagentStart" || env.hookEvent === "SubagentStop") {
+    const type = sub?.agent_type || "subagent";
+    const phase = sub?.phase || (env.hookEvent === "SubagentStart" ? "start" : "stop");
+    subagentBadge = `${type} ${phase}`;
+  }
+  const tools = toolsFrom(env);
+  let toolsSummary = "";
+  if (tools?.total && tools.total > 0) {
+    const failed = tools.failed ?? 0;
+    toolsSummary =
+      failed > 0
+        ? `${tools.total} tool${tools.total === 1 ? "" : "s"} · ${failed} failed`
+        : `${tools.total} tool${tools.total === 1 ? "" : "s"}`;
+  }
   return {
     sessionKey,
     tool: env.tool,
@@ -63,6 +83,8 @@ export function parseStreamLine(line: string): StreamEvent | null {
     capturedAt: env.capturedAt,
     repo: env.vcs.repo ?? "",
     branch: env.vcs.branch ?? "",
+    subagentBadge,
+    toolsSummary,
   };
 }
 
@@ -359,7 +381,9 @@ export function buildStreamHtml(
   td.time, th.time { white-space: nowrap; font-variant-numeric: tabular-nums; }
   .tool, .hook { display: inline-block; font-size: 0.78rem; padding: 0.1rem 0.5rem; border-radius: 0.5rem;
                  background: var(--vscode-badge-background); color: var(--vscode-badge-foreground); }
-  td.repo { font-size: 0.82rem; color: var(--vscode-descriptionForeground); }
+  .subagent-badge { display: inline-block; font-size: 0.72rem; padding: 0.05rem 0.4rem; border-radius: 0.5rem;
+                    margin-left: 0.25rem; background: var(--vscode-charts-purple, #a78bfa); color: #fff; }
+  td.repo, td.tools { font-size: 0.82rem; color: var(--vscode-descriptionForeground); }
   .empty { margin-top: 1rem; }
   code { background: var(--vscode-textCodeBlock-background); padding: 0.1rem 0.35rem; border-radius: 0.35rem; }
   footer { margin-top: 1rem; font-size: 0.8rem; }
@@ -411,6 +435,14 @@ function repoLabel(e: StreamEvent): string {
   return e.branch ? `${e.repo} @ ${e.branch}` : e.repo;
 }
 
+function hookCell(e: StreamEvent): string {
+  const hook = escape(e.hookEvent || "—");
+  const badge = e.subagentBadge
+    ? ` <span class="subagent-badge">${escape(e.subagentBadge)}</span>`
+    : "";
+  return `<span class="hook">${hook}</span>${badge}`;
+}
+
 function rowsHtml(events: StreamEvent[]): string {
   return events
     .slice()
@@ -420,7 +452,8 @@ function rowsHtml(events: StreamEvent[]): string {
       <tr>
         <td class="time">${escape(fmtTime(e.capturedAt))}</td>
         <td><span class="tool">${escape(e.tool || "—")}</span></td>
-        <td><span class="hook">${escape(e.hookEvent || "—")}</span></td>
+        <td>${hookCell(e)}</td>
+        <td class="tools">${escape(e.toolsSummary || "—")}</td>
         <td class="repo">${escape(repoLabel(e))}</td>
       </tr>`,
     )
@@ -431,7 +464,7 @@ function tableHtml(rows: string): string {
   return `<table>
     <thead>
       <tr>
-        <th class="time">Time</th><th>Tool</th><th>Event</th><th>Repo</th>
+        <th class="time">Time</th><th>Tool</th><th>Event</th><th>Tools</th><th>Repo</th>
       </tr>
     </thead>
     <tbody>

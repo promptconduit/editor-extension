@@ -1,6 +1,13 @@
 import { describe, it, expect } from "vitest";
-import { costEventsFrom, parseEnvelopeV2 } from "../../src/envelope";
-import { costEnvelope, costRequest, v2Envelope } from "../../dev/fixtures";
+import {
+  costEventsFrom,
+  parseEnvelopeV2,
+  diffFrom,
+  subagentFrom,
+  toolsFrom,
+  envFrom,
+} from "../../src/envelope";
+import { costEnvelope, costRequest, sampleEnrichmentLines, v2Envelope } from "../../dev/fixtures";
 
 describe("parseEnvelopeV2", () => {
   it("parses a v2 envelope's identifiers, raw event, and enrichments", () => {
@@ -101,5 +108,42 @@ describe("costEventsFrom", () => {
     const line = costEnvelope("claude-code", "2026-07-03T17:00:00Z", "s", [costRequest({ request_id: "r" })]);
     const [ev] = costEventsFrom(parseEnvelopeV2(line)!);
     expect(ev.ts).toBe("2026-07-03T17:00:00Z");
+  });
+});
+
+describe("enrichment slug accessors", () => {
+  it("reads diff, subagent, tools, and env slugs", () => {
+    for (const line of sampleEnrichmentLines) {
+      const env = parseEnvelopeV2(line)!;
+      if (env.hookEvent === "Stop") {
+        expect(diffFrom(env)).toMatchObject({ files_changed: 3, insertions: 120, deletions: 40 });
+      }
+      if (env.hookEvent === "SubagentStop" && subagentFrom(env)?.agent_id === "a1") {
+        expect(subagentFrom(env)).toMatchObject({
+          phase: "stop",
+          agent_type: "Explore",
+          duration_ms: 95000,
+          usd: { total: 0.18 },
+        });
+      }
+      if (env.hookEvent === "PostToolBatch") {
+        const tools = toolsFrom(env)!;
+        expect(tools.total).toBe(3);
+        expect(tools.failed).toBe(1);
+        expect(tools.calls?.[1].duration_ms).toBe(1500);
+      }
+    }
+    const envLine = v2Envelope("claude-code", "SessionStart", "2026-07-03T17:00:00Z", {
+      sessionId: "s",
+      enrichments: { env: { os: "darwin", os_version: "26.1", arch: "arm64" } },
+    });
+    expect(envFrom(parseEnvelopeV2(envLine)!)!).toMatchObject({ os: "darwin", os_version: "26.1" });
+  });
+
+  it("returns undefined for missing slugs", () => {
+    const env = parseEnvelopeV2(v2Envelope("cursor", "stop", "2026-07-03T17:00:00Z", { sessionId: "s" }))!;
+    expect(diffFrom(env)).toBeUndefined();
+    expect(subagentFrom(env)).toBeUndefined();
+    expect(toolsFrom(env)).toBeUndefined();
   });
 });

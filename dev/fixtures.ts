@@ -100,7 +100,7 @@ export function v2Envelope(tool: string, hookEvent: string, isoTs: string, opts:
       ...(opts.worktree ? { worktree: { is_worktree: true, path: "/worktrees/x" } } : {}),
     },
     trace: { trace_id: "ct".padEnd(32, "0"), span_id: "sp".padEnd(16, "0") },
-    env: { os: "darwin", arch: "arm64" },
+    env: { os: "darwin", arch: "arm64", os_version: "26.1" },
     ...(opts.enrichments ?? {}),
   };
   return JSON.stringify({
@@ -143,6 +143,66 @@ export const sampleStreamLines: string[] = [
 ];
 
 export const sampleStreamJsonl = sampleStreamLines.join("\n") + "\n";
+
+// Enrichment slug samples (CLI v0.10.0+ round-2 producers).
+export const sampleEnrichmentLines: string[] = [
+  v2Envelope("claude-code", "SubagentStart", "2026-07-01T17:00:00Z", {
+    sessionId: "cc-enrich",
+    enrichments: {
+      subagent: { agent_id: "a1", agent_type: "Explore", phase: "start", concurrent: 1 },
+    },
+    raw: { agent_id: "a1", agent_type: "Explore" },
+  }),
+  v2Envelope("claude-code", "SubagentStop", "2026-07-01T17:03:10Z", {
+    sessionId: "cc-enrich",
+    enrichments: {
+      subagent: {
+        agent_id: "a1",
+        agent_type: "Explore",
+        phase: "stop",
+        duration_ms: 95000,
+        requests: 3,
+        model: "claude-opus-4-8",
+        usd: { total: 0.18, currency: "USD" },
+      },
+    },
+    raw: { agent_id: "a1" },
+  }),
+  v2Envelope("claude-code", "SubagentStop", "2026-07-01T17:05:00Z", {
+    sessionId: "cc-enrich",
+    enrichments: {
+      subagent: {
+        agent_id: "a2",
+        agent_type: "Explore",
+        phase: "stop",
+        duration_ms: 95000,
+        usd: { total: 0.13, currency: "USD" },
+      },
+    },
+    raw: { agent_id: "a2" },
+  }),
+  v2Envelope("claude-code", "Stop", "2026-07-01T17:06:00Z", {
+    sessionId: "cc-enrich",
+    enrichments: { diff: { files_changed: 3, insertions: 120, deletions: 40 } },
+  }),
+  v2Envelope("claude-code", "PostToolBatch", "2026-07-01T17:00:37Z", {
+    sessionId: "cc-enrich",
+    enrichments: {
+      tools: {
+        total: 3,
+        failed: 1,
+        calls: [
+          { name: "Read", ok: true },
+          { name: "Bash", ok: true, duration_ms: 1500 },
+          { name: "Edit", ok: false },
+        ],
+      },
+    },
+    raw: { tool_calls: [{ tool_name: "Read" }] },
+  }),
+];
+
+export const sampleEnrichmentJsonl = sampleEnrichmentLines.join("\n") + "\n";
 
 // ---------- cost enrichment envelopes ----------
 // End-of-turn events carrying the `cost` slug, the way the CLI emits them since

@@ -47,6 +47,31 @@ describe("parseEnvelopeLine", () => {
     expect(parseEnvelopeLine("{nope")).toBeNull();
     expect(parseEnvelopeLine("42")).toBeNull();
   });
+
+  it("prefers the tools enrichment slug over raw_event re-derivation", () => {
+    const line = JSON.stringify({
+      schema: 2,
+      session_id: "slug-test",
+      tool: "claude-code",
+      hook_event: "PostToolBatch",
+      captured_at: "2026-07-03T17:00:00Z",
+      raw_event: { tool_calls: [{ tool_name: "StaleTool" }] },
+      enrichments: {
+        tools: {
+          total: 2,
+          failed: 0,
+          calls: [
+            { name: "Read", ok: true },
+            { name: "Agent", ok: true, agent_type: "Plan", duration_ms: 12000 },
+          ],
+        },
+      },
+    });
+    const e = parseEnvelopeLine(line)!;
+    expect(e.toolCalls.map((t) => t.name)).toEqual(["Read", "Agent"]);
+    expect(e.toolCalls.find((t) => t.name === "Agent")!.subagentType).toBe("Plan");
+    expect(e.batchSubagentCount).toBe(1);
+  });
 });
 
 describe("computeMetrics", () => {

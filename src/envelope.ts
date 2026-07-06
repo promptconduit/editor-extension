@@ -33,6 +33,53 @@ export interface TraceEnrichment {
   parent_span_id?: string;
 }
 
+/** The "diff" enrichment slug (turn-end working-tree stats vs HEAD). */
+export interface DiffEnrichment {
+  files_changed?: number;
+  insertions?: number;
+  deletions?: number;
+}
+
+/** The "subagent" enrichment slug (SubagentStart/SubagentStop). */
+export interface SubagentEnrichment {
+  agent_id?: string;
+  agent_type?: string;
+  /** "start" or "stop". */
+  phase?: string;
+  concurrent?: number;
+  duration_ms?: number;
+  requests?: number;
+  model?: string;
+  tokens?: Partial<Tokens>;
+  usd?: Partial<Cost>;
+}
+
+/** One normalized tool call inside the "tools" enrichment slug. */
+export interface ToolsEnrichmentCall {
+  name?: string;
+  ok?: boolean;
+  duration_ms?: number;
+  mcp_server?: string;
+  skill?: string;
+  agent_type?: string;
+}
+
+/** The "tools" enrichment slug (PostToolUse / PostToolBatch / PostToolUseFailure). */
+export interface ToolsEnrichment {
+  total?: number;
+  failed?: number;
+  calls?: ToolsEnrichmentCall[];
+}
+
+/** The "env" enrichment slug (where the event was produced). */
+export interface EnvEnrichment {
+  host?: string;
+  os?: string;
+  os_version?: string;
+  arch?: string;
+  cwd?: string;
+}
+
 /** One priced request inside the "cost" enrichment slug. */
 interface CostRequestSlug {
   request_id?: string;
@@ -146,6 +193,111 @@ export function parseEnvelopeV2(line: string): EnvelopeV2 | null {
     },
     enrichments,
   };
+}
+
+function diffSlug(src: Record<string, unknown>): DiffEnrichment | undefined {
+  if (!src || Object.keys(src).length === 0) {
+    return undefined;
+  }
+  return {
+    files_changed: num(src.files_changed) || undefined,
+    insertions: num(src.insertions) || undefined,
+    deletions: num(src.deletions) || undefined,
+  };
+}
+
+function subagentSlug(src: Record<string, unknown>): SubagentEnrichment | undefined {
+  if (!src || Object.keys(src).length === 0) {
+    return undefined;
+  }
+  const tokens = obj(src.tokens);
+  const usd = obj(src.usd);
+  return {
+    agent_id: str(src.agent_id) || undefined,
+    agent_type: str(src.agent_type) || undefined,
+    phase: str(src.phase) || undefined,
+    concurrent: num(src.concurrent) || undefined,
+    duration_ms: num(src.duration_ms) || undefined,
+    requests: num(src.requests) || undefined,
+    model: str(src.model) || undefined,
+    tokens:
+      Object.keys(tokens).length > 0
+        ? {
+            input: num(tokens.input),
+            output: num(tokens.output),
+            cache_read: num(tokens.cache_read),
+            cache_write: num(tokens.cache_write),
+          }
+        : undefined,
+    usd:
+      Object.keys(usd).length > 0
+        ? {
+            input: num(usd.input),
+            output: num(usd.output),
+            cache_read: num(usd.cache_read),
+            cache_write: num(usd.cache_write),
+            total: num(usd.total),
+            currency: str(usd.currency) || "USD",
+          }
+        : undefined,
+  };
+}
+
+function toolsSlug(src: Record<string, unknown>): ToolsEnrichment | undefined {
+  if (!src || Object.keys(src).length === 0) {
+    return undefined;
+  }
+  const calls = Array.isArray(src.calls)
+    ? src.calls.map((c) => {
+        const call = obj(c);
+        return {
+          name: str(call.name) || undefined,
+          ok: call.ok === true ? true : call.ok === false ? false : undefined,
+          duration_ms: num(call.duration_ms) || undefined,
+          mcp_server: str(call.mcp_server) || undefined,
+          skill: str(call.skill) || undefined,
+          agent_type: str(call.agent_type) || undefined,
+        };
+      })
+    : undefined;
+  return {
+    total: num(src.total) || undefined,
+    failed: num(src.failed) || undefined,
+    calls,
+  };
+}
+
+function envSlug(src: Record<string, unknown>): EnvEnrichment | undefined {
+  if (!src || Object.keys(src).length === 0) {
+    return undefined;
+  }
+  return {
+    host: str(src.host) || undefined,
+    os: str(src.os) || undefined,
+    os_version: str(src.os_version) || undefined,
+    arch: str(src.arch) || undefined,
+    cwd: str(src.cwd) || undefined,
+  };
+}
+
+/** Read the `diff` enrichment slug; undefined when absent or empty. */
+export function diffFrom(env: EnvelopeV2): DiffEnrichment | undefined {
+  return diffSlug(obj(env.enrichments.diff));
+}
+
+/** Read the `subagent` enrichment slug; undefined when absent or empty. */
+export function subagentFrom(env: EnvelopeV2): SubagentEnrichment | undefined {
+  return subagentSlug(obj(env.enrichments.subagent));
+}
+
+/** Read the `tools` enrichment slug; undefined when absent or empty. */
+export function toolsFrom(env: EnvelopeV2): ToolsEnrichment | undefined {
+  return toolsSlug(obj(env.enrichments.tools));
+}
+
+/** Read the `env` enrichment slug; undefined when absent or empty. */
+export function envFrom(env: EnvelopeV2): EnvEnrichment | undefined {
+  return envSlug(obj(env.enrichments.env));
 }
 
 // Basename of a path without importing node:path (keeps this module usable in

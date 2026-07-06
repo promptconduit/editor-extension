@@ -130,6 +130,10 @@ export function activate(context: vscode.ExtensionContext): void {
         statusBar?.updateFromEvent(ev);
         refreshPanels();
       },
+      onEnvelope: (env) => {
+        statusBar?.updateFromEnvelope(env);
+        refreshPanels();
+      },
     });
     costFeed.start();
   };

@@ -7,12 +7,14 @@
 // restarts), then follows the live tail. Pure fs — no CLI binary required.
 
 import { RawEventTail, logDisabled } from "./tail";
-import { costEventsFrom, parseEnvelopeV2 } from "./envelope";
+import { costEventsFrom, parseEnvelopeV2, EnvelopeV2 } from "./envelope";
 import { CostEvent } from "./types";
 
 export interface CostFeedCallbacks {
   /** Called once per priced request, history first, then live. */
   onEvent: (ev: CostEvent) => void;
+  /** Called for every v2 envelope (enrichment slugs beyond cost). */
+  onEnvelope?: (env: EnvelopeV2) => void;
   /** Called after the initial full-history read completes. */
   onInitial?: () => void;
 }
@@ -45,6 +47,7 @@ export class CostFeedController {
       if (!env) {
         continue;
       }
+      this.callbacks.onEnvelope?.(env);
       for (const ev of costEventsFrom(env)) {
         this.callbacks.onEvent(ev);
       }
