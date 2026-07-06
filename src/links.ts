@@ -43,6 +43,33 @@ const CLAUDE_CODE_COSTS: ResourceLink = {
   href: "https://code.claude.com/docs/en/costs",
   desc: "Track spend, set limits, and the full cost-reduction playbook.",
 };
+const CLAUDE_PROMPT_CACHING_PRICING: ResourceLink = {
+  label: "Prompt caching pricing",
+  href: "https://platform.claude.com/docs/en/build-with-claude/prompt-caching#pricing",
+  desc: "The cache multipliers: writes cost 1.25× (5-min TTL) or 2× (1-hour) input rate; reads ~0.1×.",
+};
+const CLAUDE_CODE_PERMISSION_MODES: ResourceLink = {
+  label: "Claude Code: permission modes",
+  href: "https://code.claude.com/docs/en/permission-modes",
+  desc: "What plan, acceptEdits, bypassPermissions, and default modes actually allow.",
+};
+const CLAUDE_CODE_SUBAGENTS: ResourceLink = {
+  label: "Claude Code: subagents",
+  href: "https://code.claude.com/docs/en/sub-agents",
+  desc: "Delegated agents with their own context windows — and their own token bills.",
+};
+const CLAUDE_CODE_HOOKS: ResourceLink = {
+  label: "Claude Code: hooks reference",
+  href: "https://code.claude.com/docs/en/hooks",
+  desc: "The hook events (PreToolUse, PostToolUse, …) that emit the data behind this report.",
+};
+
+// Protocol / ecosystem resources.
+const MCP_INTRO: ResourceLink = {
+  label: "Model Context Protocol",
+  href: "https://modelcontextprotocol.io",
+  desc: "The open protocol that lets agents call external tools via MCP servers.",
+};
 
 // Cursor resources.
 const CURSOR_PRICING: ResourceLink = {
@@ -62,6 +89,11 @@ export const LINKS = {
   claudePromptCaching: CLAUDE_PROMPT_CACHING,
   claudeCodeReduceTokens: CLAUDE_CODE_REDUCE_TOKENS,
   claudeCodeCosts: CLAUDE_CODE_COSTS,
+  claudePromptCachingPricing: CLAUDE_PROMPT_CACHING_PRICING,
+  claudeCodePermissionModes: CLAUDE_CODE_PERMISSION_MODES,
+  claudeCodeSubagents: CLAUDE_CODE_SUBAGENTS,
+  claudeCodeHooks: CLAUDE_CODE_HOOKS,
+  mcpIntro: MCP_INTRO,
   cursorPricing: CURSOR_PRICING,
   cursorDocs: CURSOR_DOCS,
 } as const;

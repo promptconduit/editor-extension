@@ -17,6 +17,24 @@ describe("links registry", () => {
     expect(hrefs).toMatch(/claude\.com|platform\.claude\.com|code\.claude\.com/);
     expect(hrefs).toMatch(/cursor\.com/);
   });
+
+  it("includes the glossary's educational targets", () => {
+    expect(LINKS.claudeCodePermissionModes.href).toBe(
+      "https://code.claude.com/docs/en/permission-modes"
+    );
+    expect(LINKS.claudeCodeSubagents.href).toBe("https://code.claude.com/docs/en/sub-agents");
+    expect(LINKS.claudeCodeHooks.href).toBe("https://code.claude.com/docs/en/hooks");
+    expect(LINKS.mcpIntro.href).toBe("https://modelcontextprotocol.io");
+    expect(LINKS.claudePromptCachingPricing.href).toBe(
+      "https://platform.claude.com/docs/en/build-with-claude/prompt-caching#pricing"
+    );
+    expect(LINKS.cursorPricing.href).toBe("https://cursor.com/docs/models-and-pricing");
+  });
+
+  it("has no duplicate hrefs across the registry", () => {
+    const hrefs = all.map((l) => l.href);
+    expect(new Set(hrefs).size).toBe(hrefs.length);
+  });
 });
 
 describe("learnMoreLinks", () => {
