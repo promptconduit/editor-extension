@@ -170,19 +170,35 @@ function promptRowHtml(ev: CostEvent, maxCost: number): string {
     </details>`;
 }
 
+// How many per-prompt rows to render. Every request is retained in memory and
+// counted in the header; we cap only the rendered DOM so a long session (many
+// hundreds of prompts) doesn't build a sluggish webview. Older prompts stay on
+// disk in ~/.promptconduit/events.jsonl.
+const PROMPT_RENDER_LIMIT = 100;
+
 function perPromptHtml(recent: CostEvent[]): string {
   if (!recent || recent.length === 0) {
     return "";
   }
   const items = [...recent].reverse(); // newest first
+  // Scale bars against the true most-expensive prompt across the whole session,
+  // even when it's older than the rows we render.
   const maxCost = items.reduce((m, e) => (e.model_priced ? Math.max(m, e.cost.total) : m), 0);
-  const rows = items.map((ev) => promptRowHtml(ev, maxCost)).join("");
+  const shown = items.slice(0, PROMPT_RENDER_LIMIT);
+  const hidden = items.length - shown.length;
+  const rows = shown.map((ev) => promptRowHtml(ev, maxCost)).join("");
+  const moreNote =
+    hidden > 0
+      ? `<p class="muted small">+${hidden} older prompt${hidden === 1 ? "" : "s"} not shown here —
+        full history is kept in <code>~/.promptconduit/events.jsonl</code>.</p>`
+      : "";
   return `
     <section>
       <h2>Cost per prompt</h2>
       <p class="muted small">Each row is one request to the model, newest first. The bar shows its
         share of the most expensive prompt — click a row for the token split.</p>
       ${rows}
+      ${moreNote}
     </section>`;
 }
 

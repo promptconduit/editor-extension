@@ -10,9 +10,6 @@
 
 import { CostEvent, ModelTotal, SessionSummary, Signals, Tokens } from "./types";
 
-// Bound on the per-conversation recent-turn history retained for the panel.
-const MAX_RECENT = 50;
-
 /** Everything the panel needs to render one conversation. */
 export interface ConversationView {
   key: string;
@@ -30,7 +27,9 @@ interface ConversationState {
   tool: string;
   // Latest single request observed for this conversation.
   lastEvent?: CostEvent;
-  // Bounded, request_id-deduped history of recent turns (oldest first).
+  // Full, request_id-deduped history of turns (oldest first). Every request is
+  // retained — the panel shows an accurate count and drops no cost data; it
+  // renders only the newest slice for DOM performance (see panel.ts).
   recent: CostEvent[];
   // request_ids already folded into the running totals (Cursor emits two
   // events per generation; the CLI dedups too, but we guard here as well).
@@ -166,7 +165,9 @@ export class ConversationStore {
     this.touch(state, this.activityFrom(ev.ts));
   }
 
-  // Append (or replace, by request_id) into the bounded recent history.
+  // Append (or replace, by request_id) into the full recent history. Nothing is
+  // ever dropped: every request is preserved so the count is accurate and no
+  // cost data is lost. The panel bounds how many rows it renders, not the data.
   private recordRecent(state: ConversationState, ev: CostEvent): void {
     if (ev.request_id) {
       const i = state.recent.findIndex((e) => e.request_id === ev.request_id);
@@ -176,9 +177,6 @@ export class ConversationStore {
       }
     }
     state.recent.push(ev);
-    if (state.recent.length > MAX_RECENT) {
-      state.recent.shift();
-    }
   }
 
   // Fold a request into the running session totals, once per request_id.
