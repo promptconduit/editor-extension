@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest";
-import { ConversationStore } from "../../src/state";
+import { describe, it, expect, vi, afterEach } from "vitest";
+import { ConversationStore, ACTIVE_KEY_DEBOUNCE_MS } from "../../src/state";
 import { sampleEvents } from "../../dev/fixtures";
 import type { CostEvent } from "../../src/types";
 
@@ -23,19 +23,28 @@ describe("ConversationStore.key", () => {
 });
 
 describe("ConversationStore active-conversation tracking", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("follows the most-recently-active tab by timestamp", () => {
+    vi.useFakeTimers();
     const store = new ConversationStore();
-    sampleEvents.forEach((e) => store.recordEvent(e)); // tab-A (older) then tab-B (newer)
+    sampleEvents.forEach((e) => store.recordEvent(e));
+    vi.advanceTimersByTime(ACTIVE_KEY_DEBOUNCE_MS);
     expect(store.activeKey).toBe("tab-B");
     expect(store.activeLastEvent?.request_id).toBe("b1");
   });
 
   it("switches active when an older tab produces a newer record", () => {
+    vi.useFakeTimers();
     const store = new ConversationStore();
     store.recordEvent(mkEvent({ conversation_id: "A", request_id: "a1", ts: "2026-06-27T17:00:00Z" }));
     store.recordEvent(mkEvent({ conversation_id: "B", request_id: "b1", ts: "2026-06-27T17:05:00Z" }));
+    vi.advanceTimersByTime(ACTIVE_KEY_DEBOUNCE_MS);
     expect(store.activeKey).toBe("B");
     store.recordEvent(mkEvent({ conversation_id: "A", request_id: "a2", ts: "2026-06-27T17:10:00Z" }));
+    vi.advanceTimersByTime(ACTIVE_KEY_DEBOUNCE_MS);
     expect(store.activeKey).toBe("A");
   });
 
@@ -115,8 +124,60 @@ describe("ConversationStore active-conversation tracking", () => {
   it("starts empty", () => {
     const store = new ConversationStore();
     expect(store.activeKey).toBeUndefined();
+    expect(store.displayKey).toBeUndefined();
     expect(store.activeLastEvent).toBeUndefined();
     expect(store.activeRecent).toEqual([]);
     expect(store.list()).toEqual([]);
+  });
+});
+
+describe("ConversationStore displayKey precedence", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+  it("prefers focused over pinned and active", () => {
+    const store = new ConversationStore();
+    store.recordEvent(mkEvent({ conversation_id: "A", request_id: "a1", ts: "2026-06-27T17:00:00Z" }));
+    store.recordEvent(mkEvent({ conversation_id: "B", request_id: "b1", ts: "2026-06-27T17:05:00Z" }));
+    store.setPinnedKey("A");
+    store.setFocusedKey("C");
+    expect(store.displayKey).toBe("C");
+    expect(store.focusSource).toBe("terminal");
+  });
+
+  it("uses pinned when no terminal focus", () => {
+    const store = new ConversationStore();
+    store.recordEvent(mkEvent({ conversation_id: "A", request_id: "a1", ts: "2026-06-27T17:00:00Z" }));
+    store.recordEvent(mkEvent({ conversation_id: "B", request_id: "b1", ts: "2026-06-27T17:05:00Z" }));
+    store.setPinnedKey("A");
+    expect(store.displayKey).toBe("A");
+    expect(store.focusSource).toBe("pinned");
+  });
+
+  it("falls back to active when no focus or pin", () => {
+    vi.useFakeTimers();
+    const store = new ConversationStore();
+    store.recordEvent(mkEvent({ conversation_id: "A", request_id: "a1", ts: "2026-06-27T17:00:00Z" }));
+    store.recordEvent(mkEvent({ conversation_id: "B", request_id: "b1", ts: "2026-06-27T17:05:00Z" }));
+    vi.advanceTimersByTime(ACTIVE_KEY_DEBOUNCE_MS);
+    expect(store.displayKey).toBe("B");
+    expect(store.focusSource).toBe("activity");
+  });
+});
+
+describe("ConversationStore active debounce", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("debounces flips between different conversations", () => {
+    vi.useFakeTimers();
+    const store = new ConversationStore();
+    store.recordEvent(mkEvent({ conversation_id: "A", request_id: "a1", ts: "2026-06-27T17:00:00Z" }));
+    expect(store.activeKey).toBe("A");
+    store.recordEvent(mkEvent({ conversation_id: "B", request_id: "b1", ts: "2026-06-27T17:05:00Z" }));
+    expect(store.activeKey).toBe("A");
+    vi.advanceTimersByTime(ACTIVE_KEY_DEBOUNCE_MS);
+    expect(store.activeKey).toBe("B");
   });
 });

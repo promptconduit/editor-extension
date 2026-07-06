@@ -179,6 +179,25 @@ only source of truth.
 
 ---
 
+## Addendum — Epic 5 (focus-aware cost, shipped v0.13.0)
+
+**Claude Code terminals:** focus sync is **implemented**. The extension subscribes to
+`onDidChangeActiveTerminal`, reads `terminal.processId` (shell PID), and calls
+`promptconduit sessions resolve --pid <pid> --json` to map the shell → child `claude`
+process → `session_id` (`--resume` in argv, else open transcript via `lsof`). Multiple
+claude children in one terminal surface a QuickPick. macOS/Linux only; activity-based
+fallback when resolution fails.
+
+**Cursor agent tabs:** still **no focus API**. v1 ships feed-driven selection with a
+**750ms debounce** when activity flips between conversations, plus **pin / follow**
+commands on the cost surface (same pattern as Stream). Status-bar tooltip copy states
+honestly that activity may not match the panel you're viewing.
+
+**Deferred (issue #61):** Cursor agent tab focus via **Copy Request ID** →
+`generation_id` / `conversation_id` correlation — not validated; out of scope for v1.
+
+---
+
 ## Sources
 
 - VS Code API — `window.tabGroups`, `Tab`, `TabGroup`, `TabInputWebview` (webview tabs

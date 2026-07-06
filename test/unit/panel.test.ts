@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { renderBreakdownHtml, BreakdownView } from "../../src/panel";
+import { renderBreakdownHtml, renderSessionBreakdownHtml, BreakdownView } from "../../src/panel";
 import { ConversationView } from "../../src/state";
 import { cleanSummary, heavySummary, sampleEvents } from "../../dev/fixtures";
 import type { CostEvent, SessionSummary } from "../../src/types";
@@ -25,6 +25,28 @@ function conv(p: {
 function view(conversations: ConversationView[], activeKey?: string): BreakdownView {
   return { conversations, activeKey: activeKey ?? conversations[0]?.key };
 }
+
+describe("renderSessionBreakdownHtml — single session", () => {
+  it("shows one session without the multi-session list", () => {
+    const c = conv({
+      key: "s-heavy",
+      summary: heavySummary,
+      lastEvent: sampleEvents[2],
+      recent: sampleEvents,
+    });
+    const html = renderSessionBreakdownHtml(c);
+    expect(html).toContain("This session would cost");
+    expect(html).toContain("Cost per prompt");
+    expect(html).toContain("By model");
+    expect(html).not.toContain("By session");
+    expect(html).not.toContain("These 2 sessions");
+  });
+
+  it("shows landing when no conversation", () => {
+    const html = renderSessionBreakdownHtml(undefined);
+    expect(html).toContain("AI Session Cost");
+  });
+});
 
 describe("renderBreakdownHtml — zero state", () => {
   const html = renderBreakdownHtml(view([]));

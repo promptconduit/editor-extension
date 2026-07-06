@@ -370,6 +370,55 @@ function byModelHtml(session: SessionSummary | undefined): string {
 }
 
 /**
+ * Pure renderer for a single-session cost breakdown (default cost click).
+ */
+export function renderSessionBreakdownHtml(conv: ConversationView | undefined): string {
+  if (!conv) {
+    return landingDocument();
+  }
+  const session = conv.summary;
+  const lastEvent = conv.lastEvent;
+  const tool: ToolId = conv.tool ?? "";
+  const cost = session.totals.cost_total;
+  const badges =
+    `<span class="badge">${escapeHtml(toolName(tool))}</span>` +
+    `<span class="badge subtle">${escapeHtml(sourceLabel(session.source))}</span>`;
+  const hero =
+    cost > 0
+      ? `
+    <header class="hero">
+      <div class="hero-badges">${badges}</div>
+      <p class="hero-eyebrow">This session would cost</p>
+      <div class="hero-amount">${fmtUSDHero(cost)}</div>
+      <p class="hero-sub">at ${escapeHtml(ratesLabel(tool))}.</p>
+      <p class="hero-note">If you're on a ${escapeHtml(subscriptionName(tool))} subscription, this usage
+        is already included — this is what the same tokens would bill à la carte.</p>
+    </header>`
+      : `
+    <header class="hero">
+      <div class="hero-badges">${badges}</div>
+      <p class="hero-eyebrow">Tokens tracked</p>
+      <div class="hero-amount muted">Unpriced</div>
+      <p class="hero-sub">${num(totalTokens(session))} tokens, but no rate to turn them into dollars —
+        see <em>Reading these numbers</em> below.</p>
+    </header>`;
+  const body = `
+  <main class="report">
+    ${hero}
+    ${perPromptHtml(conv.recent)}
+    ${driversHtml(session)}
+    ${tipsHtml(session, lastEvent)}
+    ${edgeCasesHtml(session, lastEvent)}
+    ${byModelHtml(session)}
+    ${learnMoreSectionHtml(tool)}
+    <footer class="muted">
+      Computed entirely on your machine from the local event log. None of your data is sent anywhere.
+    </footer>
+  </main>`;
+  return documentShell(body);
+}
+
+/**
  * Pure renderer for the cost breakdown document. Exported so the webview preview
  * and unit tests can render it without a live editor. Returns the zero-state
  * landing document when nothing has been tracked yet.
@@ -526,11 +575,39 @@ export class CostPanel {
   private static current: CostPanel | undefined;
   private readonly panel: vscode.WebviewPanel;
   private disposed = false;
+  private mode: "session" | "all" = "session";
 
-  static show(view: BreakdownView): void {
+  static showSession(conv: ConversationView | undefined): void {
+    CostPanel.showInternal("session", conv);
+  }
+
+  static showAll(view: BreakdownView): void {
     if (CostPanel.current && !CostPanel.current.disposed) {
+      CostPanel.current.mode = "all";
       CostPanel.current.panel.reveal(vscode.ViewColumn.Active);
-      CostPanel.current.update(view);
+      CostPanel.current.updateAll(view);
+      return;
+    }
+    const panel = vscode.window.createWebviewPanel(
+      "promptconduitCost",
+      "AI Cost Breakdown — All Sessions",
+      vscode.ViewColumn.Active,
+      { enableScripts: false, retainContextWhenHidden: true },
+    );
+    CostPanel.current = new CostPanel(panel, "all");
+    CostPanel.current.updateAll(view);
+  }
+
+  /** @deprecated Use showSession or showAll */
+  static show(view: BreakdownView): void {
+    CostPanel.showAll(view);
+  }
+
+  private static showInternal(mode: "session", conv: ConversationView | undefined): void {
+    if (CostPanel.current && !CostPanel.current.disposed) {
+      CostPanel.current.mode = mode;
+      CostPanel.current.panel.reveal(vscode.ViewColumn.Active);
+      CostPanel.current.updateSession(conv);
       return;
     }
     const panel = vscode.window.createWebviewPanel(
@@ -539,19 +616,31 @@ export class CostPanel {
       vscode.ViewColumn.Active,
       { enableScripts: false, retainContextWhenHidden: true },
     );
-    CostPanel.current = new CostPanel(panel);
-    CostPanel.current.update(view);
+    CostPanel.current = new CostPanel(panel, mode);
+    CostPanel.current.updateSession(conv);
   }
 
   /** Push fresh data into an already-open panel (called on new records). */
-  static refresh(view: BreakdownView): void {
-    if (CostPanel.current && !CostPanel.current.disposed) {
-      CostPanel.current.update(view);
+  static refreshSession(conv: ConversationView | undefined): void {
+    if (CostPanel.current && !CostPanel.current.disposed && CostPanel.current.mode === "session") {
+      CostPanel.current.updateSession(conv);
     }
   }
 
-  private constructor(panel: vscode.WebviewPanel) {
+  static refreshAll(view: BreakdownView): void {
+    if (CostPanel.current && !CostPanel.current.disposed && CostPanel.current.mode === "all") {
+      CostPanel.current.updateAll(view);
+    }
+  }
+
+  /** @deprecated Use refreshSession or refreshAll */
+  static refresh(view: BreakdownView): void {
+    CostPanel.refreshAll(view);
+  }
+
+  private constructor(panel: vscode.WebviewPanel, mode: "session" | "all") {
     this.panel = panel;
+    this.mode = mode;
     this.panel.onDidDispose(() => {
       this.disposed = true;
       if (CostPanel.current === this) {
@@ -560,7 +649,11 @@ export class CostPanel {
     });
   }
 
-  private update(view: BreakdownView): void {
+  private updateSession(conv: ConversationView | undefined): void {
+    this.panel.webview.html = renderSessionBreakdownHtml(conv);
+  }
+
+  private updateAll(view: BreakdownView): void {
     this.panel.webview.html = renderBreakdownHtml(view);
   }
 }

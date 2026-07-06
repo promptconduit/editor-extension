@@ -1,11 +1,11 @@
 import * as vscode from "vscode";
-import { ConversationStore, ConversationView } from "./state";
+import { ConversationStore, ConversationView, FocusSource } from "./state";
 import { CostEvent, SessionSummary } from "./types";
+import { shortId } from "./streamFeed";
 
 const SHOW_DETAILS_COMMAND = "promptconduit.cost.showDetails";
 
 export function fmtUSD(n: number): string {
-  // Sub-cent precision for request cost; the tooltip shows full precision.
   if (n < 0.01) {
     return `$${n.toFixed(4)}`;
   }
@@ -29,11 +29,6 @@ function pct(x: number): string {
   return `${Math.round(x * 100)}%`;
 }
 
-// signalsSummary renders a one-line headline of the session's cost-reduction
-// signals (CLI schema v2+) for the status-bar tooltip, so the key numbers show
-// on hover without opening the full panel. Cache-hit rate is always included
-// when signals exist; tier and tool-call volume are added only when meaningful.
-// Returns "" when the session carries no signals (older CLI or no priced turns).
 export function signalsSummary(session: SessionSummary): string {
   const sig = session.signals;
   if (!sig) {
@@ -49,21 +44,28 @@ export function signalsSummary(session: SessionSummary): string {
   return parts.join(" · ");
 }
 
+function focusNote(source: FocusSource): string {
+  switch (source) {
+    case "terminal":
+      return "_Following the focused terminal's Claude Code session._";
+    case "pinned":
+      return "_Pinned — not auto-following activity._";
+    case "activity":
+      return "_Reflects the most recently active conversation, not necessarily the panel you're viewing._";
+  }
+}
+
 /**
- * CostStatusBar owns the bottom-right status bar item. It renders the latest
- * request cost and the running total of the MOST-RECENTLY-ACTIVE conversation
- * (Cursor per-tab `conversation_id`, falling back to `session_id` for Claude
- * Code), throttling UI writes so bursty turns don't thrash the bar.
- *
- * Per-conversation state lives in a ConversationStore; the bar, tooltip, and the
- * public getters consumed by the detail panel all read the ACTIVE conversation,
- * so the bar follows whichever agent tab produced the latest record (#7).
+ * CostStatusBar owns the bottom-right status bar item. It renders the displayed
+ * conversation (terminal focus, pin, or debounced activity) and exposes store
+ * getters for the breakdown panels.
  */
 export class CostStatusBar {
   private readonly item: vscode.StatusBarItem;
   private readonly store = new ConversationStore();
   private pending = false;
   private throttle: NodeJS.Timeout | undefined;
+  private onChange: (() => void) | undefined;
 
   constructor() {
     this.item = vscode.window.createStatusBarItem(
@@ -71,6 +73,7 @@ export class CostStatusBar {
       100,
     );
     this.item.command = SHOW_DETAILS_COMMAND;
+    this.store.setOnActiveDebounced(() => this.scheduleRender());
     this.render();
   }
 
@@ -78,29 +81,84 @@ export class CostStatusBar {
     return this.item;
   }
 
-  /** Session summary of the active conversation, for the detail panel. */
+  /** Register a callback when display selection or totals change. */
+  setOnChange(fn: () => void): void {
+    this.onChange = fn;
+  }
+
+  get storeRef(): ConversationStore {
+    return this.store;
+  }
+
   get session(): SessionSummary | undefined {
-    return this.store.activeSummary;
+    return this.store.displaySummary;
   }
 
-  /** Latest request of the active conversation. */
   get lastRequest(): CostEvent | undefined {
-    return this.store.activeLastEvent;
+    return this.store.displayLastEvent;
   }
 
-  /** Recent turns (oldest first) of the active conversation, for the panel. */
   get recentRequests(): CostEvent[] {
-    return this.store.activeRecent;
+    return this.store.displayRecent;
   }
 
-  /** Every conversation, most-recently-active first (multi-session panel). */
   get conversations(): ConversationView[] {
     return this.store.list();
   }
 
-  /** Key of the most-recently-active conversation. */
+  get displayConversationKey(): string | undefined {
+    return this.store.displayKey;
+  }
+
+  /** @deprecated Use displayConversationKey */
   get activeConversationKey(): string | undefined {
-    return this.store.activeKey;
+    return this.store.displayKey;
+  }
+
+  get focusSource(): FocusSource {
+    return this.store.focusSource;
+  }
+
+  get isPinned(): boolean {
+    return this.store.pinnedKey !== undefined && this.store.focusSource === "pinned";
+  }
+
+  setFocusedKey(key: string | undefined): void {
+    this.store.setFocusedKey(key);
+    this.render();
+    this.onChange?.();
+  }
+
+  pinSession(key: string): void {
+    this.store.setPinnedKey(key);
+    this.store.setFocusedKey(undefined);
+    this.render();
+    this.onChange?.();
+  }
+
+  followActive(): void {
+    this.store.clearPin();
+    this.render();
+    this.onChange?.();
+  }
+
+  async pickAndPin(): Promise<void> {
+    const sessions = this.store.list();
+    if (sessions.length === 0) {
+      void vscode.window.showInformationMessage("No sessions yet — run an AI coding session first.");
+      return;
+    }
+    const pick = await vscode.window.showQuickPick(
+      sessions.map((s) => ({
+        label: `${s.tool || "session"} · ${shortId(s.key)}`,
+        description: fmtUSD(s.summary.totals.cost_total),
+        key: s.key,
+      })),
+      { placeHolder: "Pin cost breakdown to a session (stops auto-following)" },
+    );
+    if (pick) {
+      this.pinSession(pick.key);
+    }
   }
 
   show(): void {
@@ -117,14 +175,11 @@ export class CostStatusBar {
   }
 
   private hasUnpriced(): boolean {
-    return (this.store.activeSummary?.by_model ?? []).some((m) => !m.model_priced);
+    return (this.store.displaySummary?.by_model ?? []).some((m) => !m.model_priced);
   }
 
-  // The session cost shown in the bar: a dollar amount when we have priced
-  // turns, or "unpriced" when there are tokens but no rate (e.g. Cursor
-  // composer) so a real session never reads as a misleading "$0.00".
   private sessionCostLabel(): string {
-    const s = this.store.activeSummary;
+    const s = this.store.displaySummary;
     if (!s) {
       return "$0.00";
     }
@@ -150,7 +205,7 @@ export class CostStatusBar {
   }
 
   private render(): void {
-    const lastEvent = this.store.activeLastEvent;
+    const lastEvent = this.store.displayLastEvent;
     const reqStr = lastEvent
       ? lastEvent.model_priced
         ? fmtUSD(lastEvent.cost.total)
@@ -163,9 +218,14 @@ export class CostStatusBar {
     const tip = new vscode.MarkdownString();
     tip.isTrusted = false;
     tip.appendMarkdown(`**AI session cost** _(100% local)_\n\n`);
-    const activeSession = this.store.activeSummary;
-    if (activeSession) {
-      const s = activeSession;
+    const displayKey = this.store.displayKey;
+    if (displayKey) {
+      tip.appendMarkdown(`Session \`${shortId(displayKey)}\`\n\n`);
+    }
+    tip.appendMarkdown(`${focusNote(this.store.focusSource)}\n\n`);
+    const displaySession = this.store.displaySummary;
+    if (displaySession) {
+      const s = displaySession;
       tip.appendMarkdown(`Session total: **${this.sessionCostLabel()}** _(${sourceBadge(s.source)})_\n\n`);
       for (const m of s.by_model) {
         const cost = m.model_priced ? fmtUSD(m.cost_total) : "tokens only — unpriced";
@@ -188,8 +248,9 @@ export class CostStatusBar {
     if (lastEvent) {
       tip.appendMarkdown(`\nLast request: ${fmtUSD(lastEvent.cost.total)} (${lastEvent.model})\n`);
     }
-    tip.appendMarkdown(`\n_Click for the full breakdown._`);
+    tip.appendMarkdown(`\n_Click for the focused session breakdown._`);
     this.item.tooltip = tip;
+    this.onChange?.();
   }
 
   dispose(): void {

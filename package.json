@@ -2,7 +2,7 @@
   "name": "promptconduit",
   "displayName": "PromptConduit",
   "description": "Local, real-time visibility into your AI coding sessions — live token cost in the status bar, a 3D Orchestration Theater that replays how your agents work, and an offline Agent Coaching report. 100% local.",
-  "version": "0.12.1",
+  "version": "0.13.0",
   "publisher": "promptconduit",
   "license": "MIT",
   "engines": {
@@ -42,6 +42,20 @@
       {
         "command": "promptconduit.cost.showDetails",
         "title": "PromptConduit: Show Cost Breakdown"
+      },
+      {
+        "command": "promptconduit.cost.showAllSessions",
+        "title": "PromptConduit: Show All Sessions Cost"
+      },
+      {
+        "command": "promptconduit.cost.pinSession",
+        "title": "PromptConduit: Pin Cost Session",
+        "icon": "$(pin)"
+      },
+      {
+        "command": "promptconduit.cost.followActive",
+        "title": "PromptConduit: Follow Active Cost Session",
+        "icon": "$(sync)"
       },
       {
         "command": "promptconduit.coaching.showTab",

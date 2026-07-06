@@ -5,8 +5,8 @@
 // Since envelope v2 the store also ACCUMULATES the session summary locally
 // (totals, per-model breakdown, tool counts, recomputed signals) from the
 // per-request cost events — the CLI no longer streams a session_summary
-// record. The status bar renders the MOST-RECENTLY-ACTIVE conversation; the
-// breakdown panel renders every conversation via list().
+// record. The status bar and default breakdown read displayKey (terminal
+// focus, pin, or debounced activity); the all-sessions view uses list().
 
 import { CostEvent, ModelTotal, SessionSummary, Signals, Tokens } from "./types";
 
@@ -21,18 +21,14 @@ export interface ConversationView {
   lastActivity: number;
 }
 
+export type FocusSource = "terminal" | "activity" | "pinned";
+
 // Per-conversation accumulated cost state.
 interface ConversationState {
   key: string;
   tool: string;
-  // Latest single request observed for this conversation.
   lastEvent?: CostEvent;
-  // Full, request_id-deduped history of turns (oldest first). Every request is
-  // retained — the panel shows an accurate count and drops no cost data; it
-  // renders only the newest slice for DOM performance (see panel.ts).
   recent: CostEvent[];
-  // request_ids already folded into the running totals (Cursor emits two
-  // events per generation; the CLI dedups too, but we guard here as well).
   counted: Set<string>;
   totals: Tokens & { cost_total: number };
   costParts: { input: number; cache_write: number };
@@ -42,11 +38,11 @@ interface ConversationState {
   source: string;
   startedAt: string;
   updatedAt: string;
-  // Newest activity time seen for this conversation, used to pick the active
-  // one. Epoch-ms from the record's ts; records with no parseable timestamp
-  // fall back to a small arrival-order seq.
   lastActivity: number;
 }
+
+// Debounce rapid activity flips when concurrent Cursor agents run.
+export const ACTIVE_KEY_DEBOUNCE_MS = 750;
 
 // Parse an ISO timestamp to epoch ms; NaN when absent/unparseable.
 function parseTs(ts: string | undefined): number {
@@ -56,8 +52,6 @@ function parseTs(ts: string | undefined): number {
   const ms = Date.parse(ts);
   return Number.isNaN(ms) ? NaN : ms;
 }
-
-// ---- session-signal math (mirrors cli/internal/cost/event.go) ----
 
 function cacheHitRate(input: number, cacheRead: number, cacheWrite: number): number {
   const denom = cacheRead + cacheWrite + input;
@@ -69,7 +63,6 @@ function inputTokenShare(input: number, cacheRead: number, cacheWrite: number): 
   return denom > 0 ? input / denom : 0;
 }
 
-// Coarse model-cost tier from the name (mirrors the CLI's modelTier).
 function modelTier(model: string, priced: boolean): string {
   if (!priced || !model) {
     return "unknown";
@@ -86,17 +79,24 @@ function modelTier(model: string, priced: boolean): string {
 
 /**
  * ConversationStore keeps cost state keyed by conversation (Cursor per-tab) or,
- * absent that, by session (Claude Code). It exposes getters scoped to the
- * ACTIVE conversation — the key with the newest activity — plus list() for the
- * multi-session breakdown panel.
+ * absent that, by session (Claude Code). displayKey = focused ?? pinned ??
+ * active (activity-based, debounced when flipping between conversations).
  */
 export class ConversationStore {
   private readonly byKey = new Map<string, ConversationState>();
   private activeKeyRef: string | undefined;
   private newestActivity = -Infinity;
-  // Monotonic fallback so records with no usable timestamp still order by
-  // arrival (most recent wins).
   private seq = 0;
+  private focusedKeyRef: string | undefined;
+  private pinnedKeyRef: string | undefined;
+  private pendingActiveKey: string | undefined;
+  private activeDebounceTimer: ReturnType<typeof setTimeout> | undefined;
+  private onActiveDebounced: (() => void) | undefined;
+
+  /** Called when debounced activeKey flips (for UI refresh). */
+  setOnActiveDebounced(fn: () => void): void {
+    this.onActiveDebounced = fn;
+  }
 
   /** The key (conversation_id or session_id) of a record. */
   static key(rec: { conversation_id?: string; session_id: string }): string {
@@ -128,29 +128,93 @@ export class ConversationStore {
     return state;
   }
 
-  // Resolve a record's activity time, falling back to arrival order when the
-  // record has no parseable timestamp so newer records still win.
   private activityFrom(ts: string | undefined): number {
     const parsed = parseTs(ts);
     if (!Number.isNaN(parsed)) {
       return parsed;
     }
-    // Tiny monotonic increment keeps arrival ordering without colliding with
-    // real epoch-ms values.
     this.seq += 1;
     return this.seq;
   }
 
-  // Mark a conversation active if its activity is the newest we've seen. Ties
-  // (and equal timestamps) keep the most-recent caller as active.
   private touch(state: ConversationState, activity: number): void {
     if (activity >= state.lastActivity) {
       state.lastActivity = activity;
     }
-    if (state.lastActivity >= this.newestActivity) {
-      this.newestActivity = state.lastActivity;
-      this.activeKeyRef = state.key;
+    if (state.lastActivity < this.newestActivity) {
+      return;
     }
+    this.newestActivity = state.lastActivity;
+    const nextKey = state.key;
+    if (nextKey === this.activeKeyRef) {
+      this.clearActiveDebounce();
+      return;
+    }
+    if (this.activeKeyRef === undefined) {
+      this.activeKeyRef = nextKey;
+      return;
+    }
+    this.pendingActiveKey = nextKey;
+    if (this.activeDebounceTimer) {
+      return;
+    }
+    this.activeDebounceTimer = setTimeout(() => {
+      this.activeDebounceTimer = undefined;
+      if (this.pendingActiveKey) {
+        this.activeKeyRef = this.pendingActiveKey;
+        this.pendingActiveKey = undefined;
+        this.onActiveDebounced?.();
+      }
+    }, ACTIVE_KEY_DEBOUNCE_MS);
+  }
+
+  private clearActiveDebounce(): void {
+    this.pendingActiveKey = undefined;
+    if (this.activeDebounceTimer) {
+      clearTimeout(this.activeDebounceTimer);
+      this.activeDebounceTimer = undefined;
+    }
+  }
+
+  setFocusedKey(key: string | undefined): void {
+    this.focusedKeyRef = key;
+  }
+
+  setPinnedKey(key: string | undefined): void {
+    this.pinnedKeyRef = key;
+  }
+
+  clearPin(): void {
+    this.pinnedKeyRef = undefined;
+  }
+
+  get focusedKey(): string | undefined {
+    return this.focusedKeyRef;
+  }
+
+  get pinnedKey(): string | undefined {
+    return this.pinnedKeyRef;
+  }
+
+  /** Key shown in the status bar and default breakdown. */
+  get displayKey(): string | undefined {
+    if (this.focusedKeyRef) {
+      return this.focusedKeyRef;
+    }
+    if (this.pinnedKeyRef && this.byKey.has(this.pinnedKeyRef)) {
+      return this.pinnedKeyRef;
+    }
+    return this.activeKeyRef;
+  }
+
+  get focusSource(): FocusSource {
+    if (this.pinnedKeyRef && this.byKey.has(this.pinnedKeyRef) && !this.focusedKeyRef) {
+      return "pinned";
+    }
+    if (this.focusedKeyRef) {
+      return "terminal";
+    }
+    return "activity";
   }
 
   recordEvent(ev: CostEvent): void {
@@ -165,9 +229,6 @@ export class ConversationStore {
     this.touch(state, this.activityFrom(ev.ts));
   }
 
-  // Append (or replace, by request_id) into the full recent history. Nothing is
-  // ever dropped: every request is preserved so the count is accurate and no
-  // cost data is lost. The panel bounds how many rows it renders, not the data.
   private recordRecent(state: ConversationState, ev: CostEvent): void {
     if (ev.request_id) {
       const i = state.recent.findIndex((e) => e.request_id === ev.request_id);
@@ -179,7 +240,6 @@ export class ConversationStore {
     state.recent.push(ev);
   }
 
-  // Fold a request into the running session totals, once per request_id.
   private accumulate(state: ConversationState, ev: CostEvent): void {
     if (ev.request_id) {
       if (state.counted.has(ev.request_id)) {
@@ -220,7 +280,6 @@ export class ConversationStore {
       }
     }
 
-    // Session source is the worst case across events (estimate < reconciled < exact).
     const rank: Record<string, number> = { exact: 3, reconciled: 2, estimate: 1 };
     if (!state.source || (rank[ev.source] ?? 0) < (rank[state.source] ?? 0)) {
       state.source = ev.source;
@@ -234,9 +293,6 @@ export class ConversationStore {
     }
   }
 
-  // Build the SessionSummary view from the accumulated state. Signals are the
-  // same formulas the CLI applies, re-applied to summed tokens/costs; tier is
-  // the costliest model's tier.
   private summarize(state: ConversationState): SessionSummary {
     const t = state.totals;
     const anyPriced = [...state.byModel.values()].some((m) => m.model_priced);
@@ -285,29 +341,53 @@ export class ConversationStore {
     };
   }
 
-  /** Key of the most-recently-active conversation, or undefined if empty. */
+  /** Key of the most-recently-active conversation (debounced), or undefined if empty. */
   get activeKey(): string | undefined {
     return this.activeKeyRef;
   }
 
-  private get active(): ConversationState | undefined {
-    return this.activeKeyRef ? this.byKey.get(this.activeKeyRef) : undefined;
+  private stateForKey(key: string | undefined): ConversationState | undefined {
+    return key ? this.byKey.get(key) : undefined;
   }
 
-  /** Locally-accumulated session summary for the active conversation. */
+  private get display(): ConversationState | undefined {
+    return this.stateForKey(this.displayKey);
+  }
+
+  /** Locally-accumulated session summary for the displayed conversation. */
+  get displaySummary(): SessionSummary | undefined {
+    const d = this.display;
+    return d ? this.summarize(d) : undefined;
+  }
+
+  /** Latest single request for the displayed conversation. */
+  get displayLastEvent(): CostEvent | undefined {
+    return this.display?.lastEvent;
+  }
+
+  /** Recent turns (oldest first) for the displayed conversation. */
+  get displayRecent(): CostEvent[] {
+    return this.display?.recent ?? [];
+  }
+
+  /** @deprecated Use displaySummary — kept for gradual migration. */
   get activeSummary(): SessionSummary | undefined {
-    const a = this.active;
-    return a ? this.summarize(a) : undefined;
+    return this.displaySummary;
   }
 
-  /** Latest single request for the active conversation. */
+  /** @deprecated Use displayLastEvent */
   get activeLastEvent(): CostEvent | undefined {
-    return this.active?.lastEvent;
+    return this.displayLastEvent;
   }
 
-  /** Recent turns (oldest first) for the active conversation. */
+  /** @deprecated Use displayRecent */
   get activeRecent(): CostEvent[] {
-    return this.active?.recent ?? [];
+    return this.displayRecent;
+  }
+
+  viewForKey(key: string): ConversationView | undefined {
+    const s = this.byKey.get(key);
+    return s ? this.view(s) : undefined;
   }
 
   /** Every conversation seen, most-recently-active first (for the panel). */
