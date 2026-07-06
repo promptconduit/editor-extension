@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.14.0
+
+- **Enrichment-powered Cost Breakdown (#53).** Session cards show diff stats
+  (`+120/−40 across 3 files`) and a subagent summary line from CLI v0.10+
+  enrichment slugs. Typed accessors for `diff`, `subagent`, `tools`, and `env`
+  in `envelope.ts`.
+- **Stream panel:** subagent badge on SubagentStart/Stop rows; Tools column from
+  the `tools` slug.
+- **Coaching:** prefers the normalized `tools` enrichment when present.
+- **Research:** `docs/cursor-request-id-research.md` — Request ID does not
+  unblock Cursor tab focus (deferred v2, #61).
+
 ## 0.13.0
 
 - **Focus-aware cost breakdown (Epic 5).** The status bar and default cost
