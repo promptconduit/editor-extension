@@ -317,8 +317,9 @@ export class ConversationStore {
       state.tool = env.tool;
     }
 
-    // Per-prompt correlation runs on every envelope; the group store has its
-    // own eventId dedup so it sits before the enrichment-accumulation guard.
+    // Per-prompt correlation runs on every envelope; the group store dedups
+    // by eventId (when the CLI provides one) so it sits before the
+    // enrichment-accumulation guard.
     this.promptGroups.record(env, costEventsFrom(env));
 
     if (env.vcs && (env.vcs.repo || env.vcs.branch)) {

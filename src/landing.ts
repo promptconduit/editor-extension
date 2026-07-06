@@ -17,7 +17,7 @@ import { learnMoreSectionHtml } from "./html";
  *
  * Pure, dependency-free renderer: takes no arguments and contains no
  * JavaScript. The panel integration injects the return value into the same
- * document shell/CSP used by {@link CostPanel}. Covers three sections:
+ * document shell/CSP used by the cost detail panel (src/costPanel/panel.ts). Covers three sections:
  *   1. What PromptConduit / this extension is + the 100%-local privacy promise.
  *   2. "Learn more" external links (open in the default browser).
  *   3. PromptConduit Pro / Team upsell (marketing copy only).

@@ -17,26 +17,37 @@ const vscode = acquireVsCodeApi();
 const userOpen = new Set<string>();
 const userClosed = new Set<string>();
 
+// querySelectorAll only returns DESCENDANTS — when the root itself is a
+// rebuilt <details data-exp> ledger entry, its own expansion must be restored
+// explicitly or a live-updating entry the user opened would snap shut.
 function applyExpansion(root: ParentNode): void {
-  root.querySelectorAll<HTMLDetailsElement>("details[data-exp]").forEach((d) => {
+  const apply = (d: HTMLDetailsElement) => {
     const id = d.dataset.exp!;
     if (userOpen.has(id)) {
       d.open = true;
     } else if (userClosed.has(id)) {
       d.open = false;
     }
-  });
+  };
+  if (root instanceof HTMLElement && root.matches("details[data-exp]")) {
+    apply(root as HTMLDetailsElement);
+  }
+  root.querySelectorAll<HTMLDetailsElement>("details[data-exp]").forEach(apply);
 }
 
 // CSP blocks style="" attributes; geometry arrives as data-* and is applied
 // through CSSOM, which the CSP allows.
 function applyGeometry(root: ParentNode): void {
-  root.querySelectorAll<HTMLElement>("[data-w]").forEach((el) => {
+  const apply = (el: HTMLElement) => {
     el.style.width = `${el.dataset.w}%`;
     if (el.dataset.left !== undefined) {
       el.style.left = `${el.dataset.left}%`;
     }
-  });
+  };
+  if (root instanceof HTMLElement && root.matches("[data-w]")) {
+    apply(root);
+  }
+  root.querySelectorAll<HTMLElement>("[data-w]").forEach(apply);
 }
 
 function hydrate(root: ParentNode): void {
@@ -114,9 +125,22 @@ function renderState(state: CostPanelState): void {
       continue;
     }
     const el = htmlToElement(item.html);
-    hydrate(el); // a replaced element for an open entry keeps its expansion
+    hydrate(el); // restores the entry's own open state plus its sub-sections
     next.set(item.id, { rev: item.rev, el });
     orderedEls.push(el);
+  }
+  // Prune expansion ids belonging to evicted groups so the sets stay bounded
+  // in a long-lived webview (sub-section ids are prefixed with the group id).
+  for (const oldId of ledgerCache.keys()) {
+    if (!next.has(oldId)) {
+      for (const set of [userOpen, userClosed]) {
+        for (const id of [...set]) {
+          if (id === oldId || id.startsWith(`${oldId}:`)) {
+            set.delete(id);
+          }
+        }
+      }
+    }
   }
   ledgerCache = next;
 
