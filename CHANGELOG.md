@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.15.0
+
+- **AI Cost Breakdown, rebuilt as a per-prompt detail report.** The panel is now
+  a scripted webview (strict CSP + nonce): each prompt is a ledger entry showing
+  its spend, model, tier, permission-mode badge (plan / accept edits / …), tool
+  calls (with MCP server, Skill, and failure markers), subagents with per-agent
+  model/cost/duration, permission events, and the full raw event JSON —
+  syntax-highlighted, copyable, truncated at 32 KB per event.
+- **"What if" model comparison.** Per prompt and per session: what the same
+  token counts would have cost on other models — both cheaper ("sonnet would
+  have saved $0.54 (−80%)") and pricier ("fable-5 would have cost +233%") —
+  from a pricing table mirrored from the CLI, with an honest caveat that this
+  is a rate comparison, not a capability comparison.
+- **Glossary tooltips everywhere.** Hover any dotted term (cache read, cache
+  write multipliers, fresh input, tiers, permission modes, subagents, MCP) for
+  a plain-language definition with a verified learn-more link.
+- **Expand all / Collapse all**, and expansion state survives live updates.
+- **Session VCS context line**: repo @ branch, linked PR number/title/state,
+  and a worktree badge from the vcs enrichment.
+- Cursor sessions degrade gracefully: generation-level entries render as
+  "(prompt not captured)" — Cursor's normal path, with everything it does emit.
+
 ## 0.14.1
 
 - **Terminal focus race fixed.** A slow `sessions resolve` for a previously

@@ -10,9 +10,11 @@ import * as fs from "node:fs";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { landingHtml } from "../src/landing";
-import { renderBreakdownHtml, type BreakdownView } from "../src/panel";
-import type { ConversationView } from "../src/state";
-import type { CostEvent, SessionSummary } from "../src/types";
+import { ConversationStore } from "../src/state";
+import { parseEnvelopeV2, costEventsFrom } from "../src/envelope";
+import { buildCostPanelState } from "../src/costPanel/viewModel";
+import { COST_PANEL_CSS } from "../src/costPanel/styles";
+import type { CostPanelState } from "../src/costPanel/protocol";
 import { buildStreamHtml, parseStreamLine, type StreamEvent } from "../src/streamFeed";
 import { signalsSummary } from "../src/statusBar";
 import { parseEnvelopeLine, reduceToSnapshot, reduceToTrends } from "../src/coaching/derive";
@@ -20,7 +22,14 @@ import { buildCoachingInsights } from "../src/coaching/insights";
 import { renderCoachingHtml } from "../src/coaching/render";
 import { demoScene } from "../src/visualizer/demo";
 import { SCENE_CSS, SCENE_BODY } from "../src/visualizer/chrome";
-import { sampleCoachingLines, sampleStreamLines, sampleEvents, heavySummary, cleanSummary } from "./fixtures";
+import {
+  sampleCoachingLines,
+  sampleStreamLines,
+  samplePromptStoryLines,
+  sampleEnrichmentLines,
+  heavySummary,
+  cleanSummary,
+} from "./fixtures";
 
 // VS Code webview theme variables (dark-ish) so server-rendered HTML that styles
 // itself with var(--vscode-*) looks right in a plain browser.
@@ -73,34 +82,50 @@ const streamBuf = (() => {
   return best;
 })();
 
-// Cost breakdown panel in its main states: a heavy session (every tip + edge
-// case fires), a lean clean session, the zero-state landing, and an unpriced
-// (tokens-but-no-rate) session.
-const unpricedSummary: SessionSummary = {
-  ...cleanSummary,
-  source: "estimate",
-  totals: { input: 6000, output: 1200, cache_read: 0, cache_write: 0, cost_total: 0, currency: "USD" },
-  by_model: [
-    { model: "composer-x", model_priced: false, tokens: { input: 6000, output: 1200, cache_read: 0, cache_write: 0 }, cost_total: 0 },
-  ],
-  signals: undefined,
-};
+// Cost Breakdown detail report: run the story fixture through the REAL
+// pipeline (ConversationStore -> buildCostPanelState) and load the actual
+// esbuild webview bundle with a tiny vscode-api shim, exactly like the
+// visualizer preview — expansion, tooltips, geometry, and copy all work.
+function storeFromLines(lines: string[]): ConversationStore {
+  const store = new ConversationStore();
+  for (const line of lines) {
+    const env = parseEnvelopeV2(line);
+    if (!env) continue;
+    store.recordEnvelope(env);
+    for (const ev of costEventsFrom(env)) {
+      store.recordEvent(ev);
+    }
+  }
+  return store;
+}
 
-// Assemble BreakdownViews the way the live store does: one ConversationView
-// per session, most-recently-active first.
-function conv(key: string, summary: SessionSummary, lastEvent?: CostEvent, recent: CostEvent[] = []): ConversationView {
-  return {
-    key,
-    tool: summary.tool,
-    summary,
-    lastEvent,
-    recent,
-    lastActivity: Date.parse(summary.updated_at) || 0,
+function costPanelPage(state: CostPanelState): string {
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8" />
+<style>${THEME}${COST_PANEL_CSS}</style></head>
+<body>
+<div id="app"></div>
+<script>
+  const STATE = { type: "state", state: ${JSON.stringify(state)} };
+  window.acquireVsCodeApi = function () {
+    return {
+      postMessage: function (msg) {
+        if (msg && msg.type === "ready") {
+          window.dispatchEvent(new MessageEvent("message", { data: STATE }));
+        }
+        if (msg && msg.type === "open_external" && msg.url) {
+          window.open(msg.url, "_blank");
+        }
+      },
+      getState() {}, setState() {},
+    };
   };
+</script>
+<script src="../../media/costPanel.js"></script>
+</body></html>`;
 }
-function bview(conversations: ConversationView[]): BreakdownView {
-  return { conversations, activeKey: conversations[0]?.key };
-}
+
+const storyStore = storeFromLines(samplePromptStoryLines);
+const multiStore = storeFromLines([...samplePromptStoryLines, ...sampleEnrichmentLines]);
 
 // Coaching tab: derive the report from the rich sample envelopes, exactly as the
 // live tab does from events.jsonl.
@@ -114,25 +139,9 @@ if (coachingSnapshot) {
 const coachingTrends = reduceToTrends(coachingEvents, 0);
 
 const pages: Record<string, string> = {
-  "breakdown-heavy.html": themed(
-    renderBreakdownHtml(bview([conv("s-heavy", heavySummary, sampleEvents[2], sampleEvents)])),
-    true,
-  ),
-  "breakdown-multi.html": themed(
-    renderBreakdownHtml(
-      bview([
-        conv("s-clean", cleanSummary, sampleEvents[2], sampleEvents.slice(2)),
-        conv("s-heavy", heavySummary, sampleEvents[1], sampleEvents.slice(0, 2)),
-      ]),
-    ),
-    true,
-  ),
-  "breakdown-clean.html": themed(
-    renderBreakdownHtml(bview([conv("s-clean", cleanSummary, sampleEvents[2], sampleEvents.slice(2))])),
-    true,
-  ),
-  "breakdown-unpriced.html": themed(renderBreakdownHtml(bview([conv("s-unpriced", unpricedSummary)])), true),
-  "breakdown-zero.html": themed(renderBreakdownHtml(bview([])), true),
+  "breakdown-detail.html": costPanelPage(buildCostPanelState(storyStore, "session")),
+  "breakdown-all.html": costPanelPage(buildCostPanelState(multiStore, "all")),
+  "breakdown-zero.html": costPanelPage(buildCostPanelState(new ConversationStore(), "session")),
   "coaching-rich.html": themed(renderCoachingHtml(coachingSnapshot, coachingTrends), true),
   "coaching-empty.html": themed(renderCoachingHtml(undefined), true),
   "stream.html": themed(buildStreamHtml(streamBuf, false), true),

@@ -9,7 +9,15 @@
 // focus, pin, or debounced activity); the all-sessions view uses list().
 
 import { CostEvent, ModelTotal, SessionSummary, Signals, Tokens } from "./types";
-import { DiffEnrichment, EnvelopeV2, subagentFrom, diffFrom } from "./envelope";
+import {
+  DiffEnrichment,
+  EnvelopeV2,
+  VCSEnrichment,
+  costEventsFrom,
+  subagentFrom,
+  diffFrom,
+} from "./envelope";
+import { PromptGroup, PromptGroupStore } from "./promptGroup";
 
 /** Aggregated subagent stats for a session (from SubagentStop enrichments). */
 export interface SessionSubagentSummary {
@@ -35,6 +43,12 @@ export interface ConversationView {
   diff?: DiffEnrichment;
   /** Rolled-up subagent usage for the session. */
   subagents?: SessionSubagentSummary;
+  /** Latest VCS context seen on this conversation's envelopes. */
+  vcs?: VCSEnrichment;
+  /** Per-prompt groups (requests, tools, subagents, raw events), append order. */
+  prompts?: PromptGroup[];
+  /** Prompt groups evicted by the per-conversation cap. */
+  droppedPrompts?: number;
 }
 
 export type FocusSource = "terminal" | "activity" | "pinned";
@@ -61,6 +75,7 @@ interface ConversationState {
   updatedAt: string;
   lastActivity: number;
   diff?: DiffEnrichment;
+  vcs?: VCSEnrichment;
   subagentCount: number;
   subagentDurationMs: number;
   subagentUsd: number;
@@ -117,6 +132,7 @@ function modelTier(model: string, priced: boolean): string {
  */
 export class ConversationStore {
   private readonly byKey = new Map<string, ConversationState>();
+  private readonly promptGroups = new PromptGroupStore();
   private activeKeyRef: string | undefined;
   private newestActivity = -Infinity;
   private focusedKeyRef: string | undefined;
@@ -301,6 +317,14 @@ export class ConversationStore {
       state.tool = env.tool;
     }
 
+    // Per-prompt correlation runs on every envelope; the group store has its
+    // own eventId dedup so it sits before the enrichment-accumulation guard.
+    this.promptGroups.record(env, costEventsFrom(env));
+
+    if (env.vcs && (env.vcs.repo || env.vcs.branch)) {
+      state.vcs = env.vcs; // latest context wins
+    }
+
     const sub = subagentFrom(env);
     // Dedup so a tail reset (file rotation re-read) can't double-apply
     // diff/subagent accumulation — mirrors `counted` for cost requests.
@@ -476,6 +500,9 @@ export class ConversationStore {
       lastActivity: state.lastActivity,
       diff: state.diff,
       subagents: this.subagentSummary(state),
+      vcs: state.vcs,
+      prompts: this.promptGroups.groupsFor(state.key),
+      droppedPrompts: this.promptGroups.droppedFor(state.key),
     };
   }
 

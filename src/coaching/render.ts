@@ -1,7 +1,7 @@
 // Pure renderer for the Coaching tab. Data in, HTML out — no `vscode`, no fs —
 // so the webview preview and unit tests render it without a live editor. The
 // webview runs with enableScripts:false; all interactivity is native
-// <details>/<a>. Mirrors the cost panel's renderBreakdownHtml structure and
+// <details>/<a>. Mirrors the cost panel's ledger structure and
 // theme so the two surfaces feel like one product.
 
 import { escapeHtml } from "../html";
