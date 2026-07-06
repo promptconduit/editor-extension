@@ -47,14 +47,14 @@ describe("ConversationStore active-conversation tracking", () => {
     expect(store.activeRecent[0].cost.total).toBe(0.99); // replaced with the latest
   });
 
-  it("bounds recent history (oldest-first, capped)", () => {
+  it("retains full recent history (oldest-first, uncapped)", () => {
     const store = new ConversationStore();
     for (let i = 0; i < 60; i++) {
       store.recordEvent(mkEvent({ conversation_id: "A", request_id: `r${i}`, ts: `2026-06-27T17:${String(i).padStart(2, "0")}:00Z` }));
     }
     const recent = store.activeRecent;
-    expect(recent).toHaveLength(50); // MAX_RECENT
-    expect(recent[0].request_id).toBe("r10"); // oldest retained
+    expect(recent).toHaveLength(60); // every request preserved — nothing dropped
+    expect(recent[0].request_id).toBe("r0"); // oldest still present
     expect(recent[recent.length - 1].request_id).toBe("r59"); // newest
   });
 
