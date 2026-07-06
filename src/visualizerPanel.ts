@@ -7,6 +7,7 @@ import { GitHubEnricher, EnrichmentMode, resolveGitHubToken } from "./visualizer
 import type { Scene } from "./visualizer/types";
 import type { HostMessage, WebviewMessage } from "./visualizer/protocol";
 import { SCENE_CSS, SCENE_BODY } from "./visualizer/chrome";
+import { makeNonce, webviewCsp, webviewShellHtml, isSafeHttpUrl } from "./webviewHost";
 
 /**
  * VisualizerPanel hosts the 3D Orchestration Theater in a full editor tab. Unlike
@@ -124,28 +125,14 @@ export class VisualizerPanel {
   private getHtml(webview: vscode.Webview, extensionUri: vscode.Uri): string {
     const nonce = makeNonce();
     const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, "media", "visualizer.js"));
-    const csp = [
-      `default-src 'none'`,
-      `img-src ${webview.cspSource} data:`,
-      `style-src ${webview.cspSource} 'nonce-${nonce}'`,
-      `script-src 'nonce-${nonce}'`,
-      `font-src ${webview.cspSource}`,
-      `connect-src 'none'`,
-    ].join("; ");
-
-    return `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<meta http-equiv="Content-Security-Policy" content="${csp}" />
-<style nonce="${nonce}">${SCENE_CSS}</style>
-</head>
-<body>
-${SCENE_BODY}
-  <script nonce="${nonce}" src="${scriptUri}"></script>
-</body>
-</html>`;
+    return webviewShellHtml({
+      csp: webviewCsp(webview, nonce),
+      nonce,
+      scriptUri: scriptUri.toString(),
+      title: "AI Orchestration Theater",
+      headHtml: `<style nonce="${nonce}">${SCENE_CSS}</style>`,
+      bodyHtml: SCENE_BODY,
+    });
   }
 
   private dispose(): void {
@@ -156,18 +143,4 @@ ${SCENE_BODY}
 
 function reduceMotionEnabled(): boolean {
   return vscode.workspace.getConfiguration("workbench").get<string>("reduceMotion") === "on";
-}
-
-function makeNonce(): string {
-  const bytes = require("crypto").randomBytes(16) as Buffer;
-  return bytes.toString("hex");
-}
-
-function isSafeHttpUrl(url: string): boolean {
-  try {
-    const u = new URL(url);
-    return u.protocol === "https:" || u.protocol === "http:";
-  } catch {
-    return false;
-  }
 }
