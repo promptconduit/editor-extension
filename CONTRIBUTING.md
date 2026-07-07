@@ -6,7 +6,7 @@ This is the VS Code / Cursor extension that shows your AI coding session cost li
 
 ## Development Setup
 
-**Prerequisites:** Node.js 18+, npm, and a build of the `promptconduit` CLI on your `PATH` (`brew install promptconduit/tap/promptconduit`).
+**Prerequisites:** Node.js 18+, npm, and a build of the `promptconduit` CLI on your `PATH` (`curl -fsSL https://promptconduit.dev/install | bash`).
 
 ```bash
 git clone https://github.com/promptconduit/editor-extension.git
