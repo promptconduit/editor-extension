@@ -55,7 +55,7 @@ and writes nothing to any server. See `cli/internal/cost` for the engine.
 Install the CLI:
 
 ```bash
-brew install promptconduit/tap/promptconduit
+curl -fsSL https://promptconduit.dev/install | bash
 ```
 
 If it isn't on your `PATH`, set `promptconduit.cost.binaryPath`.

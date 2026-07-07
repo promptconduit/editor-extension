@@ -95,7 +95,7 @@
         "promptconduit.cost.binaryPath": {
           "type": "string",
           "default": "",
-          "description": "Path to the promptconduit CLI (used by session restore). Leave blank to auto-detect on PATH and common Homebrew locations."
+          "description": "Path to the promptconduit CLI (used by session restore). Leave blank to auto-detect on PATH and common install locations."
         },
         "promptconduit.visualizer.githubEnrichment": {
           "type": "string",

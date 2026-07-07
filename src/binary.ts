@@ -1,6 +1,6 @@
 import * as fs from "fs";
 
-// Common Homebrew install locations to probe when the CLI isn't on PATH or
+// Common install locations to probe when the CLI isn't on PATH or
 // configured explicitly. Used by session restore (`promptconduit sessions`);
 // the cost feed no longer needs a binary — it reads events.jsonl directly.
 const FALLBACK_BINARY_PATHS = [
