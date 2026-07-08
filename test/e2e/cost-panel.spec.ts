@@ -109,7 +109,9 @@ test("Cost Breakdown detail report renders the per-prompt ledger", async () => {
   await expect(
     webview.getByText("Review the cost breakdown code", { exact: false }).first(),
   ).toBeVisible();
-  await expect(webview.getByText("plan mode").first()).toBeVisible();
+  // The mode label is wrapped in a glossary tooltip, so its hidden <strong>
+  // term shadows the visible chip text for getByText — target the chip by class.
+  await expect(webview.locator(".chip-plan").first()).toBeVisible();
   await expect(webview.getByText("PR #65", { exact: false })).toBeVisible();
   await expect(webview.getByText("worktree").first()).toBeVisible();
 
