@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.16.0
+
+- **Stream panel: expandable raw JSON per event.** Every row in the live
+  stream now expands into the event's full raw record (hook event, prompt id,
+  raw payload, enrichments) — human-readable, syntax-highlighted, copyable
+  with one click, truncated at 32 KB per event with a pointer to
+  `~/.promptconduit/events.jsonl` for the full record.
+- **Expand all / Collapse all**, and expansion state + scroll position survive
+  live updates.
+- **Explicit session identity.** The header shows the FULL session key in a
+  copyable code block, labeled for what it actually is — `conversation_id
+  (Cursor tab)` or `session_id (Claude Code)` — so you can correlate a stream
+  with logs, transcripts, and other tools.
+- **Scripted webview port.** The Stream panel now uses the same strict
+  CSP + nonce scripted-webview architecture as the Cost Breakdown (esbuild
+  bundle, ready/state handshake, gated external links); Pin/Follow moved from
+  `command:` links to toolbar buttons.
+- **Memory bounds.** At most 30 concurrent session buffers (least-recently-
+  active evicted first) and a 2 MB raw-JSON budget per session (oldest raw
+  payloads evicted first, row metadata always kept).
+
 ## 0.15.0
 
 - **AI Cost Breakdown, rebuilt as a per-prompt detail report.** The panel is now

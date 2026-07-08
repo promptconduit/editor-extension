@@ -74,12 +74,12 @@ export function activate(context: vscode.ExtensionContext): void {
       CoachingPanel.show();
     }),
     vscode.commands.registerCommand("promptconduit.stream.showFeed", () => {
-      StreamPanel.show();
+      StreamPanel.show(context.extensionUri);
     }),
     vscode.commands.registerCommand("promptconduit.stream.pinSession", () => {
       const panel = StreamPanel.active;
       if (!panel) {
-        StreamPanel.show();
+        StreamPanel.show(context.extensionUri);
         return;
       }
       void panel.pinSession();
