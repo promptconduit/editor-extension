@@ -31,3 +31,7 @@ package-lock.json
 # sourcemaps (ship code, not maps)
 media/*.map
 out/**/*.map
+
+# README/marketplace screenshots are referenced by absolute raw URL, so they
+# don't need to bloat the installed VSIX (they live in git for the raw links).
+resources/screenshots/**

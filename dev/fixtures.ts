@@ -476,3 +476,50 @@ export const samplePromptStoryLines: string[] = [
 ];
 
 export const samplePromptStoryJsonl = samplePromptStoryLines.join("\n") + "\n";
+
+// ---------- Orchestration Theater (multi-agent scene) ----------
+// A single Claude Code session that fans out to three parallel subagents, each
+// running a few tools, then converges. buildScene() reads raw_event.session_id /
+// agent_id / agent_type and the flattened tool_name list (see visualizer/graph.ts),
+// so this renders a lead → 3 subagents → tools scene. Richer than the e2e seed;
+// used to capture the Theater screenshot. (An empty log instead falls back to the
+// baked demoScene(), also a fine shot — see visualizerPanel.loadScene.)
+
+function tEnv(hookEvent: string, isoTs: string, raw: Record<string, unknown>): string {
+  return v2Envelope("claude-code", hookEvent, isoTs, {
+    sessionId: "cc-theater",
+    repo: "promptconduit/platform",
+    branch: "feat/security-audit",
+    raw,
+  });
+}
+function tTool(agentId: string, name: string, input: Record<string, unknown>, useId: string): Record<string, unknown> {
+  return { agent_id: agentId, tool_name: name, tool_input: input, tool_response: "ok", tool_use_id: useId };
+}
+
+export const sampleTheaterLines: string[] = [
+  tEnv("SessionStart", "2026-07-06T18:00:00Z", { model: "claude-opus-4-8" }),
+  tEnv("UserPromptSubmit", "2026-07-06T18:00:03Z", {
+    prompt: "Audit the auth module for security, performance, and missing tests.",
+    permission_mode: "plan",
+  }),
+  // Lead fans out to three subagents in parallel.
+  tEnv("SubagentStart", "2026-07-06T18:00:06Z", { agent_id: "sec", agent_type: "security-review" }),
+  tEnv("SubagentStart", "2026-07-06T18:00:07Z", { agent_id: "perf", agent_type: "Explore" }),
+  tEnv("SubagentStart", "2026-07-06T18:00:08Z", { agent_id: "tests", agent_type: "pr-test-analyzer" }),
+  // Each subagent runs a few tools.
+  tEnv("PostToolUse", "2026-07-06T18:00:12Z", tTool("sec", "Grep", { pattern: "verifyToken" }, "s1")),
+  tEnv("PostToolUse", "2026-07-06T18:00:15Z", tTool("sec", "Read", { file_path: "src/auth/jwt.ts" }, "s2")),
+  tEnv("PostToolUse", "2026-07-06T18:00:18Z", tTool("perf", "Read", { file_path: "src/auth/session.ts" }, "p1")),
+  tEnv("PostToolUse", "2026-07-06T18:00:21Z", tTool("perf", "Bash", { command: "go test -bench ." }, "p2")),
+  tEnv("PostToolUse", "2026-07-06T18:00:24Z", tTool("perf", "WebFetch", { url: "https://owasp.org" }, "p3")),
+  tEnv("PostToolUse", "2026-07-06T18:00:27Z", tTool("tests", "Read", { file_path: "src/auth/jwt.test.ts" }, "t1")),
+  tEnv("PostToolUse", "2026-07-06T18:00:30Z", tTool("tests", "Edit", { file_path: "src/auth/jwt.test.ts" }, "t2")),
+  // Converge.
+  tEnv("SubagentStop", "2026-07-06T18:00:34Z", { agent_id: "sec" }),
+  tEnv("SubagentStop", "2026-07-06T18:00:36Z", { agent_id: "perf" }),
+  tEnv("SubagentStop", "2026-07-06T18:00:38Z", { agent_id: "tests" }),
+  tEnv("Stop", "2026-07-06T18:00:45Z", {}),
+];
+
+export const sampleTheaterJsonl = sampleTheaterLines.join("\n") + "\n";
