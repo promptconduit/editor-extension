@@ -8,7 +8,7 @@ import { CostFeedController } from "./costFeed";
 import { resolveBinary } from "./binary";
 import { VisualizerPanel } from "./visualizerPanel";
 import { UpdatePromptController } from "./updatePrompt";
-import { SessionRestoreController, makeRestoreDeps } from "./sessionRestore";
+import { SessionRestoreController, makeRestoreDeps, recordDismissed } from "./sessionRestore";
 import { TerminalFocusController, makeTerminalFocusDeps } from "./terminalFocus";
 
 let statusBar: CostStatusBar | undefined;
@@ -103,9 +103,16 @@ export function activate(context: vscode.ExtensionContext): void {
   );
 
   terminalFocus = new TerminalFocusController(
-    makeTerminalFocusDeps(resolveCli, (sessionKey) => {
-      statusBar?.setFocusedKey(sessionKey);
-    }),
+    makeTerminalFocusDeps(
+      resolveCli,
+      (sessionKey) => {
+        statusBar?.setFocusedKey(sessionKey);
+      },
+      // Deliberately closing a Claude terminal dismisses that session so a later
+      // window reload won't auto-reopen it. Reload teardown is guarded in
+      // deactivate() via markShuttingDown().
+      (sessionId) => recordDismissed(context.workspaceState, sessionId, Date.now()),
+    ),
   );
   terminalFocus.start();
   context.subscriptions.push(terminalFocus);
@@ -155,6 +162,10 @@ export function activate(context: vscode.ExtensionContext): void {
 }
 
 export function deactivate(): void {
+  // A window reload tears down every terminal; mark shutdown first so those
+  // closes aren't recorded as deliberate user dismissals (which would stop
+  // restore from reopening them on the next load).
+  terminalFocus?.markShuttingDown();
   stopCostFeed();
 }
 

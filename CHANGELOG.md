@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.17.1
+
+- **Reloading the window now reliably brings your Claude Code terminals back —
+  every time.** Session restore used to reopen interrupted sessions only on the
+  *first* window reload; a second "Developer: Reload Window" left the terminals
+  gone. Restore no longer suppresses a session just because it was restored once
+  (a resumed session keeps the same id), so each reload reopens the interrupted
+  Claude Code sessions in this workspace again. Terminals you close on purpose
+  stay closed — deliberate closes are remembered, a reload's teardown isn't.
+
 ## 0.17.0
 
 - **Refresh Panel — reload a panel without reloading the window.** The Stream

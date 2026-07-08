@@ -23,10 +23,13 @@ function sess(id: string, extra: Partial<RestorableSession> = {}): RestorableSes
 interface Harness {
   deps: RestoreDeps;
   opened: string[]; // session ids for which a terminal was created
-  ledger: Record<string, number>;
+  ledger: Record<string, number>; // the dismissed-sessions ledger (read-only here)
   infos: string[]; // messages shown
 }
 
+// `ledger` seeds the dismissed set (session_id → dismissed-at ms). The
+// controller only reads it — dismissals are written elsewhere (on deliberate
+// terminal close), so there is no writeLedger dep to stub.
 function harness(opts: {
   sessions: RestorableSession[];
   mode?: RestoreMode;
@@ -46,11 +49,6 @@ function harness(opts: {
     getMode: () => opts.mode ?? "auto",
     getSinceHours: () => 12,
     readLedger: () => ledger,
-    writeLedger: async (l) => {
-      for (const k of Object.keys(ledger)) delete ledger[k];
-      Object.assign(ledger, l);
-    },
-    now: () => 1_000,
     info: async (m) => {
       infos.push(m);
       return opts.infoAnswer;
@@ -62,12 +60,26 @@ function harness(opts: {
 }
 
 describe("SessionRestoreController.runStartup", () => {
-  it("auto: silently reopens interrupted sessions and records them in the ledger", async () => {
+  it("auto: silently reopens interrupted sessions without suppressing future restores", async () => {
     const h = harness({ sessions: [sess("a"), sess("b")], mode: "auto" });
     await new SessionRestoreController(h.deps).runStartup();
     expect(h.opened.sort()).toEqual(["a", "b"]);
-    expect(Object.keys(h.ledger).sort()).toEqual(["a", "b"]);
+    // Restoring must NOT write the dismissed ledger — otherwise a later reload
+    // (same session_id via `claude --resume`) would be wrongly suppressed.
+    expect(h.ledger).toEqual({});
     expect(h.infos.some((m) => /reopened 2/i.test(m))).toBe(true);
+  });
+
+  it("reopens the same interrupted sessions again on a subsequent refresh", async () => {
+    // Simulates two window reloads: the sessions are interrupted both times and
+    // were never dismissed, so both refreshes must reopen them.
+    const sessions = [sess("a"), sess("b")];
+    const h1 = harness({ sessions, mode: "auto" });
+    await new SessionRestoreController(h1.deps).runStartup();
+    expect(h1.opened.sort()).toEqual(["a", "b"]);
+    const h2 = harness({ sessions, mode: "auto" });
+    await new SessionRestoreController(h2.deps).runStartup();
+    expect(h2.opened.sort()).toEqual(["a", "b"]);
   });
 
   it("off: does nothing", async () => {
@@ -76,7 +88,7 @@ describe("SessionRestoreController.runStartup", () => {
     expect(h.opened).toEqual([]);
   });
 
-  it("never reopens a session already in the ledger", async () => {
+  it("never reopens a session the user deliberately dismissed", async () => {
     const h = harness({ sessions: [sess("a"), sess("b")], mode: "auto", ledger: { a: 500 } });
     await new SessionRestoreController(h.deps).runStartup();
     expect(h.opened).toEqual(["b"]);

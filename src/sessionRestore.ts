@@ -59,14 +59,14 @@ export function isUnderAny(cwd: string, roots: string[]): boolean {
 
 /**
  * Pure selection: which sessions should be restored now. Excludes anything
- * still running, already restored this workspace, or outside the open folders.
- * Returns [] when restore is off or there's no workspace to scope to (we never
- * restore machine-wide from a folderless window).
+ * still running, deliberately dismissed in this workspace, or outside the open
+ * folders. Returns [] when restore is off or there's no workspace to scope to
+ * (we never restore machine-wide from a folderless window).
  */
 export function selectToRestore(
   all: RestorableSession[],
   roots: string[],
-  restoredIds: ReadonlySet<string>,
+  dismissedIds: ReadonlySet<string>,
   mode: RestoreMode,
 ): RestorableSession[] {
   if (mode === "off" || roots.length === 0) {
@@ -77,7 +77,7 @@ export function selectToRestore(
       s.session_id &&
       s.cwd &&
       !s.alive &&
-      !restoredIds.has(s.session_id) &&
+      !dismissedIds.has(s.session_id) &&
       isUnderAny(s.cwd, roots),
   );
 }
@@ -109,7 +109,12 @@ export function sessionLabel(s: RestorableSession): string {
   return `${where}${what}`;
 }
 
-const LEDGER_KEY = "promptconduit.restoredSessions";
+// The "dismissed" ledger: sessions the user *deliberately* closed. Restore
+// skips these so we don't keep reopening a terminal someone shut on purpose.
+// It is NOT keyed on "was ever restored" — `claude --resume <id>` keeps the
+// same session_id, so keying on that would suppress a session that a window
+// reload killed and the user wants back. See recordDismissed/clearDismissed.
+export const DISMISSED_KEY = "promptconduit.dismissedSessions";
 const LEDGER_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 /** Drop ledger entries older than maxAge so it can't grow without bound. */
@@ -127,6 +132,36 @@ export function pruneLedger(
   return out;
 }
 
+// Minimal subset of vscode.Memento (context.workspaceState) so the helpers
+// below are unit-testable without the editor.
+export interface DismissStore {
+  get(key: string, def: Record<string, number>): Record<string, number>;
+  update(key: string, value: Record<string, number>): Thenable<void>;
+}
+
+/**
+ * Remember that the user deliberately closed a session's terminal, so a later
+ * refresh won't auto-reopen it. Prunes stale entries as it writes.
+ */
+export function recordDismissed(store: DismissStore, sessionId: string, nowMs: number): void {
+  const ledger = pruneLedger(store.get(DISMISSED_KEY, {}), nowMs);
+  ledger[sessionId] = nowMs;
+  void store.update(DISMISSED_KEY, ledger);
+}
+
+/**
+ * Clear a session's dismissal — called when we (re)open a terminal for it, so a
+ * previously-closed session that's brought back becomes eligible for restore
+ * again.
+ */
+export function clearDismissed(store: DismissStore, sessionId: string): void {
+  const ledger = store.get(DISMISSED_KEY, {});
+  if (sessionId in ledger) {
+    delete ledger[sessionId];
+    void store.update(DISMISSED_KEY, ledger);
+  }
+}
+
 // Injection seams so the controller is testable and the impure edges (CLI,
 // terminals, storage, clock) are swappable.
 export interface RestoreDeps {
@@ -136,9 +171,8 @@ export interface RestoreDeps {
   getRoots(): string[];
   getMode(): RestoreMode;
   getSinceHours(): number;
+  /** The dismissed-sessions ledger (session_id → dismissed-at ms). */
   readLedger(): Record<string, number>;
-  writeLedger(ledger: Record<string, number>): Thenable<void>;
-  now(): number;
   info(message: string, ...actions: string[]): Thenable<string | undefined>;
   pickSessions(sessions: RestorableSession[]): Thenable<RestorableSession[]>;
   openSettings(): void;
@@ -202,22 +236,19 @@ export class SessionRestoreController {
       return [];
     }
     const all = parseSessionsJson(raw);
-    const restored = ignoreLedger
+    const dismissed = ignoreLedger
       ? new Set<string>()
       : new Set(Object.keys(this.deps.readLedger()));
-    return selectToRestore(all, this.deps.getRoots(), restored, mode);
+    return selectToRestore(all, this.deps.getRoots(), dismissed, mode);
   }
 
   private restoreAll(sessions: RestorableSession[]): void {
-    if (sessions.length === 0) {
-      return;
-    }
-    const ledger = pruneLedger(this.deps.readLedger(), this.deps.now());
+    // Reopening a session does NOT suppress future restores — a later reload
+    // should bring it back again. Only a deliberate close (recordDismissed)
+    // suppresses it. createTerminal clears any stale dismissal for the session.
     for (const s of sessions) {
       this.deps.createTerminal(s);
-      ledger[s.session_id] = this.deps.now();
     }
-    void this.deps.writeLedger(ledger);
   }
 
   private async promptThenRestore(candidates: RestorableSession[]): Promise<void> {
@@ -262,8 +293,6 @@ export class SessionRestoreController {
 
 // --- Real dependency wiring (kept out of the testable core above) -----------
 
-const RESTORED_STATE_KEY = LEDGER_KEY;
-
 /** execFile the CLI's `sessions --json`, returning stdout. Rejects on failure. */
 export function runSessionsCommand(binary: string, sinceHours: number): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -298,14 +327,15 @@ export function makeRestoreDeps(
         iconPath: new vscode.ThemeIcon("comment-discussion"),
       });
       onTerminalCreated?.(term, s.session_id);
+      // Opening a terminal for this session un-dismisses it, so a session the
+      // user closed and later brings back is eligible for restore again.
+      clearDismissed(context.workspaceState, s.session_id);
       term.sendText(resumeCommand(s));
     },
     getRoots: () => (vscode.workspace.workspaceFolders ?? []).map((f) => f.uri.fsPath),
     getMode: () => cfg().get<RestoreMode>("mode", "auto"),
     getSinceHours: () => cfg().get<number>("sinceHours", 12),
-    readLedger: () => context.workspaceState.get<Record<string, number>>(RESTORED_STATE_KEY, {}),
-    writeLedger: (ledger) => context.workspaceState.update(RESTORED_STATE_KEY, ledger),
-    now: () => Date.now(),
+    readLedger: () => context.workspaceState.get<Record<string, number>>(DISMISSED_KEY, {}),
     info: (message, ...actions) => vscode.window.showInformationMessage(message, ...actions),
     pickSessions: async (sessions) => {
       const picks = await vscode.window.showQuickPick(
