@@ -116,7 +116,11 @@ test("Cost Breakdown detail report renders the per-prompt ledger", async () => {
   await expect(webview.getByText("worktree").first()).toBeVisible();
 
   // Expand all → per-prompt comparison, tool calls, subagents, and raw JSON.
-  await webview.getByRole("button", { name: "Expand all" }).click();
+  // Cursor's unauthenticated "log in" overlay sits above the webview in CI and
+  // intercepts real pointer events (the button itself is visible/enabled/stable),
+  // so dispatch the click directly — the panel handles clicks via a delegated
+  // document listener, so a synthetic bubbling click still triggers Expand all.
+  await webview.getByRole("button", { name: "Expand all" }).dispatchEvent("click");
   await win.waitForTimeout(1_000);
   await expect(webview.getByText("What if", { exact: false }).first()).toBeVisible();
   await expect(webview.getByText("mcp__github__search_issues").first()).toBeVisible();
