@@ -11,6 +11,12 @@ name: Publish
 # Each publish step runs only when its secret is set, so you can ship to one
 # registry before the other. The VS Code step is best-effort (continue-on-error)
 # so an Open VSX release still succeeds if the Marketplace token is missing.
+#
+# Optional third secret:
+#   CLI_DISPATCH_TOKEN — a PAT that can trigger workflows in promptconduit/cli.
+# When set, a final step pings the CLI's "Refresh bundled extension" workflow so
+# it rebuilds its embedded .vsix from this repo's main right after a release,
+# instead of waiting for that repo's weekly refresh schedule. No-op if unset.
 
 on:
   push:
@@ -28,6 +34,7 @@ jobs:
     env:
       OVSX_TOKEN: ${{ secrets.OVSX_TOKEN }}
       VSCE_PAT: ${{ secrets.VSCE_PAT }}
+      CLI_DISPATCH_TOKEN: ${{ secrets.CLI_DISPATCH_TOKEN }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v6
@@ -45,3 +52,12 @@ jobs:
         if: ${{ env.VSCE_PAT != '' }}
         continue-on-error: true
         run: npx @vscode/vsce publish --pat "$VSCE_PAT"
+
+      # Tell the CLI to refresh its embedded copy of this extension. The CLI's
+      # "Refresh bundled extension" workflow keys on the package.json version, so
+      # a bump merged before this tag will produce a refresh PR there.
+      - name: Refresh the CLI's bundled extension
+        if: ${{ env.CLI_DISPATCH_TOKEN != '' }}
+        env:
+          GH_TOKEN: ${{ env.CLI_DISPATCH_TOKEN }}
+        run: gh api -X POST repos/promptconduit/cli/dispatches -f event_type=extension-released
