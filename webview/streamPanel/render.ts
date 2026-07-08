@@ -53,6 +53,7 @@ function toolbarHtml(state: StreamPanelState): string {
     <button type="button" class="tb" data-cmd="collapseAll">Collapse all</button>
     <button type="button" class="tb" data-cmd="pinSession">Pin…</button>
     ${follow}
+    <button type="button" class="tb" data-cmd="refresh" title="Reload this panel to pick up an extension update — no window reload">↻ Refresh</button>
   </nav>`;
 }
 

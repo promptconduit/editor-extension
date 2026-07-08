@@ -5,6 +5,7 @@ import {
   webviewCsp,
   webviewShellHtml,
   isSafeHttpUrl,
+  bustCache,
 } from "../../src/webviewHost";
 import { isSafeHttpUrl as linksIsSafeHttpUrl } from "../../src/links";
 import { SCENE_CSS, SCENE_BODY } from "../../src/visualizer/chrome";
@@ -21,6 +22,18 @@ describe("makeNonce", () => {
   it("is unique per call", () => {
     const seen = new Set(Array.from({ length: 50 }, () => makeNonce()));
     expect(seen.size).toBe(50);
+  });
+});
+
+describe("bustCache", () => {
+  const uri = "vscode-webview://abc123/media/costPanel.js";
+
+  it("appends the revision as a query so a reload re-fetches the bundle", () => {
+    expect(bustCache(uri, 1)).toBe(`${uri}?v=1`);
+  });
+
+  it("changes with the revision so successive refreshes are distinct urls", () => {
+    expect(bustCache(uri, 2)).not.toBe(bustCache(uri, 3));
   });
 });
 

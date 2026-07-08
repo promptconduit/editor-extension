@@ -110,6 +110,11 @@ describe("renderZones diffing contract", () => {
       expect(i.html).toContain(`data-exp="${i.id}"`);
     }
   });
+
+  it("toolbar exposes a refresh control", () => {
+    const zones = renderZones(buildCostPanelState(storyStore(), "session"));
+    expect(zones.top).toContain('data-cmd="refresh"');
+  });
 });
 
 describe("escaping (model/user-controlled strings)", () => {

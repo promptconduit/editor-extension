@@ -23,4 +23,4 @@ export type HostMessage = { type: "state"; state: StreamPanelState };
 export type WebviewMessage =
   | { type: "ready" }
   | { type: "open_external"; url: string }
-  | { type: "command"; id: "pinSession" | "followActive" };
+  | { type: "command"; id: "pinSession" | "followActive" | "refresh" };

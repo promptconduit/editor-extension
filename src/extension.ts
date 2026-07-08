@@ -90,6 +90,16 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("promptconduit.visualizer.show", () => {
       VisualizerPanel.show(context.extensionUri);
     }),
+    vscode.commands.registerCommand("promptconduit.refreshPanel", () => {
+      // Reload the focused PromptConduit webview in place — picks up an extension
+      // update's rebuilt panel bundle without a full window reload.
+      const refreshed = CostDetailPanel.refreshActive() || StreamPanel.refreshActive();
+      if (!refreshed) {
+        void vscode.window.showInformationMessage(
+          "Focus a PromptConduit Stream or Cost Breakdown panel, then run Refresh Panel.",
+        );
+      }
+    }),
   );
 
   terminalFocus = new TerminalFocusController(

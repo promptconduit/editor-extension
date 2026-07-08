@@ -86,7 +86,7 @@ document.addEventListener("click", (e) => {
       setAll(true);
     } else if (cmd === "collapseAll") {
       setAll(false);
-    } else if (cmd === "pinSession" || cmd === "followActive") {
+    } else if (cmd === "pinSession" || cmd === "followActive" || cmd === "refresh") {
       vscode.postMessage({ type: "command", id: cmd });
     }
     return;

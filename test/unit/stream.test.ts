@@ -360,11 +360,12 @@ describe("renderStreamBody", () => {
     expect((html.match(/~\/\.promptconduit\/events\.jsonl/g) ?? []).length).toBeGreaterThanOrEqual(2);
   });
 
-  it("renders the toolbar with expand/collapse/pin controls", () => {
+  it("renders the toolbar with expand/collapse/pin/refresh controls", () => {
     const html = renderFromFixtures();
     expect(html).toContain('data-cmd="expandAll"');
     expect(html).toContain('data-cmd="collapseAll"');
     expect(html).toContain('data-cmd="pinSession"');
+    expect(html).toContain('data-cmd="refresh"');
     expect(html).not.toContain('data-cmd="followActive"'); // only while pinned
   });
 
