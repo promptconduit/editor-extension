@@ -59,8 +59,14 @@ export class TerminalFocusController {
   private readonly terminalCache = new Map<vscode.Terminal, string>();
   private readonly disposables: vscode.Disposable[] = [];
   private focusedSessionKey: string | undefined;
+  // Bumped on every focus change so a slow in-flight resolve for a previously
+  // focused terminal can't overwrite the newer terminal's session.
+  private resolveGen = 0;
 
-  constructor(private readonly deps: TerminalFocusDeps) {
+  constructor(private readonly deps: TerminalFocusDeps) {}
+
+  /** Subscribe to terminal focus events and resolve the current terminal. */
+  start(): void {
     this.disposables.push(
       vscode.window.onDidChangeActiveTerminal((term) => {
         void this.resolveTerminal(term);
@@ -79,7 +85,8 @@ export class TerminalFocusController {
   /** Belt-and-suspenders cache for terminals opened via session restore. */
   registerTerminal(terminal: vscode.Terminal, sessionId: string): void {
     this.terminalCache.set(terminal, sessionId);
-    if (vscode.window.activeTerminal === terminal) {
+    if (vscode.window?.activeTerminal === terminal) {
+      this.resolveGen += 1; // authoritative — invalidate any in-flight resolve
       this.setFocus(sessionId);
     }
   }
@@ -89,7 +96,9 @@ export class TerminalFocusController {
     this.deps.onFocusChange(sessionKey, sessionKey ? "terminal" : "activity");
   }
 
-  private async resolveTerminal(term: vscode.Terminal | undefined): Promise<void> {
+  /** Resolve a terminal to its Claude session. Exposed for tests. */
+  async resolveTerminal(term: vscode.Terminal | undefined): Promise<void> {
+    const gen = ++this.resolveGen;
     if (!term) {
       this.setFocus(undefined);
       return;
@@ -107,6 +116,9 @@ export class TerminalFocusController {
     } catch {
       shellPid = undefined;
     }
+    if (gen !== this.resolveGen) {
+      return; // focus moved on while we awaited
+    }
     if (!shellPid) {
       this.setFocus(undefined);
       return;
@@ -120,9 +132,15 @@ export class TerminalFocusController {
 
     try {
       const raw = await this.deps.runResolve(binary, shellPid);
+      if (gen !== this.resolveGen) {
+        return;
+      }
       const result = parseResolveJson(raw);
       if (result.ambiguous && result.candidates && result.candidates.length > 0) {
         const picked = await this.deps.pickCandidate(result.candidates);
+        if (gen !== this.resolveGen) {
+          return;
+        }
         if (picked) {
           this.terminalCache.set(term, picked);
           this.setFocus(picked);
@@ -138,6 +156,9 @@ export class TerminalFocusController {
       }
     } catch {
       // Best-effort — fall back to activity-based selection.
+      if (gen !== this.resolveGen) {
+        return;
+      }
     }
     this.setFocus(undefined);
   }

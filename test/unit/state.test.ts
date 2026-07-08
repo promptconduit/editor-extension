@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { ConversationStore, ACTIVE_KEY_DEBOUNCE_MS } from "../../src/state";
+import { ConversationStore, ACTIVE_KEY_DEBOUNCE_MS, MAX_RECENT_REQUESTS } from "../../src/state";
 import { parseEnvelopeV2 } from "../../src/envelope";
 import { sampleEnrichmentLines } from "../../dev/fixtures";
 import { sampleEvents } from "../../dev/fixtures";
@@ -141,6 +141,7 @@ describe("ConversationStore displayKey precedence", () => {
     const store = new ConversationStore();
     store.recordEvent(mkEvent({ conversation_id: "A", request_id: "a1", ts: "2026-06-27T17:00:00Z" }));
     store.recordEvent(mkEvent({ conversation_id: "B", request_id: "b1", ts: "2026-06-27T17:05:00Z" }));
+    store.recordEvent(mkEvent({ conversation_id: "C", request_id: "c1", ts: "2026-06-27T17:01:00Z" }));
     store.setPinnedKey("A");
     store.setFocusedKey("C");
     expect(store.displayKey).toBe("C");
@@ -201,5 +202,94 @@ describe("ConversationStore enrichment slugs", () => {
       totalUsd: 0.31,
       dominantType: "Explore",
     });
+  });
+});
+
+describe("ConversationStore enrichment dedup (rotation re-ingest)", () => {
+  it("does not double-count subagents or diff when the same lines re-ingest", () => {
+    const store = new ConversationStore();
+    for (let pass = 0; pass < 2; pass++) {
+      for (const line of sampleEnrichmentLines) {
+        const env = parseEnvelopeV2(line);
+        if (env) {
+          store.recordEnvelope(env);
+        }
+      }
+    }
+    const view = store.viewForKey("cc-enrich");
+    expect(view?.subagents).toMatchObject({
+      count: 2,
+      totalDurationMs: 190000,
+      totalUsd: 0.31,
+    });
+  });
+});
+
+describe("ConversationStore activity units", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("lets a session with unparseable timestamps become active and sort newest", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-06T12:00:00Z"));
+    const store = new ConversationStore();
+    store.recordEvent(mkEvent({ conversation_id: "timed", request_id: "t1", ts: "2026-07-06T11:00:00Z" }));
+    vi.advanceTimersByTime(ACTIVE_KEY_DEBOUNCE_MS);
+    // A later event whose ts is garbage must still count as newest activity.
+    store.recordEvent(mkEvent({ conversation_id: "untimed", request_id: "u1", ts: "not-a-date" }));
+    vi.advanceTimersByTime(ACTIVE_KEY_DEBOUNCE_MS);
+    expect(store.activeKey).toBe("untimed");
+    const list = store.list();
+    expect(list[0]?.key).toBe("untimed");
+    // Same units as epoch-ms timestamps, not a bare counter.
+    expect(list[0]?.lastActivity).toBeGreaterThan(1e12);
+  });
+});
+
+describe("ConversationStore focused-key guard", () => {
+  it("falls back while the focused session has no events, then takes over", () => {
+    const store = new ConversationStore();
+    store.recordEvent(mkEvent({ conversation_id: "real", request_id: "r1" }));
+    store.setFocusedKey("ghost");
+    expect(store.displayKey).toBe("real");
+    expect(store.focusSource).toBe("activity");
+    store.recordEvent(mkEvent({ conversation_id: "ghost", request_id: "g1", ts: "2026-06-27T18:00:00Z" }));
+    expect(store.displayKey).toBe("ghost");
+    expect(store.focusSource).toBe("terminal");
+  });
+});
+
+describe("ConversationStore recent cap", () => {
+  it("caps the retained list but keeps totals exact", () => {
+    const store = new ConversationStore();
+    for (let i = 0; i < MAX_RECENT_REQUESTS + 5; i++) {
+      store.recordEvent(mkEvent({ conversation_id: "big", request_id: `r${i}` }));
+    }
+    const view = store.viewForKey("big");
+    expect(view?.recent).toHaveLength(MAX_RECENT_REQUESTS);
+    expect(view?.droppedRequests).toBe(5);
+    // mkEvent contributes 1 input token per request — totals count every request.
+    expect(view?.summary.totals.input).toBe(MAX_RECENT_REQUESTS + 5);
+  });
+});
+
+describe("ConversationStore dispose", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("cancels the pending active-key debounce", () => {
+    vi.useFakeTimers();
+    const store = new ConversationStore();
+    let fired = 0;
+    store.setOnActiveDebounced(() => {
+      fired += 1;
+    });
+    store.recordEvent(mkEvent({ conversation_id: "A", request_id: "a1", ts: "2026-06-27T17:00:00Z" }));
+    store.recordEvent(mkEvent({ conversation_id: "B", request_id: "b1", ts: "2026-06-27T17:05:00Z" }));
+    store.dispose();
+    vi.advanceTimersByTime(ACTIVE_KEY_DEBOUNCE_MS * 2);
+    expect(fired).toBe(0);
   });
 });

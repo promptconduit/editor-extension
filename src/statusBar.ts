@@ -13,6 +13,11 @@ export function fmtUSD(n: number): string {
   return `$${n.toFixed(2)}`;
 }
 
+/** Cost label for a single request — never "$0.0000" for an unpriced model. */
+export function lastRequestLabel(ev: CostEvent): string {
+  return ev.model_priced ? fmtUSD(ev.cost.total) : "unpriced";
+}
+
 function sourceBadge(source: string): string {
   switch (source) {
     case "exact":
@@ -124,23 +129,21 @@ export class CostStatusBar {
     return this.store.pinnedKey !== undefined && this.store.focusSource === "pinned";
   }
 
+  // render() already fires onChange — no extra call, one repaint per change.
   setFocusedKey(key: string | undefined): void {
     this.store.setFocusedKey(key);
     this.render();
-    this.onChange?.();
   }
 
   pinSession(key: string): void {
     this.store.setPinnedKey(key);
     this.store.setFocusedKey(undefined);
     this.render();
-    this.onChange?.();
   }
 
   followActive(): void {
     this.store.clearPin();
     this.render();
-    this.onChange?.();
   }
 
   async pickAndPin(): Promise<void> {
@@ -212,11 +215,7 @@ export class CostStatusBar {
 
   private render(): void {
     const lastEvent = this.store.displayLastEvent;
-    const reqStr = lastEvent
-      ? lastEvent.model_priced
-        ? fmtUSD(lastEvent.cost.total)
-        : "unpriced"
-      : "—";
+    const reqStr = lastEvent ? lastRequestLabel(lastEvent) : "—";
 
     const sessStr = this.sessionCostLabel();
     this.item.text = `$(zap) ${reqStr} · $(history) ${sessStr}`;
@@ -252,7 +251,7 @@ export class CostStatusBar {
       tip.appendMarkdown(`No priced turns yet this session.\n`);
     }
     if (lastEvent) {
-      tip.appendMarkdown(`\nLast request: ${fmtUSD(lastEvent.cost.total)} (${lastEvent.model})\n`);
+      tip.appendMarkdown(`\nLast request: ${lastRequestLabel(lastEvent)} (${lastEvent.model})\n`);
     }
     tip.appendMarkdown(`\n_Click for the focused session breakdown._`);
     this.item.tooltip = tip;
@@ -263,6 +262,7 @@ export class CostStatusBar {
     if (this.throttle) {
       clearTimeout(this.throttle);
     }
+    this.store.dispose();
     this.item.dispose();
   }
 }

@@ -104,6 +104,7 @@ export function activate(context: vscode.ExtensionContext): void {
       statusBar?.setFocusedKey(sessionKey);
     }),
   );
+  terminalFocus.start();
   context.subscriptions.push(terminalFocus);
 
   const restore = new SessionRestoreController(
@@ -125,14 +126,14 @@ export function activate(context: vscode.ExtensionContext): void {
       return;
     }
     statusBar?.show();
+    // No direct refreshPanels here — updateFrom* schedules a throttled render,
+    // and render fires onChange → refreshPanels. One path, one repaint.
     costFeed = new CostFeedController({
       onEvent: (ev) => {
         statusBar?.updateFromEvent(ev);
-        refreshPanels();
       },
       onEnvelope: (env) => {
         statusBar?.updateFromEnvelope(env);
-        refreshPanels();
       },
     });
     costFeed.start();

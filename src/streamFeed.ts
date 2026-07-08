@@ -104,8 +104,6 @@ export class StreamState {
   private readonly bySession = new Map<string, SessionBuf>();
   private activeKey: string | undefined;
   private newestActivity = -Infinity;
-  // Monotonic fallback so records with no usable timestamp still order by arrival.
-  private seq = 0;
   private pinnedKey: string | undefined;
 
   record(ev: StreamEvent): void {
@@ -165,15 +163,15 @@ export class StreamState {
     return buf;
   }
 
-  // Resolve a record's activity time, falling back to arrival order when it has
-  // no parseable timestamp so newer records still win.
+  // Resolve a record's activity time in epoch ms; records with no parseable
+  // timestamp count as "now" so they compare in the same units as timestamped
+  // ones (a bare counter would never beat an epoch value).
   private activityFrom(ts: string): number {
     const parsed = parseTs(ts);
     if (!Number.isNaN(parsed)) {
       return parsed;
     }
-    this.seq += 1;
-    return this.seq;
+    return Math.max(Date.now(), this.newestActivity);
   }
 
   // Mark a session active if its activity is the newest we've seen (mirrors

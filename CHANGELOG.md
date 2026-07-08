@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.14.1
+
+- **Terminal focus race fixed.** A slow `sessions resolve` for a previously
+  focused terminal can no longer overwrite the newer terminal's session in the
+  status bar (stale in-flight resolves are now invalidated).
+- **No more double counting on log rotation.** Diff and subagent enrichment
+  accumulation is deduped by event id, so a re-read of `events.jsonl` after
+  rotation leaves session stats unchanged.
+- **Sessions with unparseable timestamps** now order by arrival time and can
+  become the active session instead of always sorting last.
+- A focused terminal whose session has no events yet falls back to pin/activity
+  instead of rendering an empty $0.00 breakdown.
+- Retained per-request history is capped at 1,000 per conversation (totals stay
+  exact; the "+N older prompts" note includes evicted turns).
+- Status-bar tooltip shows "unpriced" instead of `$0.0000` for unknown models.
+- One repaint per event: removed a duplicate panel-refresh path and a leaked
+  debounce timer on deactivate.
+
 ## 0.14.0
 
 - **Enrichment-powered Cost Breakdown (#53).** Session cards show diff stats
