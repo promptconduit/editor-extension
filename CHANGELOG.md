@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.17.0
+
+- **Refresh Panel — reload a panel without reloading the window.** The Stream
+  and Cost Breakdown toolbars gain a **↻ Refresh** button (and a
+  `PromptConduit: Refresh Panel` command) that reloads the focused panel's
+  webview in place, cache-busting its bundle so it picks up an extension update
+  without a full window reload. New extension *host* code still needs a window
+  reload (that's a platform limit), but webview/rendering updates refresh
+  instantly — and the panel keeps its tab and position.
+
 ## 0.16.0
 
 - **Stream panel: expandable raw JSON per event.** Every row in the live

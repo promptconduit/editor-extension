@@ -48,7 +48,12 @@ export type HostMessage =
   | { type: "state"; state: CostPanelState }
   | { type: "visibility"; visible: boolean };
 
-export type WebviewCommand = "pinSession" | "followActive" | "showAll" | "showSession";
+export type WebviewCommand =
+  | "pinSession"
+  | "followActive"
+  | "showAll"
+  | "showSession"
+  | "refresh";
 
 export type WebviewMessage =
   | { type: "ready" }

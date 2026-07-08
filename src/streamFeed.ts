@@ -3,7 +3,7 @@ import { ConversationStore } from "./state";
 import { parseEnvelopeV2, subagentFrom, toolsFrom } from "./envelope";
 import { TailReader } from "./visualizer/tailReader";
 import { eventsJsonlPath, logDisabled } from "./visualizer/paths";
-import { makeNonce, webviewCsp, webviewShellHtml, isSafeHttpUrl } from "./webviewHost";
+import { makeNonce, webviewCsp, webviewShellHtml, isSafeHttpUrl, bustCache } from "./webviewHost";
 import { STREAM_PANEL_CSS } from "./streamPanel/styles";
 import type { StreamPanelState, WebviewMessage } from "./streamPanel/protocol";
 
@@ -421,9 +421,12 @@ export class StreamController {
 export class StreamPanel {
   private static current: StreamPanel | undefined;
   private readonly panel: vscode.WebviewPanel;
+  private readonly extensionUri: vscode.Uri;
   private readonly controller: StreamController;
   private disposed = false;
   private ready = false;
+  // Bumped on every shell (re)render so a refresh cache-busts the bundle URI.
+  private htmlRev = 0;
   private lastState: StreamPanelState | undefined;
 
   static show(extensionUri: vscode.Uri): void {
@@ -440,6 +443,7 @@ export class StreamPanel {
   }
 
   private constructor(extensionUri: vscode.Uri) {
+    this.extensionUri = extensionUri;
     this.panel = vscode.window.createWebviewPanel(
       "promptconduitStream",
       "PromptConduit Stream",
@@ -451,18 +455,7 @@ export class StreamPanel {
       },
     );
 
-    const nonce = makeNonce();
-    const scriptUri = this.panel.webview
-      .asWebviewUri(vscode.Uri.joinPath(extensionUri, "media", "streamPanel.js"))
-      .toString();
-    this.panel.webview.html = webviewShellHtml({
-      csp: webviewCsp(this.panel.webview, nonce),
-      nonce,
-      scriptUri,
-      title: "PromptConduit Stream",
-      headHtml: `<style nonce="${nonce}">${STREAM_PANEL_CSS}</style>`,
-      bodyHtml: `<div id="app"></div>`,
-    });
+    this.renderShell();
 
     this.panel.webview.onDidReceiveMessage((msg: WebviewMessage) => {
       void this.onMessage(msg);
@@ -476,6 +469,48 @@ export class StreamPanel {
       }
     });
     this.controller.start();
+  }
+
+  // (Re)build the webview document with a fresh nonce and cache-busted bundle
+  // URI, so calling it again reloads the webview in place and picks up a rebuilt
+  // media/streamPanel.js — no window reload.
+  private renderShell(): void {
+    this.htmlRev += 1;
+    const nonce = makeNonce();
+    const scriptUri = bustCache(
+      this.panel.webview
+        .asWebviewUri(vscode.Uri.joinPath(this.extensionUri, "media", "streamPanel.js"))
+        .toString(),
+      this.htmlRev,
+    );
+    this.panel.webview.html = webviewShellHtml({
+      csp: webviewCsp(this.panel.webview, nonce),
+      nonce,
+      scriptUri,
+      title: "PromptConduit Stream",
+      headHtml: `<style nonce="${nonce}">${STREAM_PANEL_CSS}</style>`,
+      bodyHtml: `<div id="app"></div>`,
+    });
+  }
+
+  // Reload the webview in place; live events keep flowing through the controller
+  // and lastState is re-pushed on the next "ready".
+  private refresh(): void {
+    this.ready = false;
+    this.renderShell();
+  }
+
+  /**
+   * Reload the panel's webview if it is the active editor. Returns whether it
+   * acted, so the Refresh Panel command can fall through to another panel.
+   */
+  static refreshActive(): boolean {
+    const p = StreamPanel.current;
+    if (p && !p.disposed && p.panel.active) {
+      p.refresh();
+      return true;
+    }
+    return false;
   }
 
   private push(state: StreamPanelState): void {
@@ -500,7 +535,9 @@ export class StreamPanel {
         }
         break;
       case "command":
-        if (COMMAND_MAP[msg.id]) {
+        if (msg.id === "refresh") {
+          this.refresh();
+        } else if (COMMAND_MAP[msg.id]) {
           await vscode.commands.executeCommand(COMMAND_MAP[msg.id]);
         }
         break;

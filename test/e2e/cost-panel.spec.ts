@@ -114,6 +114,8 @@ test("Cost Breakdown detail report renders the per-prompt ledger", async () => {
   await expect(webview.locator(".chip-plan").first()).toBeVisible();
   await expect(webview.getByText("PR #65", { exact: false })).toBeVisible();
   await expect(webview.getByText("worktree").first()).toBeVisible();
+  // The toolbar exposes a Refresh control (reload the panel without a window reload).
+  await expect(webview.getByRole("button", { name: "Refresh" })).toBeVisible();
 
   // Expand all → per-prompt comparison, tool calls, subagents, and raw JSON.
   // Cursor's unauthenticated "log in" overlay sits above the webview in CI and

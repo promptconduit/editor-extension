@@ -3,7 +3,7 @@
 // status bar's single render path) and the client diffs per prompt group.
 
 import * as vscode from "vscode";
-import { makeNonce, webviewCsp, webviewShellHtml, isSafeHttpUrl } from "../webviewHost";
+import { makeNonce, webviewCsp, webviewShellHtml, isSafeHttpUrl, bustCache } from "../webviewHost";
 import { COST_PANEL_CSS } from "./styles";
 import { CostPanelState, WebviewMessage } from "./protocol";
 
@@ -19,9 +19,12 @@ export class CostDetailPanel {
   static current: CostDetailPanel | undefined;
 
   private readonly panel: vscode.WebviewPanel;
+  private readonly extensionUri: vscode.Uri;
   private mode: "session" | "all";
   private ready = false;
   private pendingState: CostPanelState | undefined;
+  // Bumped on every shell (re)render so a refresh cache-busts the bundle URI.
+  private htmlRev = 0;
   private readonly getState: (mode: "session" | "all") => CostPanelState;
 
   private constructor(
@@ -29,6 +32,7 @@ export class CostDetailPanel {
     mode: "session" | "all",
     getState: (mode: "session" | "all") => CostPanelState,
   ) {
+    this.extensionUri = extensionUri;
     this.mode = mode;
     this.getState = getState;
     this.panel = vscode.window.createWebviewPanel(
@@ -42,18 +46,7 @@ export class CostDetailPanel {
       },
     );
 
-    const nonce = makeNonce();
-    const scriptUri = this.panel.webview
-      .asWebviewUri(vscode.Uri.joinPath(extensionUri, "media", "costPanel.js"))
-      .toString();
-    this.panel.webview.html = webviewShellHtml({
-      csp: webviewCsp(this.panel.webview, nonce),
-      nonce,
-      scriptUri,
-      title: "AI Cost Breakdown",
-      headHtml: `<style nonce="${nonce}">${COST_PANEL_CSS}</style>`,
-      bodyHtml: `<div id="app"></div>`,
-    });
+    this.renderShell();
 
     this.panel.webview.onDidReceiveMessage((msg: WebviewMessage) => {
       void this.onMessage(msg);
@@ -63,6 +56,36 @@ export class CostDetailPanel {
         CostDetailPanel.current = undefined;
       }
     });
+  }
+
+  // (Re)build the webview document. Each call uses a fresh nonce and a cache-
+  // busted bundle URI, so calling it again reloads the webview in place and
+  // picks up a rebuilt media/costPanel.js — no window reload.
+  private renderShell(): void {
+    this.htmlRev += 1;
+    const nonce = makeNonce();
+    const scriptUri = bustCache(
+      this.panel.webview
+        .asWebviewUri(vscode.Uri.joinPath(this.extensionUri, "media", "costPanel.js"))
+        .toString(),
+      this.htmlRev,
+    );
+    this.panel.webview.html = webviewShellHtml({
+      csp: webviewCsp(this.panel.webview, nonce),
+      nonce,
+      scriptUri,
+      title: "AI Cost Breakdown",
+      headHtml: `<style nonce="${nonce}">${COST_PANEL_CSS}</style>`,
+      bodyHtml: `<div id="app"></div>`,
+    });
+  }
+
+  // Reload the webview in place: the client re-initialises and re-requests its
+  // bundle, then re-sends "ready" so we push fresh state.
+  private refresh(): void {
+    this.ready = false;
+    this.pendingState = undefined;
+    this.renderShell();
   }
 
   private async onMessage(msg: WebviewMessage): Promise<void> {
@@ -78,7 +101,9 @@ export class CostDetailPanel {
         }
         break;
       case "command":
-        if (msg.id === "showAll" || msg.id === "showSession") {
+        if (msg.id === "refresh") {
+          this.refresh();
+        } else if (msg.id === "showAll" || msg.id === "showSession") {
           this.mode = msg.id === "showAll" ? "all" : "session";
           this.push(this.getState(this.mode));
         } else if (COMMAND_MAP[msg.id]) {
@@ -121,5 +146,18 @@ export class CostDetailPanel {
     if (p) {
       p.push(p.getState(p.mode));
     }
+  }
+
+  /**
+   * Reload the panel's webview if it is the active editor. Returns whether it
+   * acted, so the Refresh Panel command can fall through to another panel.
+   */
+  static refreshActive(): boolean {
+    const p = CostDetailPanel.current;
+    if (p && p.panel.active) {
+      p.refresh();
+      return true;
+    }
+    return false;
   }
 }

@@ -154,6 +154,8 @@ test("Stream panel follows the most-recently-active session in Cursor", async ()
   await expect(webview.getByText("conversation_id (Cursor tab)")).toBeVisible();
   await expect(webview.locator("code.skey", { hasText: "tab-B" })).toBeVisible();
   await expect(webview.getByRole("button", { name: "Copy id" })).toBeVisible();
+  // The toolbar exposes a Refresh control (reload the panel without a window reload).
+  await expect(webview.getByRole("button", { name: "Refresh" })).toBeVisible();
 
   await win.screenshot({ path: "out/screenshots/stream-03-window.png" });
 

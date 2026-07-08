@@ -200,7 +200,8 @@ document.addEventListener("click", (e) => {
       cmd === "pinSession" ||
       cmd === "followActive" ||
       cmd === "showAll" ||
-      cmd === "showSession"
+      cmd === "showSession" ||
+      cmd === "refresh"
     ) {
       vscode.postMessage({ type: "command", id: cmd });
     }

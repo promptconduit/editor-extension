@@ -23,6 +23,16 @@ export function makeNonce(): string {
 }
 
 /**
+ * Append a cache-busting query to a bundle URI so that re-setting a panel's
+ * `webview.html` re-fetches the bundle from disk instead of the webview's HTTP
+ * cache. This is what lets a "Refresh Panel" pick up a rebuilt `media/*.js`
+ * without a window reload; `rev` just has to differ from the previous load.
+ */
+export function bustCache(scriptUri: string, rev: number): string {
+  return `${scriptUri}?v=${rev}`;
+}
+
+/**
  * The strict Content-Security-Policy meta content for a scripted webview:
  * deny-by-default, script only via the per-load nonce (no 'unsafe-eval', no
  * remote script), styles/images/fonts only from the webview origin, and no

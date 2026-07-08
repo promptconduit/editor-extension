@@ -637,6 +637,7 @@ function toolbarHtml(state: CostPanelState): string {
     <button type="button" class="tb" data-cmd="collapseAll">Collapse all</button>
     <button type="button" class="tb" data-cmd="${state.mode === "session" ? "showAll" : "showSession"}">${state.mode === "session" ? "All sessions" : "Focused session"}</button>
     <button type="button" class="tb" data-cmd="pinSession">Pin…</button>
+    <button type="button" class="tb" data-cmd="refresh" title="Reload this panel to pick up an extension update — no window reload">↻ Refresh</button>
   </nav>`;
 }
 
