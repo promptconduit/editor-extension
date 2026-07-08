@@ -157,8 +157,13 @@ test("Stream panel follows the most-recently-active session in Cursor", async ()
 
   await win.screenshot({ path: "out/screenshots/stream-03-window.png" });
 
-  // Expand a row (click its summary) → the raw envelope JSON tape appears.
-  await hookBadge("afterAgentResponse").click();
+  // Expand the rows → each row's raw envelope JSON tape appears. Cursor's
+  // unauthenticated "log in" overlay covers the webview in CI and intercepts
+  // real pointer events, so drive the Expand-all button with a synthetic click
+  // (a delegated document handler, so dispatchEvent fires it) rather than
+  // clicking a row summary (a native <details> toggle that a synthetic click
+  // wouldn't reliably fire).
+  await webview.getByRole("button", { name: "Expand all" }).dispatchEvent("click");
   await win.waitForTimeout(500);
   await expect(webview.getByText('"hook_event_name"', { exact: false }).first()).toBeVisible();
   await expect(webview.getByRole("button", { name: "Copy JSON" }).first()).toBeVisible();
