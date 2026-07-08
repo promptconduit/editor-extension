@@ -1,6 +1,6 @@
 import * as fs from "fs";
-import * as os from "os";
 import * as path from "path";
+import { dataDir } from "./dataDir";
 
 // Raw line tail of the local event log. Unlike the per-panel TailReader (which
 // only ever keeps the last ~200 lines for the live telemetry feed), this reads a
@@ -8,7 +8,6 @@ import * as path from "path";
 // offline, then tails appended bytes for live updates. It emits raw JSONL lines;
 // the caller parses them (coaching/derive.ts). Rotation/truncation safe.
 
-const EVENTS_DIR = ".promptconduit";
 const EVENTS_FILE = "events.jsonl";
 const ROTATED_FILE = "events.jsonl.1";
 
@@ -19,10 +18,10 @@ const DEFAULT_MAX_BYTES = 24 * 1024 * 1024;
 const POLL_INTERVAL_MS = 1000;
 
 export function eventsJsonlPath(): string {
-  return path.join(os.homedir(), EVENTS_DIR, EVENTS_FILE);
+  return path.join(dataDir(), EVENTS_FILE);
 }
 export function rotatedJsonlPath(): string {
-  return path.join(os.homedir(), EVENTS_DIR, ROTATED_FILE);
+  return path.join(dataDir(), ROTATED_FILE);
 }
 
 /** True when the user disabled the local event log via the CLI's env switch. */

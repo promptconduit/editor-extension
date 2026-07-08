@@ -1,7 +1,7 @@
 import * as fs from "fs";
-import * as os from "os";
 import * as path from "path";
 import * as vscode from "vscode";
+import { dataDir } from "./dataDir";
 
 // After the promptconduit CLI updates this extension on disk (post-upgrade
 // reconcile), the copy running in the current window is stale until a reload.
@@ -10,11 +10,10 @@ import * as vscode from "vscode";
 // one-click **Reload Window**. Reload — not restart — so the pty host survives
 // and terminals running Claude Code keep their sessions.
 
-const MARKER_DIR = ".promptconduit";
 const MARKER_FILE = "extension-update.json";
 
 export function markerPath(): string {
-  return path.join(os.homedir(), MARKER_DIR, MARKER_FILE);
+  return path.join(dataDir(), MARKER_FILE);
 }
 
 // Mirror of the CLI's extension.UpdateMarker (internal/extension/marker.go).

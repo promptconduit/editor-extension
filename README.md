@@ -15,6 +15,27 @@ same local data your AI assistant already produces:
 Everything reads the local event log (`~/.promptconduit/events.jsonl`); none of
 your code or prompts leave your device.
 
+## Screenshots
+
+**AI Cost Breakdown** — a per-prompt ledger with cache/tier signals and a
+"what if" model comparison.
+
+![AI Cost Breakdown panel in Cursor](https://raw.githubusercontent.com/promptconduit/editor-extension/main/resources/screenshots/cost-breakdown-window.png)
+
+**Orchestration Theater** — a 3D replay of sub-agents spawning and tool calls
+fanning out.
+
+![Orchestration Theater panel in Cursor](https://raw.githubusercontent.com/promptconduit/editor-extension/main/resources/screenshots/orchestration-theater-window.png)
+
+**Stream** — a live event feed that follows your most-recently-active AI session.
+
+![Stream panel in Cursor](https://raw.githubusercontent.com/promptconduit/editor-extension/main/resources/screenshots/stream-window.png)
+
+**Agent Coaching** — an offline report on how you drive the agent (interruptions,
+plan-mode use, tool success, subagents).
+
+![Agent Coaching panel in Cursor](https://raw.githubusercontent.com/promptconduit/editor-extension/main/resources/screenshots/agent-coaching-window.png)
+
 ## Realtime token cost
 
 The bottom-right status bar shows `⚡ <request cost> · 🕘 <session cost>`. Click
