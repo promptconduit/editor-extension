@@ -137,6 +137,23 @@ export async function launchCursor(opts: LaunchOpts): Promise<{ app: ElectronApp
   return { app, win };
 }
 
+// Full-window screenshot with Cursor's title bar cropped off. Running via
+// --extensionDevelopmentPath prefixes the title with "[Extension Development
+// Host]", a dev tell we don't want in marketing shots; the title bar is a DOM
+// part (.part.titlebar), so clip the frame to start just below it. Falls back to
+// the full frame if the title bar can't be measured.
+export async function screenshotEditor(win: Page, filePath: string): Promise<void> {
+  const vp = await win.evaluate(() => ({ width: window.innerWidth, height: window.innerHeight }));
+  let top = 0;
+  try {
+    const tb = await win.locator(".part.titlebar").first().boundingBox();
+    if (tb && tb.height > 0 && tb.height < vp.height / 3) top = Math.ceil(tb.y + tb.height);
+  } catch {
+    /* keep the full frame */
+  }
+  await win.screenshot({ path: filePath, clip: { x: 0, y: top, width: vp.width, height: vp.height - top } });
+}
+
 // Open a panel via the command palette. On macOS, F1 is a hardware key the app
 // never receives, so use Cmd+Shift+P; and keystrokes only route to a focused,
 // front window — click the workbench and bring it to front first.

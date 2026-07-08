@@ -9,6 +9,7 @@ import {
   launchCursor,
   openPanel,
   webviewWithText,
+  screenshotEditor,
   OUT_DIR,
 } from "./harness";
 
@@ -70,7 +71,7 @@ test.describe("PromptConduit panel screenshots (real Cursor, signed in)", () => 
         await expect(webview.getByText(p.signature).first()).toBeVisible();
         await win.waitForTimeout(1_000); // settle animations/first render
 
-        await win.screenshot({ path: path.join(OUT_DIR, `${p.slug}-window.png`) });
+        await screenshotEditor(win, path.join(OUT_DIR, `${p.slug}-window.png`)); // title bar cropped
         await webview.locator("body").screenshot({ path: path.join(OUT_DIR, `${p.slug}-panel.png`) });
       } finally {
         await app.close();
