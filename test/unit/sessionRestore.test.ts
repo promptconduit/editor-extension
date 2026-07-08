@@ -6,6 +6,10 @@ import {
   sessionLabel,
   resumeCommand,
   pruneLedger,
+  recordDismissed,
+  clearDismissed,
+  DISMISSED_KEY,
+  type DismissStore,
   type RestorableSession,
 } from "../../src/sessionRestore";
 
@@ -65,7 +69,7 @@ describe("selectToRestore", () => {
   const roots = ["/ws/repo"];
   const empty = new Set<string>();
 
-  it("keeps interrupted, in-workspace, not-yet-restored sessions", () => {
+  it("keeps interrupted, in-workspace, not-dismissed sessions", () => {
     const got = selectToRestore([sess({ session_id: "keep", cwd: "/ws/repo/a" })], roots, empty, "auto");
     expect(got.map((s) => s.session_id)).toEqual(["keep"]);
   });
@@ -74,7 +78,7 @@ describe("selectToRestore", () => {
     expect(selectToRestore([sess({ alive: true })], roots, empty, "auto")).toEqual([]);
   });
 
-  it("drops sessions already in the restored ledger", () => {
+  it("drops sessions the user deliberately dismissed", () => {
     const got = selectToRestore([sess({ session_id: "done" })], roots, new Set(["done"]), "auto");
     expect(got).toEqual([]);
   });
@@ -128,5 +132,56 @@ describe("pruneLedger", () => {
     const day = 24 * 60 * 60 * 1000;
     const pruned = pruneLedger({ old: now - 8 * day, fresh: now - 1 * day }, now, 7 * day);
     expect(Object.keys(pruned)).toEqual(["fresh"]);
+  });
+});
+
+/** In-memory DismissStore backed by a plain object, mirroring vscode.Memento. */
+function fakeStore(initial: Record<string, number> = {}): {
+  store: DismissStore;
+  read: () => Record<string, number>;
+} {
+  let value: Record<string, number> = { ...initial };
+  const store: DismissStore = {
+    get: (_key, def) => value ?? def,
+    update: async (_key, v) => {
+      value = v;
+    },
+  };
+  return { store, read: () => value };
+}
+
+describe("recordDismissed / clearDismissed", () => {
+  it("records a dismissed session under the dismissed key", () => {
+    const f = fakeStore();
+    recordDismissed(f.store, "s1", 1_000);
+    expect(f.read()).toEqual({ s1: 1_000 });
+  });
+
+  it("prunes stale entries while recording a new one", () => {
+    const now = 1_000_000_000_000;
+    const day = 24 * 60 * 60 * 1000;
+    const f = fakeStore({ old: now - 8 * day });
+    recordDismissed(f.store, "s1", now);
+    expect(Object.keys(f.read()).sort()).toEqual(["s1"]);
+  });
+
+  it("clearDismissed removes a session and is a no-op when absent", () => {
+    const f = fakeStore({ s1: 1_000, s2: 2_000 });
+    clearDismissed(f.store, "s1");
+    expect(f.read()).toEqual({ s2: 2_000 });
+    clearDismissed(f.store, "missing"); // no throw
+    expect(f.read()).toEqual({ s2: 2_000 });
+  });
+
+  it("round-trips: a dismissed session is excluded, then restorable after clear", () => {
+    const f = fakeStore();
+    recordDismissed(f.store, "s1", 1_000);
+    const dismissed = new Set(Object.keys(f.store.get(DISMISSED_KEY, {})));
+    expect(selectToRestore([sess({ session_id: "s1" })], ["/ws/repo"], dismissed, "auto")).toEqual([]);
+    clearDismissed(f.store, "s1");
+    const after = new Set(Object.keys(f.store.get(DISMISSED_KEY, {})));
+    expect(selectToRestore([sess({ session_id: "s1" })], ["/ws/repo"], after, "auto").map((s) => s.session_id)).toEqual([
+      "s1",
+    ]);
   });
 });

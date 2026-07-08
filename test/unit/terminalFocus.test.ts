@@ -57,12 +57,14 @@ function makeDeps(
   runResolve: TerminalFocusDeps["runResolve"],
   onFocusChange: TerminalFocusDeps["onFocusChange"],
   pickCandidate?: (c: ResolveCandidate[]) => Promise<string | undefined>,
+  onUserClosedTerminal?: (sessionId: string) => void,
 ): TerminalFocusDeps {
   return {
     resolveBinary: () => "promptconduit",
     runResolve,
     pickCandidate: pickCandidate ?? (async () => undefined),
     onFocusChange,
+    onUserClosedTerminal,
   };
 }
 
@@ -130,5 +132,43 @@ describe("TerminalFocusController resolve race", () => {
     await controller.resolveTerminal(fakeTerminal(7));
     await controller.resolveTerminal(undefined);
     expect(controller.sessionKey).toBeUndefined();
+  });
+});
+
+describe("TerminalFocusController user-close dismissal", () => {
+  function tracked(sessionId: string, closed: string[]) {
+    const controller = new TerminalFocusController(
+      makeDeps(
+        () => Promise.resolve("{}"),
+        () => {},
+        undefined,
+        (id) => closed.push(id),
+      ),
+    );
+    const term = fakeTerminal(1);
+    controller.registerTerminal(term, sessionId);
+    return { controller, term };
+  }
+
+  it("reports a deliberate close of a tracked terminal", () => {
+    const closed: string[] = [];
+    const { controller, term } = tracked("s1", closed);
+    controller.onTerminalClosed(term);
+    expect(closed).toEqual(["s1"]);
+  });
+
+  it("does not report closes once shutting down (a window reload)", () => {
+    const closed: string[] = [];
+    const { controller, term } = tracked("s1", closed);
+    controller.markShuttingDown();
+    controller.onTerminalClosed(term);
+    expect(closed).toEqual([]);
+  });
+
+  it("ignores closes of terminals it can't attribute to a session", () => {
+    const closed: string[] = [];
+    const { controller } = tracked("s1", closed);
+    controller.onTerminalClosed(fakeTerminal(999)); // never registered
+    expect(closed).toEqual([]);
   });
 });

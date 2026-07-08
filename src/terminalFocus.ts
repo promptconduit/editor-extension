@@ -48,6 +48,10 @@ export interface TerminalFocusDeps {
   runResolve: (binary: string, shellPid: number) => Promise<string>;
   pickCandidate: (candidates: ResolveCandidate[]) => Promise<string | undefined>;
   onFocusChange: (sessionKey: string | undefined, source: "terminal" | "activity") => void;
+  // Called when the user deliberately closes a terminal we know the session for
+  // (never fired during a window reload/shutdown). Session restore uses this to
+  // avoid reopening a terminal the user shut on purpose.
+  onUserClosedTerminal?: (sessionId: string) => void;
 }
 
 /**
@@ -62,6 +66,9 @@ export class TerminalFocusController {
   // Bumped on every focus change so a slow in-flight resolve for a previously
   // focused terminal can't overwrite the newer terminal's session.
   private resolveGen = 0;
+  // Set on deactivate so a window reload's mass terminal-teardown isn't mistaken
+  // for the user deliberately closing terminals.
+  private shuttingDown = false;
 
   constructor(private readonly deps: TerminalFocusDeps) {}
 
@@ -71,11 +78,26 @@ export class TerminalFocusController {
       vscode.window.onDidChangeActiveTerminal((term) => {
         void this.resolveTerminal(term);
       }),
-      vscode.window.onDidCloseTerminal((term) => {
-        this.terminalCache.delete(term);
-      }),
+      vscode.window.onDidCloseTerminal((term) => this.onTerminalClosed(term)),
     );
     void this.resolveTerminal(vscode.window.activeTerminal);
+  }
+
+  /**
+   * Handle a terminal closing. A close we can attribute to a session, while the
+   * window is alive, is a deliberate user close — report it so restore won't
+   * reopen it. Exposed for tests. */
+  onTerminalClosed(term: vscode.Terminal): void {
+    const sessionId = this.terminalCache.get(term);
+    this.terminalCache.delete(term);
+    if (sessionId && !this.shuttingDown) {
+      this.deps.onUserClosedTerminal?.(sessionId);
+    }
+  }
+
+  /** Mark shutdown so subsequent terminal closes aren't treated as dismissals. */
+  markShuttingDown(): void {
+    this.shuttingDown = true;
   }
 
   get sessionKey(): string | undefined {
@@ -174,11 +196,13 @@ export class TerminalFocusController {
 export function makeTerminalFocusDeps(
   resolveBinary: () => string | null,
   onFocusChange: (sessionKey: string | undefined, source: "terminal" | "activity") => void,
+  onUserClosedTerminal?: (sessionId: string) => void,
 ): TerminalFocusDeps {
   return {
     resolveBinary,
     runResolve: runResolveCommand,
     onFocusChange,
+    onUserClosedTerminal,
     pickCandidate: async (candidates) => {
       const pick = await vscode.window.showQuickPick(
         candidates.map((c) => ({
