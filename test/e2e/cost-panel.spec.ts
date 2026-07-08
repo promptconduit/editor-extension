@@ -104,7 +104,11 @@ test("Cost Breakdown detail report renders the per-prompt ledger", async () => {
   // The ledger proves the whole pipeline ran: tail → envelope parse → prompt
   // grouping → view model → postMessage → client render.
   await expect(webview.getByText("Cost per prompt")).toBeVisible({ timeout: 30_000 });
-  await expect(webview.getByText("Review the cost breakdown code", { exact: false })).toBeVisible();
+  // The prompt text renders twice — as the entry excerpt and inside the raw-JSON
+  // view — so scope to the first match (the excerpt) to avoid a strict-mode clash.
+  await expect(
+    webview.getByText("Review the cost breakdown code", { exact: false }).first(),
+  ).toBeVisible();
   await expect(webview.getByText("plan mode").first()).toBeVisible();
   await expect(webview.getByText("PR #65", { exact: false })).toBeVisible();
   await expect(webview.getByText("worktree").first()).toBeVisible();
