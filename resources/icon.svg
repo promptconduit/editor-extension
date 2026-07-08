@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <!-- PromptConduit brand mark — the telemetry pulse in the brand teal→cyan gradient. -->
+  <defs>
+    <linearGradient id="pcFlow" x1="24" y1="64" x2="104" y2="64" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0e7490"/>
+      <stop offset="0.5" stop-color="#22b8cf"/>
+      <stop offset="1" stop-color="#67e8f9"/>
+    </linearGradient>
+    <filter id="pcGlow" x="-25%" y="-45%" width="150%" height="190%">
+      <feGaussianBlur stdDeviation="3.5"/>
+    </filter>
+  </defs>
+  <rect x="1" y="1" width="126" height="126" rx="28" fill="#14181d" stroke="#262c34" stroke-width="2"/>
+  <path d="M24 64 H40 L52 96 L68 32 L80 64 H104" fill="none" stroke="#67e8f9" stroke-width="15"
+    stroke-linecap="round" stroke-linejoin="round" opacity="0.16" filter="url(#pcGlow)"/>
+  <path d="M24 64 H40 L52 96 L68 32 L80 64 H104" fill="none" stroke="url(#pcFlow)" stroke-width="9"
+    stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="24" cy="64" r="7.5" fill="#0e7490"/>
+  <circle cx="104" cy="64" r="7.5" fill="#67e8f9"/>
+</svg>

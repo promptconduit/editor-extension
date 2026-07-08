@@ -5,6 +5,11 @@
   "version": "0.17.0",
   "publisher": "promptconduit",
   "license": "MIT",
+  "icon": "resources/icon.png",
+  "galleryBanner": {
+    "color": "#14181d",
+    "theme": "dark"
+  },
   "engines": {
     "vscode": "^1.85.0"
   },
