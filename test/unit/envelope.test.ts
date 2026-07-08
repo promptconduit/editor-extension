@@ -67,6 +67,81 @@ describe("parseEnvelopeV2", () => {
   });
 });
 
+describe("vcs enrichment parsing", () => {
+  it("parses the full vcs slug: pr object, default_branch, and working-tree state", () => {
+    const line = v2Envelope("claude-code", "SessionStart", "2026-07-06T17:00:00Z", {
+      sessionId: "s1",
+      enrichments: {
+        vcs: {
+          type: "github",
+          repo: "promptconduit/cli",
+          repo_url: "https://github.com/promptconduit/cli",
+          branch: "feat/richer-vcs",
+          branch_url: "https://github.com/promptconduit/cli/tree/feat/richer-vcs",
+          default_branch: "main",
+          pr: { number: 42, url: "https://github.com/promptconduit/cli/pull/42", title: "Add sync", state: "open" },
+          commit: { hash: "abc1234", message: "feat: sync" },
+          remote_url: "git@github.com:promptconduit/cli.git",
+          dirty: true,
+          staged: 1,
+          unstaged: 2,
+          untracked: 3,
+          ahead: 4,
+          behind: 5,
+          worktree: { is_worktree: true, path: "/worktrees/x" },
+        },
+      },
+    });
+    const env = parseEnvelopeV2(line)!;
+    expect(env.vcs.default_branch).toBe("main");
+    expect(env.vcs.pr).toEqual({ number: 42, title: "Add sync", state: "open" });
+    // The flat pr_url stays populated from pr.url alongside the new pr object.
+    expect(env.vcs.pr_url).toBe("https://github.com/promptconduit/cli/pull/42");
+    expect(env.vcs.dirty).toBe(true);
+    expect(env.vcs.staged).toBe(1);
+    expect(env.vcs.unstaged).toBe(2);
+    expect(env.vcs.untracked).toBe(3);
+    expect(env.vcs.ahead).toBe(4);
+    expect(env.vcs.behind).toBe(5);
+    // Existing fields still parse.
+    expect(env.vcs.repo).toBe("promptconduit/cli");
+    expect(env.vcs.commit_hash).toBe("abc1234");
+    expect(env.vcs.is_worktree).toBe(true);
+  });
+
+  it("leaves the new vcs fields undefined when absent", () => {
+    const env = parseEnvelopeV2(
+      v2Envelope("claude-code", "SessionStart", "2026-07-06T17:00:00Z", { sessionId: "s1" }),
+    )!;
+    expect(env.vcs.pr).toBeUndefined();
+    expect(env.vcs.default_branch).toBeUndefined();
+    expect(env.vcs.dirty).toBeUndefined();
+    expect(env.vcs.staged).toBeUndefined();
+    expect(env.vcs.unstaged).toBeUndefined();
+    expect(env.vcs.untracked).toBeUndefined();
+    expect(env.vcs.ahead).toBeUndefined();
+    expect(env.vcs.behind).toBeUndefined();
+    // Existing behavior intact.
+    expect(env.vcs.repo).toBe("promptconduit/editor-extension");
+  });
+
+  it("does not throw on malformed vcs field types", () => {
+    const line = v2Envelope("claude-code", "SessionStart", "2026-07-06T17:00:00Z", {
+      sessionId: "s1",
+      enrichments: {
+        vcs: { pr: "nope", default_branch: 7, dirty: "yes", staged: "3", ahead: null },
+      },
+    });
+    expect(() => parseEnvelopeV2(line)).not.toThrow();
+    const env = parseEnvelopeV2(line)!;
+    expect(env.vcs.pr).toBeUndefined();
+    expect(env.vcs.default_branch).toBeUndefined();
+    expect(env.vcs.dirty).toBeUndefined();
+    expect(env.vcs.staged).toBeUndefined();
+    expect(env.vcs.ahead).toBeUndefined();
+  });
+});
+
 describe("costEventsFrom", () => {
   it("maps the cost enrichment's requests into CostEvent records", () => {
     const line = costEnvelope("claude-code", "2026-07-03T17:00:00Z", "cc-1", [

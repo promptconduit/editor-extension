@@ -1,21 +1,27 @@
-// Bundles the browser-side three.js scene (webview/main.ts) into a single
-// nonce-loadable IIFE at media/visualizer.js. Kept separate from `tsc` (which
-// only emits the Node/CommonJS extension into out/) — esbuild tree-shakes three
-// and its addons so only what we import ships, and `node_modules` is never
-// packaged into the vsix, preserving the extension's zero-runtime-deps property.
+// Bundles the browser-side webview clients into single nonce-loadable IIFEs
+// under media/: the three.js scene (webview/main.ts → media/visualizer.js) and
+// the cost breakdown report client (webview/costPanel/main.ts →
+// media/costPanel.js). Kept separate from `tsc` (which only emits the
+// Node/CommonJS extension into out/) — esbuild tree-shakes three and its addons
+// so only what we import ships, and `node_modules` is never packaged into the
+// vsix, preserving the extension's zero-runtime-deps property.
 import esbuild from "esbuild";
 
 const watch = process.argv.includes("--watch");
 
 /** @type {import("esbuild").BuildOptions} */
 const options = {
-  entryPoints: ["webview/main.ts"],
+  // Object form pins each output name: media/<key>.js regardless of input path.
+  entryPoints: {
+    visualizer: "webview/main.ts",
+    costPanel: "webview/costPanel/main.ts",
+  },
   bundle: true,
-  format: "iife", // one file, one <script nonce> — simplest CSP
+  format: "iife", // one file, one <script nonce> per panel — simplest CSP
   target: ["es2020"], // matches engines.vscode ^1.85 (Electron/Chromium)
   minify: !watch,
   sourcemap: true,
-  outfile: "media/visualizer.js",
+  outdir: "media",
   legalComments: "none",
   logLevel: "info",
 };

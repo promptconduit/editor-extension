@@ -1,7 +1,8 @@
 import * as vscode from "vscode";
 import { CoachingPanel } from "./coachingFeed";
 import { StreamPanel } from "./streamFeed";
-import { BreakdownView, CostPanel } from "./panel";
+import { CostDetailPanel } from "./costPanel/panel";
+import { buildCostPanelState } from "./costPanel/viewModel";
 import { CostStatusBar } from "./statusBar";
 import { CostFeedController } from "./costFeed";
 import { resolveBinary } from "./binary";
@@ -47,29 +48,21 @@ export function activate(context: vscode.ExtensionContext): void {
   streamButton.show();
   context.subscriptions.push(streamButton);
 
-  const breakdownView = (): BreakdownView => ({
-    conversations: statusBar?.conversations ?? [],
-    activeKey: statusBar?.displayConversationKey,
-  });
-
-  const displayConversation = () =>
-    statusBar?.displayConversationKey
-      ? statusBar.storeRef.viewForKey(statusBar.displayConversationKey)
-      : undefined;
+  const panelState = (mode: "session" | "all") =>
+    buildCostPanelState(statusBar!.storeRef, mode);
 
   const refreshPanels = () => {
-    CostPanel.refreshSession(displayConversation());
-    CostPanel.refreshAll(breakdownView());
+    CostDetailPanel.refresh();
   };
 
   statusBar.setOnChange(refreshPanels);
 
   context.subscriptions.push(
     vscode.commands.registerCommand("promptconduit.cost.showDetails", () => {
-      CostPanel.showSession(displayConversation());
+      CostDetailPanel.show(context.extensionUri, "session", panelState);
     }),
     vscode.commands.registerCommand("promptconduit.cost.showAllSessions", () => {
-      CostPanel.showAll(breakdownView());
+      CostDetailPanel.show(context.extensionUri, "all", panelState);
     }),
     vscode.commands.registerCommand("promptconduit.cost.pinSession", () => {
       void statusBar?.pickAndPin();

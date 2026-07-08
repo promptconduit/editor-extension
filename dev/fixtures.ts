@@ -325,3 +325,154 @@ export const sampleCoachingLines: string[] = [
 ];
 
 export const sampleCoachingJsonl = sampleCoachingLines.join("\n") + "\n";
+
+// ---------- per-prompt detail-report story ----------
+// One realistic Claude Code session exercising the whole Cost Breakdown detail
+// report: a plan-mode prompt with tool calls (incl. an MCP server), a subagent
+// with per-agent cost, an interrupt, a second prompt with a failing tool, cost
+// on each Stop with turn durations, and a vcs slug carrying a PR + worktree.
+
+const STORY_VCS = {
+  type: "github",
+  repo: "promptconduit/editor-extension",
+  repo_url: "https://github.com/promptconduit/editor-extension",
+  branch: "feat/cost-breakdown-detail-report",
+  branch_url: "https://github.com/promptconduit/editor-extension/tree/feat/cost-breakdown-detail-report",
+  default_branch: "main",
+  pr: { number: 65, url: "https://github.com/promptconduit/editor-extension/pull/65", title: "Cost detail report", state: "open" },
+  dirty: true,
+  staged: 2,
+  unstaged: 1,
+  worktree: { is_worktree: true, path: "/worktrees/pr2" },
+};
+
+export const samplePromptStoryLines: string[] = [
+  v2Envelope("claude-code", "UserPromptSubmit", "2026-07-06T15:00:00Z", {
+    sessionId: "cc-story",
+    promptId: "p1",
+    raw: {
+      prompt: "Review the cost breakdown code and handle any edge cases we may have missed.",
+      permission_mode: "plan",
+    },
+    enrichments: {
+      vcs: STORY_VCS,
+      prompt: { count: 1, chars: 78, words: 13, has_attachments: false, is_interrupt: false },
+    },
+  }),
+  v2Envelope("claude-code", "PostToolBatch", "2026-07-06T15:00:20Z", {
+    sessionId: "cc-story",
+    promptId: "p1",
+    raw: {
+      tool_calls: [
+        { tool_name: "Read", tool_use_id: "t1", tool_response: {} },
+        { tool_name: "mcp__github__search_issues", tool_use_id: "t2", tool_response: {} },
+      ],
+    },
+    enrichments: {
+      vcs: STORY_VCS,
+      tools: {
+        total: 2,
+        failed: 0,
+        calls: [
+          { name: "Read", ok: true, duration_ms: 40 },
+          { name: "mcp__github__search_issues", ok: true, duration_ms: 900, mcp_server: "github" },
+        ],
+      },
+    },
+  }),
+  v2Envelope("claude-code", "SubagentStart", "2026-07-06T15:00:30Z", {
+    sessionId: "cc-story",
+    promptId: "p1",
+    raw: { agent_id: "story-a1", agent_type: "Explore" },
+    enrichments: {
+      vcs: STORY_VCS,
+      subagent: { agent_id: "story-a1", agent_type: "Explore", phase: "start", concurrent: 1 },
+    },
+  }),
+  v2Envelope("claude-code", "SubagentStop", "2026-07-06T15:02:10Z", {
+    sessionId: "cc-story",
+    promptId: "p1",
+    raw: { agent_id: "story-a1" },
+    enrichments: {
+      vcs: STORY_VCS,
+      subagent: {
+        agent_id: "story-a1",
+        agent_type: "Explore",
+        phase: "stop",
+        duration_ms: 100000,
+        requests: 4,
+        model: "claude-sonnet-4-6",
+        tokens: { input: 1200, output: 5600, cache_read: 88000, cache_write: 3000 },
+        usd: { input: 0.0036, output: 0.084, cache_read: 0.0264, cache_write: 0.01125, total: 0.1253, currency: "USD" },
+      },
+    },
+  }),
+  costEnvelope(
+    "claude-code",
+    "2026-07-06T15:03:00Z",
+    "cc-story",
+    [
+      costRequest({
+        request_id: "story-r1",
+        model: "claude-opus-4-8",
+        tokens: { input: 4000, output: 2200, cache_read: 60000, cache_write: 9000 },
+        usd: { input: 0.06, output: 0.165, cache_read: 0.09, cache_write: 0.16875, total: 0.48375, currency: "USD" },
+      }),
+      costRequest({
+        request_id: "story-r2",
+        model: "claude-opus-4-8",
+        tokens: { input: 1000, output: 900, cache_read: 70000, cache_write: 500 },
+        usd: { input: 0.015, output: 0.0675, cache_read: 0.105, cache_write: 0.009375, total: 0.196875, currency: "USD" },
+      }),
+    ],
+    {
+      promptId: "p1",
+      enrichments: {
+        vcs: STORY_VCS,
+        turn: { duration_ms: 180000, prompt_id: "p1" },
+        diff: { files_changed: 4, insertions: 180, deletions: 42 },
+      },
+    },
+  ),
+  v2Envelope("claude-code", "UserPromptSubmit", "2026-07-06T15:05:00Z", {
+    sessionId: "cc-story",
+    promptId: "p2",
+    raw: { prompt: "Now fix the failing test.", permission_mode: "acceptEdits" },
+    enrichments: {
+      vcs: STORY_VCS,
+      prompt: { count: 2, chars: 25, words: 5, has_attachments: false, is_interrupt: false },
+    },
+  }),
+  v2Envelope("claude-code", "PostToolUseFailure", "2026-07-06T15:05:30Z", {
+    sessionId: "cc-story",
+    promptId: "p2",
+    raw: {
+      tool_name: "Bash",
+      tool_use_id: "t3",
+      tool_response: { is_error: true, output: "exit 1: vitest run failed" },
+    },
+    enrichments: {
+      vcs: STORY_VCS,
+      tools: { total: 1, failed: 1, calls: [{ name: "Bash", ok: false, duration_ms: 3200 }] },
+    },
+  }),
+  costEnvelope(
+    "claude-code",
+    "2026-07-06T15:06:30Z",
+    "cc-story",
+    [
+      costRequest({
+        request_id: "story-r3",
+        model: "claude-sonnet-4-6",
+        tokens: { input: 2500, output: 1400, cache_read: 65000, cache_write: 1200 },
+        usd: { input: 0.0075, output: 0.021, cache_read: 0.0195, cache_write: 0.0045, total: 0.0525, currency: "USD" },
+      }),
+    ],
+    {
+      promptId: "p2",
+      enrichments: { vcs: STORY_VCS, turn: { duration_ms: 90000, prompt_id: "p2" } },
+    },
+  ),
+];
+
+export const samplePromptStoryJsonl = samplePromptStoryLines.join("\n") + "\n";
