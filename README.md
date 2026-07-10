@@ -15,6 +15,19 @@ same local data your AI assistant already produces:
 Everything reads the local event log (`~/.promptconduit/events.jsonl`); none of
 your code or prompts leave your device.
 
+## Install
+
+**Cursor** — open the Extensions pane (`⇧⌘X` / `Ctrl+Shift+X`), search
+**"PromptConduit"**, and click **Install**. Cursor installs from
+[Open VSX](https://open-vsx.org/extension/promptconduit/promptconduit).
+
+**VS Code** — a Marketplace listing is on the way. Until then, build the `.vsix`
+locally (see [Publishing](#publishing)) and install it with
+`code --install-extension promptconduit-<version>.vsix`.
+
+The extension drives the `promptconduit` CLI, so install that too — see
+[Requirements](#requirements).
+
 ## Screenshots
 
 **AI Cost Breakdown** — a per-prompt ledger with cache/tier signals and a
