@@ -31,11 +31,11 @@ async function webviewWithText(win: Page, text: string, timeoutMs: number) {
 // v0.16.0), driving the REAL Cursor editor (CI only, see e2e-cursor.yml): a
 // temp HOME with a seeded v2 events.jsonl gives deterministic input with no
 // CLI run.
-// The Stream panel groups events by session and follows the most-recently-active
-// one, so we seed three sessions with increasing timestamps — the Cursor "tab-B"
-// conversation is newest, so it must be the followed (auto-following) session,
-// and the other sessions' events must NOT render. Rows expand into the event's
-// raw envelope JSON, and the header shows the full copyable conversation id.
+// The Stream panel DEFAULTS to a unified "All activity" feed — every session
+// interleaved, newest first — so we seed three sessions and assert all of their
+// events render, then drill into the Cursor "tab-B" conversation and assert only
+// its events remain (with the full copyable conversation id), and finally return
+// to the unified feed. Rows expand into the event's raw envelope JSON.
 
 const CURSOR_BIN = process.env.CURSOR_BIN; // extracted Cursor Electron binary
 const EXT_DEV_PATH = process.env.EXT_DEV_PATH ?? process.cwd(); // repo root (has out/)
@@ -82,7 +82,7 @@ function launchEnv(home: string): NodeJS.ProcessEnv {
   return env;
 }
 
-test("Stream panel follows the most-recently-active session in Cursor", async () => {
+test("Stream panel shows a unified feed and drills into one session in Cursor", async () => {
   test.skip(!CURSOR_BIN, "CURSOR_BIN not set — run via the e2e-cursor workflow");
 
   const home = writeSeededHome();
@@ -138,39 +138,50 @@ test("Stream panel follows the most-recently-active session in Cursor", async ()
   await win.screenshot({ path: "out/screenshots/stream-02-panel-opened.png" });
 
   // Grab the Stream webview by content (not DOM order; nested iframe walk like
-  // cost-panel.spec.ts). The followed session is tab-B (newest).
-  const webview = await webviewWithText(win, "auto-following", 30_000);
+  // cost-panel.spec.ts). It opens in the unified "All activity" view.
+  const webview = await webviewWithText(win, "All activity", 30_000);
   // Scope hook-name assertions to the row badge — the same strings also appear
   // inside each row's (hidden) raw-JSON tape.
   const hookBadge = (hook: string) => webview.locator("details.evt .hook", { hasText: hook });
-  await expect(webview.getByText("auto-following")).toBeVisible();
-  await expect(hookBadge("afterAgentResponse")).toBeVisible();
-  await expect(hookBadge("beforeSubmitPrompt")).toBeVisible();
-  // Other sessions' unique events must be absent while following tab-B.
-  await expect(hookBadge("UserPromptSubmit")).toHaveCount(0);
-  await expect(hookBadge("beforeShellExecution")).toHaveCount(0);
+  await expect(webview.locator("h1", { hasText: "All activity" })).toBeVisible();
+  await expect(webview.getByText("3 live sessions")).toBeVisible();
+  // All three sessions interleave — every unique hook event renders (no auto-follow).
+  await expect(hookBadge("afterAgentResponse")).toBeVisible(); // tab-B
+  await expect(hookBadge("beforeSubmitPrompt")).toBeVisible(); // tab-B
+  await expect(hookBadge("UserPromptSubmit")).toBeVisible(); // cc-1
+  await expect(hookBadge("beforeShellExecution")).toBeVisible(); // tab-A
+  // Each row is tagged with a clickable tool + short-id session badge.
+  await expect(webview.locator('button.sbadge[data-drill="tab-B"]').first()).toBeVisible();
+  await expect(webview.getByRole("button", { name: "Refresh" })).toBeVisible();
 
-  // The explicit session identity: full conversation id + its copy button.
+  await win.screenshot({ path: "out/screenshots/stream-03-all-activity.png" });
+
+  // Drill into the tab-B conversation. Cursor's unauthenticated "log in" overlay
+  // covers the webview in CI and intercepts real pointer events, so drive the
+  // delegated click handlers with a synthetic dispatchEvent throughout.
+  await webview.locator('button.sbadge[data-drill="tab-B"]').first().dispatchEvent("click");
+  await win.waitForTimeout(500);
+  // Now only tab-B's events show, with its explicit conversation identity.
   await expect(webview.getByText("conversation_id (Cursor tab)")).toBeVisible();
   await expect(webview.locator("code.skey", { hasText: "tab-B" })).toBeVisible();
   await expect(webview.getByRole("button", { name: "Copy id" })).toBeVisible();
-  // The toolbar exposes a Refresh control (reload the panel without a window reload).
-  await expect(webview.getByRole("button", { name: "Refresh" })).toBeVisible();
+  await expect(hookBadge("afterAgentResponse")).toBeVisible();
+  await expect(hookBadge("UserPromptSubmit")).toHaveCount(0); // cc-1 hidden while drilled
+  await expect(hookBadge("beforeShellExecution")).toHaveCount(0); // tab-A hidden while drilled
+  await win.screenshot({ path: "out/screenshots/stream-04-drilled.png" });
 
-  await win.screenshot({ path: "out/screenshots/stream-03-window.png" });
-
-  // Expand the rows → each row's raw envelope JSON tape appears. Cursor's
-  // unauthenticated "log in" overlay covers the webview in CI and intercepts
-  // real pointer events, so drive the Expand-all button with a synthetic click
-  // (a delegated document handler, so dispatchEvent fires it) rather than
-  // clicking a row summary (a native <details> toggle that a synthetic click
-  // wouldn't reliably fire).
+  // Expand the rows → each row's raw envelope JSON tape appears.
   await webview.getByRole("button", { name: "Expand all" }).dispatchEvent("click");
   await win.waitForTimeout(500);
   await expect(webview.getByText('"hook_event_name"', { exact: false }).first()).toBeVisible();
   await expect(webview.getByRole("button", { name: "Copy JSON" }).first()).toBeVisible();
-  await win.screenshot({ path: "out/screenshots/stream-04-row-expanded.png" });
 
-  await webview.locator("body").screenshot({ path: "out/screenshots/stream-05-webview-frame.png" });
+  // Back to the unified feed → the other sessions' events return.
+  await webview.getByRole("button", { name: "All activity" }).dispatchEvent("click");
+  await win.waitForTimeout(500);
+  await expect(hookBadge("UserPromptSubmit")).toBeVisible();
+  await win.screenshot({ path: "out/screenshots/stream-05-back-to-all.png" });
+
+  await webview.locator("body").screenshot({ path: "out/screenshots/stream-06-webview-frame.png" });
   await app.close();
 });

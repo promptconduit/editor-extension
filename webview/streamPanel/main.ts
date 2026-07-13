@@ -79,6 +79,16 @@ function setAll(open: boolean): void {
 document.addEventListener("click", (e) => {
   const target = e.target as HTMLElement;
 
+  // Session badge in the unified feed: drill into just that session. The badge
+  // lives inside a <summary>, so cancel the default click (which would toggle
+  // the row's <details>) before posting.
+  const badge = target.closest<HTMLButtonElement>("button[data-drill]");
+  if (badge) {
+    e.preventDefault();
+    vscode.postMessage({ type: "drill", key: badge.dataset.drill! });
+    return;
+  }
+
   const btn = target.closest<HTMLButtonElement>("button[data-cmd]");
   if (btn) {
     const cmd = btn.dataset.cmd!;
@@ -86,7 +96,7 @@ document.addEventListener("click", (e) => {
       setAll(true);
     } else if (cmd === "collapseAll") {
       setAll(false);
-    } else if (cmd === "pinSession" || cmd === "followActive" || cmd === "refresh") {
+    } else if (cmd === "drillIn" || cmd === "showAll" || cmd === "refresh") {
       vscode.postMessage({ type: "command", id: cmd });
     }
     return;

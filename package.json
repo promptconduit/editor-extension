@@ -71,14 +71,14 @@
         "title": "PromptConduit: Show Stream Panel"
       },
       {
-        "command": "promptconduit.stream.pinSession",
-        "title": "PromptConduit: Pin Session",
-        "icon": "$(pin)"
+        "command": "promptconduit.stream.drillIn",
+        "title": "PromptConduit: Stream — Drill into Session",
+        "icon": "$(list-selection)"
       },
       {
-        "command": "promptconduit.stream.followActive",
-        "title": "PromptConduit: Follow Active Session",
-        "icon": "$(sync)"
+        "command": "promptconduit.stream.showAll",
+        "title": "PromptConduit: Stream — Show All Activity",
+        "icon": "$(list-flat)"
       },
       {
         "command": "promptconduit.visualizer.show",

@@ -52,10 +52,12 @@ export function signalsSummary(session: SessionSummary): string {
 
 function focusNote(source: FocusSource): string {
   switch (source) {
+    case "prompted":
+      return "_Following the session you last prompted._";
     case "terminal":
       return "_Following the focused terminal's Claude Code session._";
     case "pinned":
-      return "_Pinned — not auto-following activity._";
+      return "_Pinned — not following your latest prompt._";
     case "activity":
       return "_Reflects the most recently active conversation, not necessarily the panel you're viewing._";
   }
@@ -225,7 +227,10 @@ export class CostStatusBar {
     tip.appendMarkdown(`**AI session cost** _(100% local)_\n\n`);
     const displayKey = this.store.displayKey;
     if (displayKey) {
-      tip.appendMarkdown(`Session \`${shortId(displayKey)}\`\n\n`);
+      const view = this.store.viewForKey(displayKey);
+      const tool = view?.tool ? `${view.tool} · ` : "";
+      const repo = view?.vcs?.repo ? ` · ${view.vcs.repo}` : "";
+      tip.appendMarkdown(`${tool}\`${shortId(displayKey)}\`${repo}\n\n`);
     }
     tip.appendMarkdown(`${focusNote(this.store.focusSource)}\n\n`);
     const displaySession = this.store.displaySummary;
@@ -253,7 +258,10 @@ export class CostStatusBar {
     if (lastEvent) {
       tip.appendMarkdown(`\nLast request: ${lastRequestLabel(lastEvent)} (${lastEvent.model})\n`);
     }
-    tip.appendMarkdown(`\n_Click for the focused session breakdown._`);
+    tip.appendMarkdown(
+      `\n_Cursor tabs can't be auto-detected — this follows the session you last prompted. Pin to lock it._\n`,
+    );
+    tip.appendMarkdown(`\n_Click for the displayed session's breakdown._`);
     this.item.tooltip = tip;
     this.onChange?.();
   }

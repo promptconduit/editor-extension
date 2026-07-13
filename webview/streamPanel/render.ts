@@ -2,14 +2,23 @@
 // Pure (no DOM, no vscode) so every section is unit-testable in plain node.
 //
 // Sibling of the Cost Breakdown renderer: the same toolbar, copy buttons, and
-// syntax-lit raw-JSON tape — but the body is the live event table (Time |
-// Tool | Event | Tools | Repo), newest first, where every row expands into the
-// event's raw envelope JSON. All model/user-controlled strings pass through
-// escapeHtml.
+// syntax-lit raw-JSON tape. The body is the live event table, newest first,
+// where every row expands into the event's raw envelope JSON. Two shapes:
+//   - "all" (default): every session interleaved (Time | Session | Event |
+//     Tools | Repo); the Session cell is a clickable badge that drills in.
+//   - "session": one drilled session (Time | Tool | Event | Tools | Repo).
+// All model/user-controlled strings pass through escapeHtml.
 
 import type { StreamPanelState } from "../../src/streamPanel/protocol";
 import type { StreamEvent } from "../../src/streamFeed";
 import { escapeHtml, highlightJson } from "../costPanel/jsonHighlight";
+
+// Short, human-friendly session id (keep the distinctive tail). Duplicated from
+// streamFeed.shortId so the webview bundle doesn't pull in the vscode-importing
+// host module.
+function shortId(key: string): string {
+  return key.length > 12 ? `…${key.slice(-8)}` : key;
+}
 
 // Render the ISO8601 captured_at as a local HH:MM:SS; fall back to the raw
 // string if it isn't parseable so we never hide an event.
@@ -39,52 +48,61 @@ function hookCell(e: StreamEvent): string {
   return `<span class="hook">${hook}</span>${badge}`;
 }
 
+// The unified-feed Session cell: a tool-colored badge that drills into just this
+// session's events on click (data-drill carries the full key; main.ts reads it).
+function sessionBadge(e: StreamEvent): string {
+  const tool = e.tool || "session";
+  return `<button type="button" class="sbadge" data-drill="${escapeHtml(e.sessionKey)}" data-tool="${escapeHtml(e.tool)}" title="${escapeHtml(e.sessionKey)}">${escapeHtml(tool)} ${escapeHtml(shortId(e.sessionKey))}</button>`;
+}
+
 function toolbarHtml(state: StreamPanelState): string {
-  const note = state.pinned
-    ? "Pinned — not auto-following activity."
-    : "Following the most recently active AI session.";
-  const follow = state.pinned
-    ? `<button type="button" class="tb" data-cmd="followActive">Follow active</button>`
+  const isSession = state.viewMode === "session";
+  const back = isSession
+    ? `<button type="button" class="tb" data-cmd="showAll">← All activity</button>`
     : "";
+  const drill = isSession
+    ? ""
+    : `<button type="button" class="tb" data-cmd="drillIn">Drill into session…</button>`;
+  const note = isSession
+    ? "Drilled into one session."
+    : "Showing all activity — every session, newest first.";
   return `<nav class="toolbar">
+    ${back}
     <span class="focus-note muted">${escapeHtml(note)}</span>
     <span class="toolbar-spacer"></span>
     <button type="button" class="tb" data-cmd="expandAll">Expand all</button>
     <button type="button" class="tb" data-cmd="collapseAll">Collapse all</button>
-    <button type="button" class="tb" data-cmd="pinSession">Pin…</button>
-    ${follow}
+    ${drill}
     <button type="button" class="tb" data-cmd="refresh" title="Reload this panel to pick up an extension update — no window reload">↻ Refresh</button>
   </nav>`;
 }
 
 function headerHtml(state: StreamPanelState): string {
+  if (state.viewMode === "all") {
+    const n = state.sessionCount;
+    const sess = n === 1 ? "1 live session" : `${n} live sessions`;
+    return `<h1>All activity</h1>
+  <p class="muted">${escapeHtml(sess)} · interleaved, newest first. Click a session to drill into just its events.</p>`;
+  }
   const s = state.session;
   if (!s) {
-    return `<h1>Live stream</h1>
-  <p class="muted">Following the most recently active AI session.</p>`;
+    return `<h1>Session</h1>`;
   }
-  const mode = state.pinned
-    ? `<span class="pill">📌 pinned</span>`
-    : `<span class="pill">auto-following</span>`;
   // The explicit, copyable session identity: which id this is depends on the
   // tool — Cursor keys by per-tab conversation_id, Claude Code by session_id.
   const idLabel = s.keyIsConversationId
     ? "conversation_id (Cursor tab)"
     : "session_id (Claude Code)";
-  return `<h1>${escapeHtml(s.tool || "session")} ${mode}</h1>
+  return `<h1>${escapeHtml(s.tool || "session")}</h1>
   <div class="skey-row">
     <span class="skey-label">${escapeHtml(idLabel)}</span>
     <code class="skey">${escapeHtml(s.key)}</code>
     <button type="button" class="copy" data-copy-label="Copy id">Copy id</button>
   </div>
-  <p class="muted">Live events for this session — newest first. ${
-    state.pinned
-      ? "Use <em>Follow active</em> to resume auto-switching."
-      : "Switches as you work in another agent tab."
-  }</p>`;
+  <p class="muted">Live events for this session — newest first.</p>`;
 }
 
-function rowHtml(e: StreamEvent): string {
+function rowHtml(e: StreamEvent, mode: "all" | "session"): string {
   const body = e.rawJson
     ? `<pre class="tape"><code>${highlightJson(e.rawJson)}</code></pre>
        <button type="button" class="copy" data-copy-label="Copy JSON">Copy JSON</button>`
@@ -92,10 +110,14 @@ function rowHtml(e: StreamEvent): string {
   const trunc = e.rawTruncated
     ? `<p class="muted small">Truncated at 32&nbsp;KB — full record in <code>~/.promptconduit/events.jsonl</code>.</p>`
     : "";
+  const secondCol =
+    mode === "all"
+      ? `<span class="cell-session">${sessionBadge(e)}</span>`
+      : `<span><span class="tool">${escapeHtml(e.tool || "—")}</span></span>`;
   return `<details class="evt" data-exp="${escapeHtml(e.eventId)}">
     <summary class="evt-cols">
       <span class="time">${escapeHtml(fmtTime(e.capturedAt))}</span>
-      <span><span class="tool">${escapeHtml(e.tool || "—")}</span></span>
+      ${secondCol}
       <span>${hookCell(e)}</span>
       <span class="cell-tools">${escapeHtml(e.toolsSummary || "—")}</span>
       <span class="cell-repo">${escapeHtml(repoLabel(e))}</span>
@@ -104,11 +126,16 @@ function rowHtml(e: StreamEvent): string {
   </details>`;
 }
 
-function tableHtml(events: StreamEvent[]): string {
-  const rows = events.slice().reverse().map(rowHtml).join("");
+function tableHtml(events: StreamEvent[], mode: "all" | "session"): string {
+  const secondHead = mode === "all" ? "Session" : "Tool";
+  const rows = events
+    .slice()
+    .reverse()
+    .map((e) => rowHtml(e, mode))
+    .join("");
   return `<div class="evt-table">
     <div class="evt-cols evt-head">
-      <span>Time</span><span>Tool</span><span>Event</span><span>Tools</span><span>Repo</span>
+      <span>Time</span><span>${secondHead}</span><span>Event</span><span>Tools</span><span>Repo</span>
     </div>
     ${rows}
   </div>`;
@@ -121,22 +148,23 @@ function emptyHtml(state: StreamPanelState): string {
     <p>Unset that variable and restart your AI tool to start streaming events.</p>
   </div>`;
   }
-  if (!state.session) {
+  if (state.viewMode === "session") {
     return `<div class="empty muted">
-    <p>No sessions yet. Run an AI coding session (Claude Code or a Cursor agent) with the
-    <code>promptconduit</code> CLI hooks installed and its events will stream in here within ~1s.</p>
-    <p>Waiting on <code>~/.promptconduit/events.jsonl</code>…</p>
+    <p>No events for this session yet. Waiting on <code>~/.promptconduit/events.jsonl</code>…</p>
   </div>`;
   }
   return `<div class="empty muted">
-    <p>No events for this session yet. Waiting on <code>~/.promptconduit/events.jsonl</code>…</p>
+    <p>No activity yet. Run an AI coding session (Claude Code or a Cursor agent) with the
+    <code>promptconduit</code> CLI hooks installed and events from every session will stream in
+    here within ~1s.</p>
+    <p>Waiting on <code>~/.promptconduit/events.jsonl</code>…</p>
   </div>`;
 }
 
 /** Full body HTML for one state push. */
 export function renderStreamBody(state: StreamPanelState): string {
   const body =
-    state.session && state.events.length > 0 ? tableHtml(state.events) : emptyHtml(state);
+    state.events.length > 0 ? tableHtml(state.events, state.viewMode) : emptyHtml(state);
   return `${toolbarHtml(state)}
   ${headerHtml(state)}
   ${body}

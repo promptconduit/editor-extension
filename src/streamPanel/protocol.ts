@@ -8,13 +8,21 @@ import type { StreamEvent } from "../streamFeed";
 export interface StreamPanelState {
   /** Monotonic push counter (client sanity/diffing). */
   revision: number;
-  /** True when the user pinned a session (auto-follow is suspended). */
-  pinned: boolean;
+  /**
+   * "all" = the unified feed (every session interleaved); "session" = drilled
+   * into the one carried in `session`.
+   */
+  viewMode: "all" | "session";
   /** True when the local event log is disabled (PROMPTCONDUIT_EVENT_LOG=0). */
   logDisabled: boolean;
-  /** The followed session, or undefined when nothing has streamed yet. */
+  /** Live session buffers, for the "N live sessions" header line. */
+  sessionCount: number;
+  /** The drilled session; undefined in the unified ("all") view. */
   session?: { key: string; tool: string; keyIsConversationId: boolean; count: number };
-  /** Newest LAST in the buffer; the client renders newest first. */
+  /**
+   * Newest LAST; the client renders newest first. In "all" mode these are
+   * interleaved across sessions (each row carries its own sessionKey/tool).
+   */
   events: StreamEvent[];
 }
 
@@ -23,4 +31,5 @@ export type HostMessage = { type: "state"; state: StreamPanelState };
 export type WebviewMessage =
   | { type: "ready" }
   | { type: "open_external"; url: string }
-  | { type: "command"; id: "pinSession" | "followActive" | "refresh" };
+  | { type: "drill"; key: string }
+  | { type: "command"; id: "drillIn" | "showAll" | "refresh" };

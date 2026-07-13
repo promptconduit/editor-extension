@@ -16,11 +16,81 @@ let costFeed: CostFeedController | undefined;
 let terminalFocus: TerminalFocusController | undefined;
 
 export function activate(context: vscode.ExtensionContext): void {
+  try {
+    activateInner(context);
+  } catch (err) {
+    // A thrown activation must never silently leave the extension half-wired —
+    // e.g. status-bar items whose command never got registered, so clicking
+    // them does nothing. Surface it instead of failing quietly.
+    const detail = err instanceof Error ? (err.stack ?? err.message) : String(err);
+    const channel = vscode.window.createOutputChannel("PromptConduit");
+    channel.appendLine(`Activation failed: ${detail}`);
+    context.subscriptions.push(channel);
+    void vscode.window.showErrorMessage(
+      `PromptConduit failed to activate: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+}
+
+function activateInner(context: vscode.ExtensionContext): void {
   const cfg = () => vscode.workspace.getConfiguration("promptconduit.cost");
   const resolveCli = () => resolveBinary(cfg().get<string>("binaryPath", ""));
 
   statusBar = new CostStatusBar();
   context.subscriptions.push(statusBar);
+
+  const panelState = (mode: "session" | "all") =>
+    buildCostPanelState(statusBar!.storeRef, mode);
+
+  statusBar.setOnChange(() => CostDetailPanel.refresh());
+
+  // Register every command BEFORE anything below that could throw, so a later
+  // failure can't leave a status-bar item pointing at an unregistered command
+  // (which is exactly what makes a click appear to do nothing).
+  context.subscriptions.push(
+    vscode.commands.registerCommand("promptconduit.cost.showDetails", () => {
+      CostDetailPanel.show(context.extensionUri, "session", panelState);
+    }),
+    vscode.commands.registerCommand("promptconduit.cost.showAllSessions", () => {
+      CostDetailPanel.show(context.extensionUri, "all", panelState);
+    }),
+    vscode.commands.registerCommand("promptconduit.cost.pinSession", () => {
+      void statusBar?.pickAndPin();
+    }),
+    vscode.commands.registerCommand("promptconduit.cost.followActive", () => {
+      statusBar?.followActive();
+    }),
+    vscode.commands.registerCommand("promptconduit.coaching.showTab", () => {
+      CoachingPanel.show();
+    }),
+    vscode.commands.registerCommand("promptconduit.stream.showFeed", () => {
+      StreamPanel.show(context.extensionUri);
+    }),
+    vscode.commands.registerCommand("promptconduit.stream.drillIn", () => {
+      const panel = StreamPanel.active;
+      if (!panel) {
+        StreamPanel.show(context.extensionUri);
+        return;
+      }
+      void panel.drillIntoSession();
+    }),
+    vscode.commands.registerCommand("promptconduit.stream.showAll", () => {
+      StreamPanel.active?.showAll();
+    }),
+    vscode.commands.registerCommand("promptconduit.visualizer.show", () => {
+      VisualizerPanel.show(context.extensionUri);
+    }),
+    vscode.commands.registerCommand("promptconduit.refreshPanel", () => {
+      // Reload the focused PromptConduit webview in place — picks up an extension
+      // update's rebuilt panel bundle without a full window reload.
+      const refreshed = CostDetailPanel.refreshActive() || StreamPanel.refreshActive();
+      if (!refreshed) {
+        void vscode.window.showInformationMessage(
+          "Focus a PromptConduit Stream or Cost Breakdown panel, then run Refresh Panel.",
+        );
+      }
+    }),
+  );
 
   const updates = new UpdatePromptController(
     context.extension.packageJSON.version as string,
@@ -47,60 +117,6 @@ export function activate(context: vscode.ExtensionContext): void {
   streamButton.command = "promptconduit.stream.showFeed";
   streamButton.show();
   context.subscriptions.push(streamButton);
-
-  const panelState = (mode: "session" | "all") =>
-    buildCostPanelState(statusBar!.storeRef, mode);
-
-  const refreshPanels = () => {
-    CostDetailPanel.refresh();
-  };
-
-  statusBar.setOnChange(refreshPanels);
-
-  context.subscriptions.push(
-    vscode.commands.registerCommand("promptconduit.cost.showDetails", () => {
-      CostDetailPanel.show(context.extensionUri, "session", panelState);
-    }),
-    vscode.commands.registerCommand("promptconduit.cost.showAllSessions", () => {
-      CostDetailPanel.show(context.extensionUri, "all", panelState);
-    }),
-    vscode.commands.registerCommand("promptconduit.cost.pinSession", () => {
-      void statusBar?.pickAndPin();
-    }),
-    vscode.commands.registerCommand("promptconduit.cost.followActive", () => {
-      statusBar?.followActive();
-    }),
-    vscode.commands.registerCommand("promptconduit.coaching.showTab", () => {
-      CoachingPanel.show();
-    }),
-    vscode.commands.registerCommand("promptconduit.stream.showFeed", () => {
-      StreamPanel.show(context.extensionUri);
-    }),
-    vscode.commands.registerCommand("promptconduit.stream.pinSession", () => {
-      const panel = StreamPanel.active;
-      if (!panel) {
-        StreamPanel.show(context.extensionUri);
-        return;
-      }
-      void panel.pinSession();
-    }),
-    vscode.commands.registerCommand("promptconduit.stream.followActive", () => {
-      StreamPanel.active?.followActive();
-    }),
-    vscode.commands.registerCommand("promptconduit.visualizer.show", () => {
-      VisualizerPanel.show(context.extensionUri);
-    }),
-    vscode.commands.registerCommand("promptconduit.refreshPanel", () => {
-      // Reload the focused PromptConduit webview in place — picks up an extension
-      // update's rebuilt panel bundle without a full window reload.
-      const refreshed = CostDetailPanel.refreshActive() || StreamPanel.refreshActive();
-      if (!refreshed) {
-        void vscode.window.showInformationMessage(
-          "Focus a PromptConduit Stream or Cost Breakdown panel, then run Refresh Panel.",
-        );
-      }
-    }),
-  );
 
   terminalFocus = new TerminalFocusController(
     makeTerminalFocusDeps(
