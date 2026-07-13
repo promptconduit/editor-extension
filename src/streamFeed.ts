@@ -7,11 +7,15 @@ import { makeNonce, webviewCsp, webviewShellHtml, isSafeHttpUrl, bustCache } fro
 import { STREAM_PANEL_CSS } from "./streamPanel/styles";
 import type { StreamPanelState, WebviewMessage } from "./streamPanel/protocol";
 
-// Keep memory bounded — we only ever render the tail of one session.
+// Keep memory bounded — we retain the tail of each session's events.
 export const MAX_EVENTS = 200;
 // At most this many concurrent session buffers; beyond it the least-recently-
 // active session is evicted entirely.
 export const MAX_SESSIONS = 30;
+// Rows rendered in the unified "All activity" view — the interleaved tail across
+// every session. Older rows still live per-session (drill in to see them) and in
+// events.jsonl.
+export const MAX_UNIFIED_ROWS = 400;
 // Per-event raw JSON cap (matches promptGroup's RAW_JSON_MAX).
 export const RAW_JSON_MAX = 32 * 1024;
 // Per-session raw JSON budget; over it, rawJson is evicted from the session's
@@ -22,8 +26,8 @@ const RENDER_THROTTLE_MS = 250;
 
 /** Commands a webview button may invoke, mapped to real extension commands. */
 const COMMAND_MAP: Record<string, string> = {
-  pinSession: "promptconduit.stream.pinSession",
-  followActive: "promptconduit.stream.followActive",
+  drillIn: "promptconduit.stream.drillIn",
+  showAll: "promptconduit.stream.showAll",
 };
 
 /** One event, scoped to the session that produced it. */
@@ -50,6 +54,17 @@ export interface StreamEvent {
   rawTruncated: boolean;
   /** True when the session key came from raw.conversation_id (a Cursor tab). */
   keyIsConversationId: boolean;
+  /**
+   * Activity time in epoch ms, stamped by StreamState.record (not by the parser)
+   * — the sort key for the unified feed. Undefined until recorded.
+   */
+  at?: number;
+  /**
+   * Monotonic ingest order, stamped by StreamState.record. Ties the unified sort
+   * when two sessions share a captured_at (common when both tools write in the
+   * same millisecond). Undefined until recorded.
+   */
+  seq?: number;
 }
 
 /** A session's live buffer plus the metadata the picker/header need. */
@@ -152,16 +167,21 @@ function parseTs(ts: string): number {
 }
 
 /**
- * StreamState is the pure follow/pin logic — no vscode, no fs — so it can be
+ * StreamState is the pure view logic — no vscode, no fs — so it can be
  * unit-tested and reused (mirrors ConversationStore). It buffers events per
- * session and exposes the FOLLOWED session: the manually pinned one, or (auto-
- * follow) whichever session most recently produced an event.
+ * session and exposes two views: the DEFAULT unified feed (`allEntries` —
+ * every session interleaved, newest first) and, when the user drills into one,
+ * that single session's buffer. There is no auto-follow: the feed never moves
+ * on its own, so a chatty Claude Code session can't steal the view from a
+ * quiet Cursor agent.
  */
 export class StreamState {
   private readonly bySession = new Map<string, SessionBuf>();
-  private activeKey: string | undefined;
   private newestActivity = -Infinity;
-  private pinnedKey: string | undefined;
+  // The session the user drilled into; undefined (or evicted) → unified view.
+  private drilledKey: string | undefined;
+  // Monotonic ingest counter, stamped onto each event as its unified-sort tie-break.
+  private seqCounter = 0;
 
   record(ev: StreamEvent): void {
     const buf = this.ensure(ev.sessionKey);
@@ -169,6 +189,11 @@ export class StreamState {
       buf.tool = ev.tool;
     }
     buf.keyIsConversationId = ev.keyIsConversationId;
+    // Stamp the sort keys once, here — the parser can't (it has no ingest order
+    // and shouldn't reach for the clock).
+    const at = this.activityFrom(ev.capturedAt);
+    ev.at = at;
+    ev.seq = ++this.seqCounter;
     buf.events.push(ev);
     buf.rawBytes += ev.rawJson?.length ?? 0;
     if (buf.events.length > MAX_EVENTS) {
@@ -190,45 +215,59 @@ export class StreamState {
         }
       }
     }
-    this.touch(buf, this.activityFrom(ev.capturedAt));
+    this.touch(buf, at);
   }
 
-  /** Pin the followed session; stops auto-switching until unpinned. */
-  pin(key: string): void {
-    this.pinnedKey = key;
+  /** Drill into one session; the panel then shows only its events. */
+  drillIn(key: string): void {
+    this.drilledKey = key;
   }
 
-  /** Resume following the most-recently-active session. */
-  unpin(): void {
-    this.pinnedKey = undefined;
+  /** Return to the unified "All activity" feed. */
+  showAll(): void {
+    this.drilledKey = undefined;
   }
 
-  /** Sessions seen so far, newest activity first (for the pin picker). */
+  /**
+   * "session" when the user has drilled into a session that still exists,
+   * else "all". An evicted drilled session falls back to the unified feed.
+   */
+  get viewMode(): "all" | "session" {
+    return this.drilledKey !== undefined && this.bySession.has(this.drilledKey) ? "session" : "all";
+  }
+
+  /** Live session buffers (for the header count and picker). */
+  get sessionCount(): number {
+    return this.bySession.size;
+  }
+
+  /** Sessions seen so far, newest activity first (for the drill picker). */
   listSessions(): SessionInfo[] {
     return [...this.bySession.values()]
       .sort((a, b) => b.lastActivity - a.lastActivity)
       .map((b) => ({ key: b.key, tool: b.tool, count: b.events.length, lastActivity: b.lastActivity }));
   }
 
-  /** Key of the session currently rendered (a live pin wins over active). */
-  get followedKey(): string | undefined {
-    if (this.pinnedKey && this.bySession.has(this.pinnedKey)) {
-      return this.pinnedKey;
+  /**
+   * The unified feed: every session's retained events interleaved by activity
+   * time (then ingest order), newest LAST — matching the per-session buffer
+   * convention the webview renders (it reverses to show newest first). Capped
+   * at `limit` rows; older rows remain per-session (drill in) and in events.jsonl.
+   */
+  allEntries(limit = MAX_UNIFIED_ROWS): StreamEvent[] {
+    const all: StreamEvent[] = [];
+    for (const buf of this.bySession.values()) {
+      for (const e of buf.events) {
+        all.push(e);
+      }
     }
-    return this.activeKey;
+    all.sort((a, b) => (a.at ?? 0) - (b.at ?? 0) || (a.seq ?? 0) - (b.seq ?? 0));
+    return all.length > limit ? all.slice(all.length - limit) : all;
   }
 
-  /** True when a pinned session exists and is being followed. */
-  get isPinned(): boolean {
-    return this.pinnedKey !== undefined && this.bySession.has(this.pinnedKey);
-  }
-
-  /** The followed session's buffer, or undefined when nothing is followed yet. */
-  followedBuf():
-    | { key: string; tool: string; keyIsConversationId: boolean; events: StreamEvent[] }
-    | undefined {
-    const key = this.followedKey;
-    return key ? this.bySession.get(key) : undefined;
+  /** The drilled session's buffer, or undefined in the unified view. */
+  drilledBuf(): SessionBuf | undefined {
+    return this.viewMode === "session" ? this.bySession.get(this.drilledKey!) : undefined;
   }
 
   private ensure(key: string): SessionBuf {
@@ -258,21 +297,8 @@ export class StreamState {
         return;
       }
       this.bySession.delete(victim.key);
-      if (this.activeKey === victim.key) {
-        this.recomputeActive();
-      }
-    }
-  }
-
-  // Re-derive activeKey/newestActivity after an eviction removed the active buf.
-  private recomputeActive(): void {
-    this.activeKey = undefined;
-    this.newestActivity = -Infinity;
-    for (const b of this.bySession.values()) {
-      if (b.lastActivity >= this.newestActivity) {
-        this.newestActivity = b.lastActivity;
-        this.activeKey = b.key;
-      }
+      // A drilled session that gets evicted simply drops back to the unified
+      // view (viewMode guards on bySession.has) — no extra bookkeeping needed.
     }
   }
 
@@ -287,43 +313,52 @@ export class StreamState {
     return Math.max(Date.now(), this.newestActivity);
   }
 
-  // Mark a session active if its activity is the newest we've seen (mirrors
-  // ConversationStore.touch — ties keep the most-recent caller active).
+  // Track the newest activity as a floor for untimestamped events, and keep the
+  // session's own last-activity for the picker sort and LRU eviction.
   private touch(buf: SessionBuf, activity: number): void {
     if (activity >= buf.lastActivity) {
       buf.lastActivity = activity;
     }
     if (buf.lastActivity >= this.newestActivity) {
       this.newestActivity = buf.lastActivity;
-      this.activeKey = buf.key;
     }
   }
 }
 
 /**
- * Build the serializable webview state for the followed session. Pure given
- * its inputs (the preview and tests pass `logDisabled` explicitly; the live
- * controller reads the env flag).
+ * Build the serializable webview state. Pure given its inputs (the preview and
+ * tests pass `logDisabled` explicitly; the live controller reads the env flag).
+ * Unified view (default) carries the interleaved feed with no `session`; a
+ * drilled view carries that one session and its buffer.
  */
 export function buildStreamPanelState(
   state: StreamState,
   revision: number,
   disabled: boolean,
 ): StreamPanelState {
-  const buf = state.followedBuf();
+  const buf = state.drilledBuf();
+  if (buf) {
+    return {
+      revision,
+      viewMode: "session",
+      logDisabled: disabled,
+      sessionCount: state.sessionCount,
+      session: {
+        key: buf.key,
+        tool: buf.tool,
+        keyIsConversationId: buf.keyIsConversationId,
+        count: buf.events.length,
+      },
+      events: [...buf.events],
+    };
+  }
   return {
     revision,
-    pinned: state.isPinned,
+    viewMode: "all",
     logDisabled: disabled,
-    session: buf
-      ? {
-          key: buf.key,
-          tool: buf.tool,
-          keyIsConversationId: buf.keyIsConversationId,
-          count: buf.events.length,
-        }
-      : undefined,
-    events: buf ? [...buf.events] : [],
+    sessionCount: state.sessionCount,
+    session: undefined,
+    events: state.allEntries(),
   };
 }
 
@@ -367,13 +402,13 @@ export class StreamController {
     return this.state.listSessions();
   }
 
-  pin(key: string): void {
-    this.state.pin(key);
+  drillIn(key: string): void {
+    this.state.drillIn(key);
     this.render();
   }
 
-  unpin(): void {
-    this.state.unpin();
+  showAll(): void {
+    this.state.showAll();
     this.render();
   }
 
@@ -415,8 +450,9 @@ export class StreamController {
  * StreamPanel hosts the live per-session stream as a scripted editor-tab
  * webview (same host pattern as the AI Cost Breakdown: strict CSP + nonce,
  * esbuild bundle from media/, ready/pendingState handshake). A single reused
- * panel; show() reveals it. Pin / Follow are webview toolbar buttons that post
- * `command` messages, routed to the real extension commands.
+ * panel; show() reveals it. Drill in / All activity are webview toolbar buttons
+ * (and clickable session badges) that post messages, routed to the real
+ * extension commands.
  */
 export class StreamPanel {
   private static current: StreamPanel | undefined;
@@ -534,6 +570,10 @@ export class StreamPanel {
           await vscode.env.openExternal(vscode.Uri.parse(msg.url));
         }
         break;
+      case "drill":
+        // Session badge clicked in the unified feed — drill straight in, no picker.
+        this.controller.drillIn(msg.key);
+        break;
       case "command":
         if (msg.id === "refresh") {
           this.refresh();
@@ -544,8 +584,8 @@ export class StreamPanel {
     }
   }
 
-  /** Open a QuickPick of recent sessions and pin the chosen one. */
-  async pinSession(): Promise<void> {
+  /** Open a QuickPick of recent sessions and drill into the chosen one. */
+  async drillIntoSession(): Promise<void> {
     const sessions = this.controller.listSessions();
     if (sessions.length === 0) {
       void vscode.window.showInformationMessage("No sessions yet — run an AI coding session first.");
@@ -557,16 +597,16 @@ export class StreamPanel {
         description: `${s.count} event${s.count === 1 ? "" : "s"}`,
         key: s.key,
       })),
-      { placeHolder: "Pin the Stream to a session (stops auto-following)" },
+      { placeHolder: "Drill into one session's events" },
     );
     if (pick) {
-      this.controller.pin(pick.key);
+      this.controller.drillIn(pick.key);
     }
   }
 
-  /** Resume auto-following the most-recently-active session. */
-  followActive(): void {
-    this.controller.unpin();
+  /** Return to the unified "All activity" feed. */
+  showAll(): void {
+    this.controller.showAll();
   }
 }
 

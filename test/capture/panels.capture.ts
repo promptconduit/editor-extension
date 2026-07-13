@@ -31,7 +31,7 @@ interface PanelCapture {
 
 const PANELS: PanelCapture[] = [
   { scenario: "cost", command: "PromptConduit: Show Cost Breakdown", signature: "Cost per prompt", slug: "cost-breakdown" },
-  { scenario: "stream", command: "PromptConduit: Show Stream Panel", signature: "auto-following", slug: "stream" },
+  { scenario: "stream", command: "PromptConduit: Show Stream Panel", signature: "All activity", slug: "stream" },
   { scenario: "coaching", command: "PromptConduit: Show Agent Coaching", signature: "Agent coaching", slug: "agent-coaching" },
   { scenario: "theater", command: "PromptConduit: Show Orchestration Theater", signature: "Orchestration Theater", slug: "orchestration-theater", webgl: true },
 ];

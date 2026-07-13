@@ -63,13 +63,13 @@ fs.mkdirSync(outDir, { recursive: true });
 // → StreamState → buildStreamPanelState) and load the actual esbuild webview
 // bundle with the same vscode-api shim as the cost panel — expansion, raw JSON
 // highlighting, and copy all work.
-function streamPanelStateFromFixtures(pinKey?: string): StreamPanelState {
+function streamPanelStateFromFixtures(drillKey?: string): StreamPanelState {
   const s = new StreamState();
   for (const line of sampleStreamLines) {
     const ev = parseStreamLine(line);
     if (ev) s.record(ev);
   }
-  if (pinKey) s.pin(pinKey);
+  if (drillKey) s.drillIn(drillKey);
   return buildStreamPanelState(s, 1, false);
 }
 
@@ -161,7 +161,7 @@ const pages: Record<string, string> = {
   "coaching-rich.html": themed(renderCoachingHtml(coachingSnapshot, coachingTrends), true),
   "coaching-empty.html": themed(renderCoachingHtml(undefined), true),
   "stream.html": streamPanelPage(streamPanelStateFromFixtures()),
-  "stream-pinned.html": streamPanelPage(streamPanelStateFromFixtures("cc-1")),
+  "stream-drilled.html": streamPanelPage(streamPanelStateFromFixtures("cc-1")),
   "stream-empty.html": streamPanelPage(buildStreamPanelState(new StreamState(), 1, false)),
   "landing.html": themed(landingHtml(), false),
   "tooltip.html": themed(

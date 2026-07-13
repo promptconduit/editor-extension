@@ -75,7 +75,7 @@ button.tb:hover { background: var(--vscode-toolbar-hoverBackground); }
 .evt-table { margin-top: 0.6rem; border-top: 1px solid var(--hairline); }
 .evt-cols {
   display: grid;
-  grid-template-columns: 6.5rem 7.5rem minmax(11rem, 1fr) 8.5rem minmax(8rem, 16rem);
+  grid-template-columns: 6.5rem 9rem minmax(10rem, 1fr) 8rem minmax(8rem, 15rem);
   gap: 0 0.6rem; align-items: baseline;
   padding: 0.25rem 0.5rem;
 }
@@ -94,6 +94,19 @@ details.evt[open] > summary { background: var(--vscode-list-hoverBackground, tra
 .time { white-space: nowrap; font-size: 0.82rem; }
 .tool, .hook { display: inline-block; font-size: 0.78rem; padding: 0.1rem 0.5rem; border-radius: 0.5rem;
                background: var(--vscode-badge-background); color: var(--vscode-badge-foreground); }
+/* Unified-feed session badge — click to drill into that session. A left color
+   rail (not a full border) keeps the badge-background theming while cueing tool. */
+.cell-session { overflow: hidden; }
+button.sbadge {
+  font: inherit; font-size: 0.78rem; cursor: pointer;
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  padding: 0.1rem 0.5rem; border-radius: 0.5rem;
+  border: 1px solid transparent; border-left-width: 3px;
+  background: var(--vscode-badge-background); color: var(--vscode-badge-foreground);
+}
+button.sbadge:hover { background: var(--vscode-toolbar-hoverBackground); }
+button.sbadge[data-tool="claude-code"] { border-left-color: var(--vscode-charts-orange, #d18616); }
+button.sbadge[data-tool="cursor"] { border-left-color: var(--vscode-charts-blue, #4e94ce); }
 .subagent-badge { display: inline-block; font-size: 0.72rem; padding: 0.05rem 0.4rem; border-radius: 0.5rem;
                   margin-left: 0.25rem; background: var(--vscode-charts-purple, #a78bfa); color: #fff; }
 .cell-tools, .cell-repo { font-size: 0.82rem; color: var(--vscode-descriptionForeground); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

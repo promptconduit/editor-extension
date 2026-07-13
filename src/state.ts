@@ -51,7 +51,7 @@ export interface ConversationView {
   droppedPrompts?: number;
 }
 
-export type FocusSource = "terminal" | "activity" | "pinned";
+export type FocusSource = "prompted" | "terminal" | "activity" | "pinned";
 
 // Per-conversation accumulated cost state.
 interface ConversationState {
@@ -84,6 +84,11 @@ interface ConversationState {
 
 // Debounce rapid activity flips when concurrent Cursor agents run.
 export const ACTIVE_KEY_DEBOUNCE_MS = 750;
+
+// A signal (prompt submit or terminal focus) holds the displayed session this
+// long — even through another session's event burst — before falling back to
+// plain activity. Just a safety net; a newer signal always wins immediately.
+export const LATCH_TTL_MS = 10 * 60 * 1000;
 
 // Cap on retained per-request events per conversation. Aggregate totals stay
 // exact; only the drill-down list is bounded (older turns live in events.jsonl).
@@ -127,15 +132,22 @@ function modelTier(model: string, priced: boolean): string {
 
 /**
  * ConversationStore keeps cost state keyed by conversation (Cursor per-tab) or,
- * absent that, by session (Claude Code). displayKey = focused ?? pinned ??
- * active (activity-based, debounced when flipping between conversations).
+ * absent that, by session (Claude Code). displayKey = pinned ?? latched ??
+ * active. The "latch" is the most recent signal — a prompt submission in either
+ * tool, or a terminal focus change — so the status bar follows what you last
+ * acted in ("last prompted wins") instead of whichever session emits the most
+ * events. VS Code exposes no Cursor tab-focus event, so a prompt is the best
+ * signal we get from a Cursor agent.
  */
 export class ConversationStore {
   private readonly byKey = new Map<string, ConversationState>();
   private readonly promptGroups = new PromptGroupStore();
   private activeKeyRef: string | undefined;
   private newestActivity = -Infinity;
-  private focusedKeyRef: string | undefined;
+  // The most recent signal: what the user last prompted in or focused.
+  private latchedKey: string | undefined;
+  private latchedAt = 0;
+  private latchSource: "prompted" | "terminal" = "prompted";
   private pinnedKeyRef: string | undefined;
   private pendingActiveKey: string | undefined;
   private activeDebounceTimer: ReturnType<typeof setTimeout> | undefined;
@@ -234,8 +246,22 @@ export class ConversationStore {
     }
   }
 
+  // Record the most recent signal. Prompt submissions and terminal focus both
+  // set it; whichever happened last wins. Uses wall-clock so the TTL is real
+  // time, not event time (a focused terminal whose session is quiet still holds).
+  private setLatch(key: string, source: "prompted" | "terminal"): void {
+    this.latchedKey = key;
+    this.latchedAt = Date.now();
+    this.latchSource = source;
+  }
+
+  // Terminal focus is one kind of signal. A bare `undefined` (focus left the
+  // terminal, e.g. to a Cursor pane) does NOT clear the latch — clearing it
+  // would just snap the display to whatever session is chattiest.
   setFocusedKey(key: string | undefined): void {
-    this.focusedKeyRef = key;
+    if (key) {
+      this.setLatch(key, "terminal");
+    }
   }
 
   setPinnedKey(key: string | undefined): void {
@@ -246,40 +272,41 @@ export class ConversationStore {
     this.pinnedKeyRef = undefined;
   }
 
-  get focusedKey(): string | undefined {
-    return this.focusedKeyRef;
-  }
-
   get pinnedKey(): string | undefined {
     return this.pinnedKeyRef;
   }
 
-  // A focused/pinned key only wins once its session has events; a terminal
-  // whose session hasn't produced anything yet falls through to pin/activity
-  // instead of rendering an empty $0.00 conversation.
-  private get liveFocusedKey(): string | undefined {
-    return this.focusedKeyRef && this.byKey.has(this.focusedKeyRef)
-      ? this.focusedKeyRef
-      : undefined;
+  // The latch wins only once its session has events (a terminal focused before
+  // its session produced anything falls through) and while it's fresh (a signal
+  // older than the TTL yields to plain activity).
+  private get liveLatchedKey(): string | undefined {
+    if (!this.latchedKey || !this.byKey.has(this.latchedKey)) {
+      return undefined;
+    }
+    if (Date.now() - this.latchedAt > LATCH_TTL_MS) {
+      return undefined;
+    }
+    return this.latchedKey;
   }
 
   /** Key shown in the status bar and default breakdown. */
   get displayKey(): string | undefined {
-    if (this.liveFocusedKey) {
-      return this.liveFocusedKey;
-    }
     if (this.pinnedKeyRef && this.byKey.has(this.pinnedKeyRef)) {
       return this.pinnedKeyRef;
+    }
+    const latched = this.liveLatchedKey;
+    if (latched) {
+      return latched;
     }
     return this.activeKeyRef;
   }
 
   get focusSource(): FocusSource {
-    if (this.liveFocusedKey) {
-      return "terminal";
-    }
     if (this.pinnedKeyRef && this.byKey.has(this.pinnedKeyRef)) {
       return "pinned";
+    }
+    if (this.liveLatchedKey) {
+      return this.latchSource;
     }
     return "activity";
   }
@@ -315,6 +342,14 @@ export class ConversationStore {
     const state = this.ensure(key);
     if (env.tool) {
       state.tool = env.tool;
+    }
+
+    // A user submitting a prompt is the strongest "I'm working here now" signal
+    // (Cursor beforeSubmitPrompt / Claude Code UserPromptSubmit) — latch the
+    // display to it so a chatty concurrent session can't pull the status bar
+    // away. This is how a Cursor agent claims the display without a tab-focus API.
+    if (env.hookEvent === "beforeSubmitPrompt" || env.hookEvent === "UserPromptSubmit") {
+      this.setLatch(key, "prompted");
     }
 
     // Per-prompt correlation runs on every envelope; the group store dedups

@@ -624,8 +624,9 @@ function sessionCard(s: SessionView, state: CostPanelState): string {
 }
 
 const FOCUS_NOTES: Record<string, string> = {
+  prompted: "Following the session you last prompted.",
   terminal: "Following the focused terminal's Claude Code session.",
-  pinned: "Pinned — not auto-following activity.",
+  pinned: "Pinned — not following your latest prompt.",
   activity: "Reflects the most recently active conversation.",
 };
 

@@ -1,9 +1,26 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { ConversationStore, ACTIVE_KEY_DEBOUNCE_MS, MAX_RECENT_REQUESTS } from "../../src/state";
+import { ConversationStore, ACTIVE_KEY_DEBOUNCE_MS, LATCH_TTL_MS, MAX_RECENT_REQUESTS } from "../../src/state";
 import { parseEnvelopeV2 } from "../../src/envelope";
-import { sampleEnrichmentLines } from "../../dev/fixtures";
+import { sampleEnrichmentLines, v2Envelope } from "../../dev/fixtures";
 import { sampleEvents } from "../../dev/fixtures";
 import type { CostEvent } from "../../src/types";
+
+// Record a prompt-submit envelope (the latch signal). Cursor keys by
+// conversation_id, Claude Code by session_id.
+function promptEnv(
+  store: ConversationStore,
+  tool: "cursor" | "claude-code",
+  hookEvent: string,
+  key: string,
+  ts: string,
+): void {
+  const opts =
+    tool === "cursor"
+      ? { sessionId: `sess-${key}`, raw: { conversation_id: key } }
+      : { sessionId: key };
+  const env = parseEnvelopeV2(v2Envelope(tool, hookEvent, ts, opts));
+  if (env) store.recordEnvelope(env);
+}
 
 function mkEvent(p: Partial<CostEvent>): CostEvent {
   return {
@@ -137,15 +154,16 @@ describe("ConversationStore displayKey precedence", () => {
   afterEach(() => {
     vi.useRealTimers();
   });
-  it("prefers focused over pinned and active", () => {
+  it("prefers pinned over a focused terminal and activity", () => {
     const store = new ConversationStore();
     store.recordEvent(mkEvent({ conversation_id: "A", request_id: "a1", ts: "2026-06-27T17:00:00Z" }));
     store.recordEvent(mkEvent({ conversation_id: "B", request_id: "b1", ts: "2026-06-27T17:05:00Z" }));
     store.recordEvent(mkEvent({ conversation_id: "C", request_id: "c1", ts: "2026-06-27T17:01:00Z" }));
     store.setPinnedKey("A");
     store.setFocusedKey("C");
-    expect(store.displayKey).toBe("C");
-    expect(store.focusSource).toBe("terminal");
+    // Pin is explicit intent — it now wins over a focused terminal.
+    expect(store.displayKey).toBe("A");
+    expect(store.focusSource).toBe("pinned");
   });
 
   it("uses pinned when no terminal focus", () => {
@@ -164,6 +182,68 @@ describe("ConversationStore displayKey precedence", () => {
     store.recordEvent(mkEvent({ conversation_id: "B", request_id: "b1", ts: "2026-06-27T17:05:00Z" }));
     vi.advanceTimersByTime(ACTIVE_KEY_DEBOUNCE_MS);
     expect(store.displayKey).toBe("B");
+    expect(store.focusSource).toBe("activity");
+  });
+});
+
+describe("ConversationStore prompt latch (last prompted wins)", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("latches a Cursor prompt and holds it through a Claude Code event burst", () => {
+    vi.useFakeTimers();
+    const store = new ConversationStore();
+    promptEnv(store, "cursor", "beforeSubmitPrompt", "cur-tab", "2026-06-27T17:00:00Z");
+    expect(store.displayKey).toBe("cur-tab");
+    expect(store.focusSource).toBe("prompted");
+    // A chatty Claude Code session fires 20 events and becomes the ACTIVE session…
+    for (let i = 0; i < 20; i++) {
+      store.recordEvent(
+        mkEvent({ session_id: "cc", request_id: `r${i}`, ts: `2026-06-27T18:00:${String(i % 60).padStart(2, "0")}Z`, tool: "claude-code" }),
+      );
+    }
+    vi.advanceTimersByTime(ACTIVE_KEY_DEBOUNCE_MS);
+    expect(store.activeKey).toBe("cc"); // …confirmed active…
+    expect(store.displayKey).toBe("cur-tab"); // …but the latch still wins.
+  });
+
+  it("re-latches to a Claude Code prompt over an earlier Cursor prompt", () => {
+    const store = new ConversationStore();
+    promptEnv(store, "cursor", "beforeSubmitPrompt", "cur-tab", "2026-06-27T17:00:00Z");
+    promptEnv(store, "claude-code", "UserPromptSubmit", "cc", "2026-06-27T17:05:00Z");
+    expect(store.displayKey).toBe("cc");
+    expect(store.focusSource).toBe("prompted");
+  });
+
+  it("re-latches to a focused terminal over a prior prompt (most recent signal wins)", () => {
+    const store = new ConversationStore();
+    promptEnv(store, "cursor", "beforeSubmitPrompt", "cur-tab", "2026-06-27T17:00:00Z");
+    store.recordEvent(mkEvent({ session_id: "cc", request_id: "r1", ts: "2026-06-27T17:01:00Z", tool: "claude-code" }));
+    store.setFocusedKey("cc");
+    expect(store.displayKey).toBe("cc");
+    expect(store.focusSource).toBe("terminal");
+  });
+
+  it("lets a pin override the latch", () => {
+    const store = new ConversationStore();
+    promptEnv(store, "cursor", "beforeSubmitPrompt", "cur-tab", "2026-06-27T17:00:00Z");
+    store.recordEvent(mkEvent({ conversation_id: "pinme", request_id: "p1", ts: "2026-06-27T17:02:00Z" }));
+    store.setPinnedKey("pinme");
+    expect(store.displayKey).toBe("pinme");
+    expect(store.focusSource).toBe("pinned");
+  });
+
+  it("expires the latch after the TTL, falling back to activity", () => {
+    vi.useFakeTimers();
+    const store = new ConversationStore();
+    promptEnv(store, "cursor", "beforeSubmitPrompt", "cur-tab", "2026-06-27T17:00:00Z");
+    store.recordEvent(mkEvent({ session_id: "cc", request_id: "r1", ts: "2026-06-27T18:00:00Z", tool: "claude-code" }));
+    vi.advanceTimersByTime(ACTIVE_KEY_DEBOUNCE_MS);
+    expect(store.activeKey).toBe("cc");
+    expect(store.displayKey).toBe("cur-tab"); // latch still fresh
+    vi.advanceTimersByTime(LATCH_TTL_MS + 1);
+    expect(store.displayKey).toBe("cc"); // latch expired → activity
     expect(store.focusSource).toBe("activity");
   });
 });
