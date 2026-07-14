@@ -5,6 +5,9 @@
 
 import type { StreamEvent } from "../streamFeed";
 
+/** Selection gestures that can auto-drill the stream (followSelection). */
+export type SelectionSource = "terminal" | "cursor-tab";
+
 export interface StreamPanelState {
   /** Monotonic push counter (client sanity/diffing). */
   revision: number;
@@ -19,6 +22,11 @@ export interface StreamPanelState {
   sessionCount: number;
   /** The drilled session; undefined in the unified ("all") view. */
   session?: { key: string; tool: string; keyIsConversationId: boolean; count: number };
+  /**
+   * Present when the drilled view was chosen by a selection gesture (focused
+   * terminal / selected Cursor agent tab) rather than a manual drill.
+   */
+  selected?: SelectionSource;
   /**
    * Newest LAST; the client renders newest first. In "all" mode these are
    * interleaved across sessions (each row carries its own sessionKey/tool).

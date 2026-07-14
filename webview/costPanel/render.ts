@@ -626,6 +626,7 @@ function sessionCard(s: SessionView, state: CostPanelState): string {
 const FOCUS_NOTES: Record<string, string> = {
   prompted: "Following the session you last prompted.",
   terminal: "Following the focused terminal's Claude Code session.",
+  "cursor-tab": "Following the selected Cursor agent tab.",
   pinned: "Pinned — not following your latest prompt.",
   activity: "Reflects the most recently active conversation.",
 };

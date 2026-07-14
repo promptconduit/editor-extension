@@ -5,7 +5,7 @@ import { TailReader } from "./visualizer/tailReader";
 import { eventsJsonlPath, logDisabled } from "./visualizer/paths";
 import { makeNonce, webviewCsp, webviewShellHtml, isSafeHttpUrl, bustCache } from "./webviewHost";
 import { STREAM_PANEL_CSS } from "./streamPanel/styles";
-import type { StreamPanelState, WebviewMessage } from "./streamPanel/protocol";
+import type { SelectionSource, StreamPanelState, WebviewMessage } from "./streamPanel/protocol";
 
 // Keep memory bounded — we retain the tail of each session's events.
 export const MAX_EVENTS = 200;
@@ -180,11 +180,25 @@ export class StreamState {
   private newestActivity = -Infinity;
   // The session the user drilled into; undefined (or evicted) → unified view.
   private drilledKey: string | undefined;
+  // How the drilled session was chosen: a toolbar/badge click, or a selection
+  // gesture (focused terminal / selected Cursor agent tab). Event recency is
+  // NEVER a reason — the feed still doesn't move on its own.
+  private drillSource: "manual" | SelectionSource | undefined;
+  // A selection gesture for a session that hasn't streamed yet: drill the
+  // moment its first event lands instead of showing an empty view.
+  private pendingSelectKey: string | undefined;
+  private pendingSelectSource: SelectionSource = "terminal";
   // Monotonic ingest counter, stamped onto each event as its unified-sort tie-break.
   private seqCounter = 0;
 
   record(ev: StreamEvent): void {
     const buf = this.ensure(ev.sessionKey);
+    // A selected-but-not-yet-streamed session materialized — honor the gesture.
+    if (this.pendingSelectKey === ev.sessionKey) {
+      this.drilledKey = ev.sessionKey;
+      this.drillSource = this.pendingSelectSource;
+      this.pendingSelectKey = undefined;
+    }
     if (ev.tool) {
       buf.tool = ev.tool;
     }
@@ -221,11 +235,43 @@ export class StreamState {
   /** Drill into one session; the panel then shows only its events. */
   drillIn(key: string): void {
     this.drilledKey = key;
+    this.drillSource = "manual";
+    this.pendingSelectKey = undefined;
   }
 
-  /** Return to the unified "All activity" feed. */
+  /**
+   * A selection gesture: the user focused a terminal or selected a Cursor
+   * agent tab. Drills into that session (immediately if it has streamed,
+   * else as soon as its first event lands). Unlike drillIn this is
+   * best-effort UI following, so callers gate it on the followSelection
+   * setting.
+   */
+  selectSession(key: string, source: SelectionSource): void {
+    if (this.bySession.has(key)) {
+      this.drilledKey = key;
+      this.drillSource = source;
+      this.pendingSelectKey = undefined;
+      return;
+    }
+    this.pendingSelectKey = key;
+    this.pendingSelectSource = source;
+  }
+
+  /** Return to the unified "All activity" feed (also cancels a pending selection). */
   showAll(): void {
     this.drilledKey = undefined;
+    this.drillSource = undefined;
+    this.pendingSelectKey = undefined;
+  }
+
+  /** Why the current drilled view was chosen by a gesture, if it was. */
+  get selectedVia(): SelectionSource | undefined {
+    if (this.viewMode !== "session") {
+      return undefined;
+    }
+    return this.drillSource === "terminal" || this.drillSource === "cursor-tab"
+      ? this.drillSource
+      : undefined;
   }
 
   /**
@@ -349,6 +395,7 @@ export function buildStreamPanelState(
         keyIsConversationId: buf.keyIsConversationId,
         count: buf.events.length,
       },
+      selected: state.selectedVia,
       events: [...buf.events],
     };
   }
@@ -404,6 +451,12 @@ export class StreamController {
 
   drillIn(key: string): void {
     this.state.drillIn(key);
+    this.render();
+  }
+
+  /** Follow a selection gesture (focused terminal / selected Cursor tab). */
+  selectSession(key: string, source: SelectionSource): void {
+    this.state.selectSession(key, source);
     this.render();
   }
 
@@ -607,6 +660,15 @@ export class StreamPanel {
   /** Return to the unified "All activity" feed. */
   showAll(): void {
     this.controller.showAll();
+  }
+
+  /**
+   * Follow a selection gesture from the host (focused terminal or selected
+   * Cursor agent tab): drill this panel into that session. The caller gates
+   * on the promptconduit.stream.followSelection setting.
+   */
+  selectSession(key: string, source: SelectionSource): void {
+    this.controller.selectSession(key, source);
   }
 }
 

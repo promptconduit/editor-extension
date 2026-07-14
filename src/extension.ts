@@ -1,3 +1,5 @@
+import * as fs from "fs";
+import * as path from "path";
 import * as vscode from "vscode";
 import { CoachingPanel } from "./coachingFeed";
 import { StreamPanel } from "./streamFeed";
@@ -10,6 +12,7 @@ import { VisualizerPanel } from "./visualizerPanel";
 import { UpdatePromptController } from "./updatePrompt";
 import { SessionRestoreController, makeRestoreDeps, recordDismissed } from "./sessionRestore";
 import { TerminalFocusController, makeTerminalFocusDeps } from "./terminalFocus";
+import { CursorTabTracker, runComposerQuery } from "./cursorTabs";
 
 let statusBar: CostStatusBar | undefined;
 let costFeed: CostFeedController | undefined;
@@ -44,6 +47,23 @@ function activateInner(context: vscode.ExtensionContext): void {
 
   statusBar.setOnChange(() => CostDetailPanel.refresh());
 
+  // Selection gestures (a focused terminal, a selected Cursor agent tab) latch
+  // the status bar AND — when followSelection is on — drill an open Stream
+  // panel into that session. Event recency still never moves the stream. The
+  // last gesture is remembered so a Stream panel opened AFTER the gesture
+  // starts on the selected session.
+  const followSelection = () =>
+    vscode.workspace
+      .getConfiguration("promptconduit.stream")
+      .get<boolean>("followSelection", true);
+  let lastSelection: { key: string; source: "terminal" | "cursor-tab" } | undefined;
+  const followStream = (key: string, source: "terminal" | "cursor-tab") => {
+    lastSelection = { key, source };
+    if (followSelection()) {
+      StreamPanel.active?.selectSession(key, source);
+    }
+  };
+
   // Register every command BEFORE anything below that could throw, so a later
   // failure can't leave a status-bar item pointing at an unregistered command
   // (which is exactly what makes a click appear to do nothing).
@@ -65,6 +85,10 @@ function activateInner(context: vscode.ExtensionContext): void {
     }),
     vscode.commands.registerCommand("promptconduit.stream.showFeed", () => {
       StreamPanel.show(context.extensionUri);
+      // A panel opened after the gesture still lands on the selected session.
+      if (lastSelection && followSelection()) {
+        StreamPanel.active?.selectSession(lastSelection.key, lastSelection.source);
+      }
     }),
     vscode.commands.registerCommand("promptconduit.stream.drillIn", () => {
       const panel = StreamPanel.active;
@@ -123,6 +147,9 @@ function activateInner(context: vscode.ExtensionContext): void {
       resolveCli,
       (sessionKey) => {
         statusBar?.setFocusedKey(sessionKey);
+        if (sessionKey) {
+          followStream(sessionKey, "terminal");
+        }
       },
       // Deliberately closing a Claude terminal dismisses that session so a later
       // window reload won't auto-reopen it. Reload teardown is guarded in
@@ -132,6 +159,36 @@ function activateInner(context: vscode.ExtensionContext): void {
   );
   terminalFocus.start();
   context.subscriptions.push(terminalFocus);
+
+  // Cursor-only, best-effort: the focused agent tab is not observable through
+  // any extension API, so read Cursor's own workspace-storage record of it
+  // (ItemTable key composer.composerData → lastFocusedComposerIds[0], which is
+  // the conversation_id our events are keyed by). Read-only via the sqlite3
+  // CLI; self-disables on repeated failure (missing sqlite3, schema change)
+  // without affecting the terminal/prompt signals.
+  const isCursor = vscode.env.appName.toLowerCase().includes("cursor");
+  const cursorTabsEnabled = vscode.workspace
+    .getConfiguration("promptconduit.cursorTabs")
+    .get<boolean>("enabled", true);
+  if (isCursor && cursorTabsEnabled) {
+    const storageDir = context.storageUri?.fsPath;
+    const workspaceDb = storageDir ? path.join(path.dirname(storageDir), "state.vscdb") : undefined;
+    const tracker = new CursorTabTracker({
+      dbPath: () => (workspaceDb && fs.existsSync(workspaceDb) ? workspaceDb : null),
+      query: runComposerQuery,
+      onFocusedComposer: (composerId) => {
+        statusBar?.setCursorTabKey(composerId);
+        if (composerId) {
+          followStream(composerId, "cursor-tab");
+        }
+      },
+      onDisabled: (reason) => {
+        console.warn(`PromptConduit: Cursor agent-tab tracking disabled (${reason})`);
+      },
+    });
+    tracker.start();
+    context.subscriptions.push(tracker);
+  }
 
   const restore = new SessionRestoreController(
     makeRestoreDeps(context, resolveCli, (term, sessionId) => {

@@ -56,6 +56,8 @@ function focusNote(source: FocusSource): string {
       return "_Following the session you last prompted._";
     case "terminal":
       return "_Following the focused terminal's Claude Code session._";
+    case "cursor-tab":
+      return "_Following the selected Cursor agent tab._";
     case "pinned":
       return "_Pinned — not following your latest prompt._";
     case "activity":
@@ -134,6 +136,12 @@ export class CostStatusBar {
   // render() already fires onChange — no extra call, one repaint per change.
   setFocusedKey(key: string | undefined): void {
     this.store.setFocusedKey(key);
+    this.render();
+  }
+
+  /** Latch to a Cursor agent-tab selection (from the workspace-state tracker). */
+  setCursorTabKey(key: string | undefined): void {
+    this.store.setCursorTabKey(key);
     this.render();
   }
 
@@ -259,7 +267,7 @@ export class CostStatusBar {
       tip.appendMarkdown(`\nLast request: ${lastRequestLabel(lastEvent)} (${lastEvent.model})\n`);
     }
     tip.appendMarkdown(
-      `\n_Cursor tabs can't be auto-detected — this follows the session you last prompted. Pin to lock it._\n`,
+      `\n_Follows your last gesture — a prompt, a focused terminal, or a selected Cursor agent tab (best effort). Pin to lock it._\n`,
     );
     tip.appendMarkdown(`\n_Click for the displayed session's breakdown._`);
     this.item.tooltip = tip;
