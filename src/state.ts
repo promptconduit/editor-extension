@@ -51,7 +51,10 @@ export interface ConversationView {
   droppedPrompts?: number;
 }
 
-export type FocusSource = "prompted" | "terminal" | "activity" | "pinned";
+export type FocusSource = "prompted" | "terminal" | "cursor-tab" | "activity" | "pinned";
+
+/** Gesture kinds that can set the latch (everything but the fallbacks). */
+export type LatchSource = "prompted" | "terminal" | "cursor-tab";
 
 // Per-conversation accumulated cost state.
 interface ConversationState {
@@ -147,7 +150,7 @@ export class ConversationStore {
   // The most recent signal: what the user last prompted in or focused.
   private latchedKey: string | undefined;
   private latchedAt = 0;
-  private latchSource: "prompted" | "terminal" = "prompted";
+  private latchSource: LatchSource = "prompted";
   private pinnedKeyRef: string | undefined;
   private pendingActiveKey: string | undefined;
   private activeDebounceTimer: ReturnType<typeof setTimeout> | undefined;
@@ -249,7 +252,7 @@ export class ConversationStore {
   // Record the most recent signal. Prompt submissions and terminal focus both
   // set it; whichever happened last wins. Uses wall-clock so the TTL is real
   // time, not event time (a focused terminal whose session is quiet still holds).
-  private setLatch(key: string, source: "prompted" | "terminal"): void {
+  private setLatch(key: string, source: LatchSource): void {
     this.latchedKey = key;
     this.latchedAt = Date.now();
     this.latchSource = source;
@@ -261,6 +264,16 @@ export class ConversationStore {
   setFocusedKey(key: string | undefined): void {
     if (key) {
       this.setLatch(key, "terminal");
+    }
+  }
+
+  // Selecting a Cursor agent tab is another signal (read from Cursor's own
+  // workspace-storage record of the focused tab; the composerId IS this
+  // store's conversation key). Same rule as terminals: `undefined` (no tab
+  // focused / record unreadable) never clears the latch.
+  setCursorTabKey(key: string | undefined): void {
+    if (key) {
+      this.setLatch(key, "cursor-tab");
     }
   }
 

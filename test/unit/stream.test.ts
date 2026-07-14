@@ -235,6 +235,47 @@ describe("StreamState unified feed + drill-down", () => {
     expect(s.drilledBuf()).toBeUndefined();
   });
 
+  it("selectSession drills immediately when the session has streamed, tagged with its gesture", () => {
+    const s = new StreamState();
+    s.record(mk({ sessionKey: "A", capturedAt: "2026-06-30T17:00:00Z" }));
+    s.record(mk({ sessionKey: "B", capturedAt: "2026-06-30T17:05:00Z" }));
+    s.selectSession("A", "cursor-tab");
+    expect(s.viewMode).toBe("session");
+    expect(s.drilledBuf()?.key).toBe("A");
+    expect(s.selectedVia).toBe("cursor-tab");
+    // A newer event on B must NOT steal the selected view.
+    s.record(mk({ sessionKey: "B", capturedAt: "2026-06-30T17:09:00Z" }));
+    expect(s.drilledBuf()?.key).toBe("A");
+    s.showAll();
+    expect(s.viewMode).toBe("all");
+    expect(s.selectedVia).toBeUndefined();
+  });
+
+  it("selectSession for a not-yet-streamed session drills when its first event lands", () => {
+    const s = new StreamState();
+    s.record(mk({ sessionKey: "A", capturedAt: "2026-06-30T17:00:00Z" }));
+    s.selectSession("tab-new", "cursor-tab"); // clicked a fresh agent tab
+    expect(s.viewMode).toBe("all"); // nothing streamed for it yet
+    s.record(mk({ sessionKey: "A", capturedAt: "2026-06-30T17:01:00Z" })); // other traffic doesn't trigger it
+    expect(s.viewMode).toBe("all");
+    s.record(mk({ sessionKey: "tab-new", capturedAt: "2026-06-30T17:02:00Z" }));
+    expect(s.viewMode).toBe("session");
+    expect(s.drilledBuf()?.key).toBe("tab-new");
+    expect(s.selectedVia).toBe("cursor-tab");
+  });
+
+  it("a manual drill or showAll cancels a pending selection; manual drills carry no gesture tag", () => {
+    const s = new StreamState();
+    s.record(mk({ sessionKey: "A", capturedAt: "2026-06-30T17:00:00Z" }));
+    s.selectSession("ghost", "terminal");
+    s.showAll();
+    s.record(mk({ sessionKey: "ghost", capturedAt: "2026-06-30T17:01:00Z" }));
+    expect(s.viewMode).toBe("all"); // pending was cancelled
+    s.drillIn("A");
+    expect(s.viewMode).toBe("session");
+    expect(s.selectedVia).toBeUndefined(); // manual, not a gesture
+  });
+
   it("falls back to the unified view when the drilled session is evicted", () => {
     const s = new StreamState();
     for (let i = 0; i < MAX_SESSIONS; i++) {
@@ -432,6 +473,39 @@ describe("renderStreamBody", () => {
     expect(html).toContain('data-cmd="showAll"');
     expect(html).toContain("← All activity");
     expect(html).not.toContain('data-cmd="drillIn"');
+  });
+
+  it("labels a terminal-selected drill with the terminal pill and note", () => {
+    const s = new StreamState();
+    for (const line of sampleStreamLines) {
+      const ev = parseStreamLine(line);
+      if (ev) s.record(ev);
+    }
+    s.selectSession("cc-1", "terminal");
+    const html = renderStreamBody(buildStreamPanelState(s, 1, false));
+    expect(html).toContain("⌨ terminal");
+    expect(html).toContain("Following the focused terminal&#39;s session.");
+    expect(html).toContain('<code class="skey">cc-1</code>');
+  });
+
+  it("labels a Cursor-tab-selected drill with the agent-tab pill and note", () => {
+    const s = new StreamState();
+    for (const line of sampleStreamLines) {
+      const ev = parseStreamLine(line);
+      if (ev) s.record(ev);
+    }
+    s.selectSession("tab-A", "cursor-tab");
+    const html = renderStreamBody(buildStreamPanelState(s, 1, false));
+    expect(html).toContain("⧉ agent tab");
+    expect(html).toContain("Following the selected Cursor agent tab.");
+    expect(html).toContain('<code class="skey">tab-A</code>');
+  });
+
+  it("a manual drill shows no gesture pill", () => {
+    const html = renderFromFixtures("cc-1");
+    expect(html).not.toContain("⌨ terminal");
+    expect(html).not.toContain("⧉ agent tab");
+    expect(html).toContain("Drilled into one session.");
   });
 
   it("renders an empty unified state before any activity", () => {

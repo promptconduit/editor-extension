@@ -225,6 +225,26 @@ describe("ConversationStore prompt latch (last prompted wins)", () => {
     expect(store.focusSource).toBe("terminal");
   });
 
+  it("latches to a selected Cursor agent tab over a prior prompt (most recent signal wins)", () => {
+    const store = new ConversationStore();
+    promptEnv(store, "claude-code", "UserPromptSubmit", "cc", "2026-06-27T17:00:00Z");
+    store.recordEvent(mkEvent({ conversation_id: "cur-tab", request_id: "r1", ts: "2026-06-27T17:01:00Z", tool: "cursor" }));
+    store.setCursorTabKey("cur-tab");
+    expect(store.displayKey).toBe("cur-tab");
+    expect(store.focusSource).toBe("cursor-tab");
+    // Undefined (no tab focused / record unreadable) never clears the latch.
+    store.setCursorTabKey(undefined);
+    expect(store.displayKey).toBe("cur-tab");
+  });
+
+  it("a cursor-tab latch for a session with no events falls through to activity", () => {
+    const store = new ConversationStore();
+    store.recordEvent(mkEvent({ session_id: "cc", request_id: "r1", ts: "2026-06-27T17:00:00Z", tool: "claude-code" }));
+    store.setCursorTabKey("never-streamed");
+    expect(store.displayKey).toBe("cc");
+    expect(store.focusSource).toBe("activity");
+  });
+
   it("lets a pin override the latch", () => {
     const store = new ConversationStore();
     promptEnv(store, "cursor", "beforeSubmitPrompt", "cur-tab", "2026-06-27T17:00:00Z");

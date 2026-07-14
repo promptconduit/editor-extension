@@ -2,7 +2,7 @@
   "name": "promptconduit",
   "displayName": "PromptConduit",
   "description": "Local, real-time visibility into your AI coding sessions — live token cost in the status bar, a 3D Orchestration Theater that replays how your agents work, and an offline Agent Coaching report. 100% local.",
-  "version": "0.17.1",
+  "version": "0.18.0",
   "publisher": "promptconduit",
   "license": "MIT",
   "icon": "resources/icon.png",
@@ -138,6 +138,16 @@
           "type": "number",
           "default": 12,
           "description": "How far back to look for interrupted sessions to restore, in hours."
+        },
+        "promptconduit.cursorTabs.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Cursor only (best effort): follow the selected agent/chat tab by reading Cursor's local workspace state, so the Stream panel and status-bar cost switch to that conversation. Self-disables if the state database is unreadable."
+        },
+        "promptconduit.stream.followSelection": {
+          "type": "boolean",
+          "default": true,
+          "description": "When you focus a terminal running Claude Code or select a Cursor agent tab, drill the open Stream panel into that session automatically. Event activity never moves the view either way."
         }
       }
     }

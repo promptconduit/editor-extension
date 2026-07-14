@@ -64,7 +64,11 @@ function toolbarHtml(state: StreamPanelState): string {
     ? ""
     : `<button type="button" class="tb" data-cmd="drillIn">Drill into session…</button>`;
   const note = isSession
-    ? "Drilled into one session."
+    ? state.selected === "terminal"
+      ? "Following the focused terminal's session."
+      : state.selected === "cursor-tab"
+        ? "Following the selected Cursor agent tab."
+        : "Drilled into one session."
     : "Showing all activity — every session, newest first.";
   return `<nav class="toolbar">
     ${back}
@@ -93,7 +97,13 @@ function headerHtml(state: StreamPanelState): string {
   const idLabel = s.keyIsConversationId
     ? "conversation_id (Cursor tab)"
     : "session_id (Claude Code)";
-  return `<h1>${escapeHtml(s.tool || "session")}</h1>
+  const selectedPill =
+    state.selected === "terminal"
+      ? ` <span class="pill">⌨ terminal</span>`
+      : state.selected === "cursor-tab"
+        ? ` <span class="pill">⧉ agent tab</span>`
+        : "";
+  return `<h1>${escapeHtml(s.tool || "session")}${selectedPill}</h1>
   <div class="skey-row">
     <span class="skey-label">${escapeHtml(idLabel)}</span>
     <code class="skey">${escapeHtml(s.key)}</code>

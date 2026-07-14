@@ -1,5 +1,37 @@
 # Changelog
 
+## 0.18.0
+
+- **Cursor agent-tab detection (best effort) — the gap the latch couldn't
+  cover.** Cursor has no extension API for its chat/agent tabs, so the
+  extension now reads Cursor's own local record of the focused tab (workspace
+  storage, read-only via sqlite3) and joins it to the `conversation_id`
+  already captured in `events.jsonl`. Selecting an agent tab latches the
+  status-bar cost to that conversation — no prompt needed — including in the
+  Agents Window. It can lag a tab click by a few seconds (Cursor writes that
+  state lazily); a prompt submit still re-aims instantly. Self-disables
+  cleanly if Cursor's schema ever changes — a schema-canary test pins the
+  contract. Opt out with `promptconduit.cursorTabs.enabled: false`. Inert
+  outside Cursor.
+- **The Stream panel follows your selection.** Focusing a terminal running
+  Claude Code or selecting a Cursor agent tab drills the open Stream panel
+  into that session, labeled with why (`⌨ terminal` / `⧉ agent tab`);
+  "← All activity" returns to the unified feed. Deliberate gestures only —
+  event volume still never moves the view. Opt out with
+  `promptconduit.stream.followSelection: false`.
+
+## 0.17.2
+
+- **Unified "All activity" stream.** The Stream panel now defaults to every
+  session interleaved newest-first with clickable tool-colored session badges;
+  drill into one session and back. The view never switches on its own, so a
+  chatty Claude Code session can't steal it from a quiet Cursor agent.
+- **Status bar: "last prompted wins."** The cost figure follows the session
+  you last acted in — a prompt in either tool or a terminal focus change —
+  instead of whichever session emits the most events.
+- **Hardened activation** so a partial failure can't leave status-bar items
+  whose clicks do nothing.
+
 ## 0.17.1
 
 - **Reloading the window now reliably brings your Claude Code terminals back —
