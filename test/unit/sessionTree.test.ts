@@ -64,7 +64,13 @@ function turnLines(session: string, pid: string): string[] {
       "claude-code",
       "2026-07-06T17:01:00Z",
       session,
-      [costRequest({ request_id: `${pid}-r1`, usd: { total: 0.3, currency: "USD" } })],
+      [
+        costRequest({
+          request_id: `${pid}-r1`,
+          // Full breakdown (summing to 0.3) so cache-savings is derivable.
+          usd: { input: 0.06, output: 0.05, cache_read: 0.15, cache_write: 0.04, total: 0.3, currency: "USD" },
+        }),
+      ],
       { promptId: pid, enrichments: { turn: { duration_ms: 60000, prompt_id: pid } } },
     ),
   ];
@@ -114,6 +120,87 @@ describe("SessionTreeStore happy path", () => {
     // Turn cost = lead request + subagent; session cost = its turns.
     expect(t.usdTotal).toBeCloseTo(0.42);
     expect(s.usdTotal).toBeCloseTo(0.42);
+  });
+});
+
+describe("SessionTreeStore detail (side panel)", () => {
+  it("exposes full token/cost/cache/tool detail on the turn", () => {
+    const store = new SessionTreeStore();
+    ingest(store, turnLines("cc-d", "p1"));
+    const t = store.snapshot(undefined, NOW).session!.turns[0];
+
+    expect(t.promptFull).toContain("live session graph");
+    expect(t.permissionMode).toBeUndefined(); // none set in fixture
+    expect(t.models).toEqual(["claude-4.5-sonnet"]); // costRequest default model
+    expect(t.requests).toBe(1);
+
+    // Token + cost breakdown from the costRequest default (input 8000, cache_read 24000…).
+    expect(t.tokens).toMatchObject({ input: 8000, output: 1200, cacheRead: 24000, cacheWrite: 1500 });
+    expect(t.cost!.total).toBeCloseTo(0.3);
+
+    // Cache/memory: hit rate = cacheRead / (cacheRead + input); savings derivable.
+    expect(t.cache!.readTokens).toBe(24000);
+    expect(t.cache!.hitRate).toBeCloseTo(24000 / (24000 + 8000));
+    expect(t.cache!.savingsUsd).toBeGreaterThan(0);
+
+    // Full tool table (not just chips): Read ×2, Edit ×1 (1 failed).
+    const byName = Object.fromEntries(t.toolStats!.map((s) => [s.name, s]));
+    expect(byName.Read.count).toBe(2);
+    expect(byName.Edit.failed).toBe(1);
+  });
+
+  it("captures session env (cwd/host/os) and aggregate detail", () => {
+    const store = new SessionTreeStore();
+    ingest(store, [
+      v2Envelope("claude-code", "SessionStart", "2026-07-06T16:59:00Z", {
+        sessionId: "cc-env",
+        raw: { cwd: "/Users/dev/project" },
+        enrichments: { env: { host: "mac.local", os: "darwin", os_version: "26.1", arch: "arm64", cwd: "/Users/dev/project" } },
+      }),
+      ...turnLines("cc-env", "p1"),
+    ]);
+    const s = store.snapshot(undefined, NOW).session!;
+    expect(s.cwd).toBe("/Users/dev/project");
+    expect(s.host).toBe("mac.local");
+    expect(s.os).toBe("darwin 26.1");
+    expect(s.arch).toBe("arm64");
+    expect(s.tokens!.cacheRead).toBe(24000);
+    expect(s.toolStats!.some((t) => t.name === "Read")).toBe(true);
+  });
+
+  it("exposes per-subagent token + cache detail", () => {
+    const store = new SessionTreeStore();
+    ingest(store, [
+      v2Envelope("claude-code", "UserPromptSubmit", T0, { sessionId: "cc-sd", promptId: "p1", raw: { prompt: "go" } }),
+      v2Envelope("claude-code", "SubagentStart", "2026-07-06T17:00:05Z", {
+        sessionId: "cc-sd",
+        promptId: "p1",
+        raw: { agent_id: "a1", agent_type: "Explore" },
+        enrichments: { subagent: { agent_id: "a1", agent_type: "Explore", phase: "start", concurrent: 3 } },
+      }),
+      v2Envelope("claude-code", "SubagentStop", "2026-07-06T17:00:50Z", {
+        sessionId: "cc-sd",
+        promptId: "p1",
+        raw: { agent_id: "a1" },
+        enrichments: {
+          subagent: {
+            agent_id: "a1",
+            agent_type: "Explore",
+            phase: "stop",
+            duration_ms: 45000,
+            requests: 12,
+            model: "claude-opus-4-8",
+            tokens: { input: 24, output: 35, cache_read: 536956, cache_write: 82854 },
+            usd: { total: 0.7873, currency: "USD" },
+          },
+        },
+      }),
+    ]);
+    const a = store.snapshot(undefined, NOW).session!.turns[0].subagents[0];
+    expect(a.requests).toBe(12);
+    expect(a.concurrent).toBe(3);
+    expect(a.tokens).toMatchObject({ input: 24, cacheRead: 536956, cacheWrite: 82854 });
+    expect(a.cache!.hitRate).toBeCloseTo(536956 / (536956 + 24));
   });
 });
 

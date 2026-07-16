@@ -10,6 +10,57 @@
 /** How a node is doing right now — drives color and the "breathing" pulse. */
 export type NodeState = "running" | "completed" | "failed" | "interrupted";
 
+// ---- shared detail shapes (populated for the click-to-inspect side panel) ----
+
+/** Token counts by category. cacheRead is the "memory" the model reused. */
+export interface TokenBreakdown {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+}
+
+/** USD spend by the same categories, plus the total. */
+export interface CostBreakdown {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  total: number;
+}
+
+/**
+ * Prompt-cache ("memory") stats. hitRate is cacheRead / (cacheRead + input);
+ * savingsUsd is the estimated spend avoided by serving cacheRead tokens from
+ * cache instead of as fresh input (derived from each request's own input rate,
+ * so it's grounded in real prices, not a fixed multiplier). Undefined when no
+ * request had a derivable input rate.
+ */
+export interface CacheStats {
+  hitRate?: number;
+  readTokens: number;
+  writeTokens: number;
+  savingsUsd?: number;
+}
+
+/** One tool aggregated across a turn/session: how many calls, how many failed. */
+export interface ToolStat {
+  name: string;
+  count: number;
+  failed: number;
+  totalMs?: number;
+  mcpServer?: string;
+  skill?: string;
+  agentType?: string;
+}
+
+/** A permission prompt the agent hit. */
+export interface PermissionEntry {
+  decision: string;
+  toolName?: string;
+  mcpServer?: string;
+}
+
 /** One session in the header picker, newest activity first. */
 export interface SessionPickerItem {
   key: string;
@@ -33,6 +84,13 @@ export interface GraphSubagentNode {
   /** Ran in a different worktree than the session itself. */
   worktreeBadge?: boolean;
   worktreePath?: string;
+  // ---- detail (side panel) ----
+  requests?: number;
+  /** Peak concurrent subagents when this one started (parallelism signal). */
+  concurrent?: number;
+  orphanStop?: boolean;
+  tokens?: TokenBreakdown;
+  cache?: CacheStats;
 }
 
 /** Tool activity aggregated per turn (counts, not individual calls). */
@@ -60,6 +118,26 @@ export interface GraphTurnNode {
   /** Ran in a different worktree than the session itself. */
   worktreeBadge?: boolean;
   worktreePath?: string;
+  // ---- detail (side panel) ----
+  /** Full prompt text (not the truncated label). */
+  promptFull?: string;
+  permissionMode?: string;
+  promptChars?: number;
+  promptWords?: number;
+  hasAttachments?: boolean;
+  /** Distinct models the lead used this turn. */
+  models?: string[];
+  /** Number of priced model requests in the turn. */
+  requests?: number;
+  /** Lead token spend (excludes subagents, which carry their own). */
+  tokens?: TokenBreakdown;
+  cost?: CostBreakdown;
+  cache?: CacheStats;
+  /** Every tool used this turn, aggregated by name (not just the top chips). */
+  toolStats?: ToolStat[];
+  mcpServers?: string[];
+  skills?: string[];
+  permissions?: PermissionEntry[];
 }
 
 /** The session root node. */
@@ -81,6 +159,23 @@ export interface GraphSessionNode {
   droppedTurns: number;
   /** Session cost so far: every turn's usdTotal summed. */
   usdTotal?: number;
+  // ---- detail (side panel) ----
+  cwd?: string;
+  host?: string;
+  os?: string;
+  arch?: string;
+  /** Wall-clock from first event to last activity, ms. */
+  durationMs?: number;
+  /** Distinct models seen across the session. */
+  models?: string[];
+  /** Session token + cost totals across every turn (lead + subagents). */
+  tokens?: TokenBreakdown;
+  cost?: CostBreakdown;
+  cache?: CacheStats;
+  /** Every tool used this session, aggregated by name. */
+  toolStats?: ToolStat[];
+  mcpServers?: string[];
+  skills?: string[];
 }
 
 export interface GraphPanelState {

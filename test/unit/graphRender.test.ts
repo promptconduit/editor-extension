@@ -70,6 +70,40 @@ describe("renderGraphBody", () => {
     expect(out).toContain("&lt;img src=x onerror=alert(1)&gt; &amp; &quot;quotes&quot;");
   });
 
+  it("renders a hint when no node is selected, detail when one is", () => {
+    const noSel = renderGraphBody(stateFrom(sampleGraphLines), GRAPH_FIXTURE_NOW);
+    expect(noSel).toContain("detail-hint");
+    expect(noSel).toContain("Click any node");
+  });
+
+  it("renders the session detail panel with cost, memory, and a full tools table", () => {
+    const state = stateFrom(sampleGraphLines);
+    const html = renderGraphBody(state, GRAPH_FIXTURE_NOW, "session");
+    // Two-column layout with a detail column.
+    expect(html).toContain("detail-col");
+    expect(html).toContain(`data-node="session" `); // node stays in the tree
+    // Detail sections.
+    expect(html).toContain("Memory (prompt cache)");
+    expect(html).toContain("Cache hit rate");
+    expect(html).toContain("dtable"); // the full tools table
+  });
+
+  it("marks the clicked turn selected and shows its prompt + tools", () => {
+    const state = stateFrom(sampleGraphLines);
+    const html = renderGraphBody(state, GRAPH_FIXTURE_NOW, "t:g1");
+    expect(html).toContain(`class="node turn selected"`);
+    expect(html).toContain("prompt-box");
+    expect(html).toContain("map the adapter architecture"); // full prompt text
+  });
+
+  it("shows subagent detail when a subagent is selected", () => {
+    const state = stateFrom(sampleGraphLines);
+    const html = renderGraphBody(state, GRAPH_FIXTURE_NOW, "a:g1:g-a1");
+    expect(html).toContain(`class="node agent selected"`);
+    expect(html).toContain("Subagent"); // the detail section title
+    expect(html).toContain("claude-sonnet-5"); // subagent model
+  });
+
   it("renders the disabled and empty zero-states", () => {
     const empty = renderGraphBody(
       { revision: 1, logDisabled: false, sessions: [] },

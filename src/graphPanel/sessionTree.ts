@@ -7,15 +7,21 @@
 // serializable GraphPanelState the webview renders: session root → turns →
 // tools + subagents, each with a running/completed/failed/interrupted state.
 
-import { EnvelopeV2, costEventsFrom } from "../envelope";
-import { PromptGroup, PromptGroupStore, PromptSubagent } from "../promptGroup";
+import { EnvelopeV2, costEventsFrom, envFrom } from "../envelope";
+import { PromptGroup, PromptGroupStore, PromptSubagent, PromptToolCall } from "../promptGroup";
+import { CostEvent } from "../types";
 import type {
+  CacheStats,
+  CostBreakdown,
   GraphPanelState,
   GraphSessionNode,
   GraphSubagentNode,
   GraphTurnNode,
   NodeState,
+  PermissionEntry,
   SessionPickerItem,
+  TokenBreakdown,
+  ToolStat,
 } from "./protocol";
 
 /** A session with no events for this long (and no SessionEnd) counts as idle, not live. */
@@ -60,10 +66,116 @@ interface SessionMeta {
    * ("" = not in a worktree). Nodes whose worktree differs get the badge.
    */
   baseWorktreePath: string;
+  cwd?: string;
+  host?: string;
+  os?: string;
+  arch?: string;
   startedAt?: string;
   /** Epoch ms of the newest event. */
   lastActivity: number;
   ended: boolean;
+}
+
+// ---- detail aggregation helpers (pure) ----
+
+const emptyTokens = (): TokenBreakdown => ({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 });
+
+function tokensFromRequests(reqs: CostEvent[]): TokenBreakdown {
+  const t = emptyTokens();
+  for (const r of reqs) {
+    t.input += r.tokens.input;
+    t.output += r.tokens.output;
+    t.cacheRead += r.tokens.cache_read;
+    t.cacheWrite += r.tokens.cache_write;
+  }
+  return t;
+}
+
+function costFromRequests(reqs: CostEvent[]): CostBreakdown {
+  const c: CostBreakdown = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 };
+  for (const r of reqs) {
+    c.input += r.cost.input;
+    c.output += r.cost.output;
+    c.cacheRead += r.cost.cache_read;
+    c.cacheWrite += r.cost.cache_write;
+    c.total += r.cost.total;
+  }
+  return c;
+}
+
+// Prompt-cache stats. savingsUsd = spend avoided by serving cacheRead tokens
+// from cache instead of as fresh input, priced per-request from that request's
+// own input rate (cost.input / input tokens) — real prices, not a fixed ratio.
+function cacheFromRequests(reqs: CostEvent[], tokens: TokenBreakdown): CacheStats {
+  let savings = 0;
+  let derivable = false;
+  for (const r of reqs) {
+    if (r.tokens.input > 0 && r.cost.input > 0 && r.tokens.cache_read > 0) {
+      const inputRate = r.cost.input / r.tokens.input;
+      savings += Math.max(0, r.tokens.cache_read * inputRate - r.cost.cache_read);
+      derivable = true;
+    }
+  }
+  const denom = tokens.cacheRead + tokens.input;
+  return {
+    hitRate: denom > 0 ? tokens.cacheRead / denom : undefined,
+    readTokens: tokens.cacheRead,
+    writeTokens: tokens.cacheWrite,
+    savingsUsd: derivable ? savings : undefined,
+  };
+}
+
+function toolStatsFrom(calls: PromptToolCall[]): ToolStat[] {
+  const byName = new Map<string, ToolStat>();
+  for (const c of calls) {
+    const name = c.name || "tool";
+    let s = byName.get(name);
+    if (!s) {
+      s = { name, count: 0, failed: 0, mcpServer: c.mcpServer, skill: c.skill, agentType: c.agentType };
+      byName.set(name, s);
+    }
+    s.count += 1;
+    if (!c.ok) s.failed += 1;
+    if (c.durationMs !== undefined) s.totalMs = (s.totalMs ?? 0) + c.durationMs;
+  }
+  return [...byName.values()].sort((a, b) => b.count - a.count);
+}
+
+function distinct(values: (string | undefined)[]): string[] {
+  const out: string[] = [];
+  for (const v of values) {
+    if (v && !out.includes(v)) out.push(v);
+  }
+  return out;
+}
+
+function mergeTokens(into: TokenBreakdown, add: TokenBreakdown): void {
+  into.input += add.input;
+  into.output += add.output;
+  into.cacheRead += add.cacheRead;
+  into.cacheWrite += add.cacheWrite;
+}
+
+function mergeToolStats(into: Map<string, ToolStat>, stats: ToolStat[]): void {
+  for (const s of stats) {
+    const cur = into.get(s.name);
+    if (!cur) {
+      into.set(s.name, { ...s });
+    } else {
+      cur.count += s.count;
+      cur.failed += s.failed;
+      if (s.totalMs !== undefined) cur.totalMs = (cur.totalMs ?? 0) + s.totalMs;
+    }
+  }
+}
+
+function permissionsFrom(g: PromptGroup): PermissionEntry[] | undefined {
+  if (g.permissions.length === 0) return undefined;
+  return g.permissions.map((p) => ({ decision: p.decision, toolName: p.toolName, mcpServer: p.mcpServer }));
+}
+
+function nonEmpty<T>(arr: T[]): T[] | undefined {
+  return arr.length > 0 ? arr : undefined;
 }
 
 export class SessionTreeStore {
@@ -80,6 +192,13 @@ export class SessionTreeStore {
     if (model) m.model = model;
     if (env.vcs.repo) m.repo = env.vcs.repo;
     if (env.vcs.branch) m.branch = env.vcs.branch;
+    const e = envFrom(env);
+    if (e) {
+      if (e.cwd) m.cwd = e.cwd;
+      if (e.host) m.host = e.host;
+      if (e.os) m.os = e.os_version ? `${e.os} ${e.os_version}` : e.os;
+      if (e.arch) m.arch = e.arch;
+    }
     if (!m.startedAt) m.startedAt = env.capturedAt;
     if (env.hookEvent === "SessionEnd") {
       m.ended = true;
@@ -168,6 +287,45 @@ export class SessionTreeStore {
     );
     let usd = 0;
     for (const t of turns) usd += t.usdTotal ?? 0;
+
+    // Session-wide detail: fold the kept turns' lead breakdowns together (the
+    // per-turn tokens/cost already exclude subagents; subagent USD is in usd).
+    const tokens = emptyTokens();
+    const cost: CostBreakdown = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 };
+    const toolMap = new Map<string, ToolStat>();
+    const models: (string | undefined)[] = [m.model];
+    const mcpServers: (string | undefined)[] = [];
+    const skills: (string | undefined)[] = [];
+    let savings = 0;
+    let savingsSeen = false;
+    for (const g of kept) {
+      mergeTokens(tokens, tokensFromRequests(g.requests));
+      const c = costFromRequests(g.requests);
+      cost.input += c.input;
+      cost.output += c.output;
+      cost.cacheRead += c.cacheRead;
+      cost.cacheWrite += c.cacheWrite;
+      cost.total += c.total;
+      mergeToolStats(toolMap, toolStatsFrom(g.toolCalls));
+      for (const r of g.requests) models.push(r.model);
+      for (const cl of g.toolCalls) {
+        mcpServers.push(cl.mcpServer);
+        skills.push(cl.skill);
+      }
+      const gc = cacheFromRequests(g.requests, tokensFromRequests(g.requests));
+      if (gc.savingsUsd !== undefined) {
+        savings += gc.savingsUsd;
+        savingsSeen = true;
+      }
+    }
+    const hasTokens = tokens.input + tokens.output + tokens.cacheRead + tokens.cacheWrite > 0;
+    const denom = tokens.cacheRead + tokens.input;
+    const toolStats = [...toolMap.values()].sort((a, b) => b.count - a.count);
+    const durationMs =
+      m.startedAt !== undefined && m.lastActivity > 0 && !Number.isNaN(parseTs(m.startedAt))
+        ? Math.max(0, m.lastActivity - parseTs(m.startedAt))
+        : undefined;
+
     return {
       key: m.key,
       tool: m.tool,
@@ -182,6 +340,26 @@ export class SessionTreeStore {
       turns,
       droppedTurns: this.store.droppedFor(m.key) + (groups.length - kept.length),
       usdTotal: usd > 0 ? usd : undefined,
+      // ---- detail ----
+      cwd: m.cwd,
+      host: m.host,
+      os: m.os,
+      arch: m.arch,
+      durationMs,
+      models: nonEmpty(distinct(models)),
+      tokens: hasTokens ? tokens : undefined,
+      cost: hasTokens ? cost : undefined,
+      cache: hasTokens
+        ? {
+            hitRate: denom > 0 ? tokens.cacheRead / denom : undefined,
+            readTokens: tokens.cacheRead,
+            writeTokens: tokens.cacheWrite,
+            savingsUsd: savingsSeen ? savings : undefined,
+          }
+        : undefined,
+      toolStats: nonEmpty(toolStats),
+      mcpServers: nonEmpty(distinct(mcpServers)),
+      skills: nonEmpty(distinct(skills)),
     };
   }
 
@@ -227,6 +405,12 @@ export class SessionTreeStore {
       if (Number.isFinite(span) && span >= 0) durationMs = span;
     }
 
+    // Detail (side panel): full lead token/cost/cache breakdown + every tool.
+    const tokens = tokensFromRequests(g.requests);
+    const cost = costFromRequests(g.requests);
+    const cache = cacheFromRequests(g.requests, tokens);
+    const toolStats = toolStatsFrom(g.toolCalls);
+
     return {
       id: g.id,
       kind: g.kind,
@@ -240,6 +424,21 @@ export class SessionTreeStore {
       usdTotal: usd > 0 ? usd : undefined,
       worktreeBadge: this.badge(g.worktreePath, m) || undefined,
       worktreePath: g.worktreePath,
+      // ---- detail ----
+      promptFull: g.promptText || undefined,
+      permissionMode: g.permissionMode,
+      promptChars: g.promptStats?.chars,
+      promptWords: g.promptStats?.words,
+      hasAttachments: g.promptStats?.hasAttachments,
+      models: nonEmpty(distinct(g.requests.map((r) => r.model))),
+      requests: g.requests.length || undefined,
+      tokens: g.requests.length > 0 ? tokens : undefined,
+      cost: g.requests.length > 0 ? cost : undefined,
+      cache: g.requests.length > 0 ? cache : undefined,
+      toolStats: nonEmpty(toolStats),
+      mcpServers: nonEmpty(distinct(g.toolCalls.map((c) => c.mcpServer))),
+      skills: nonEmpty(distinct(g.toolCalls.map((c) => c.skill))),
+      permissions: permissionsFrom(g),
     };
   }
 
@@ -262,6 +461,24 @@ export class SessionTreeStore {
     else if (taskFailed) state = "failed";
     else state = "completed";
 
+    // Detail: the subagent's own token usage (priced from its transcript).
+    let tokens: TokenBreakdown | undefined;
+    let cache: CacheStats | undefined;
+    if (s.tokens) {
+      tokens = {
+        input: s.tokens.input,
+        output: s.tokens.output,
+        cacheRead: s.tokens.cache_read,
+        cacheWrite: s.tokens.cache_write,
+      };
+      const denom = tokens.cacheRead + tokens.input;
+      cache = {
+        hitRate: denom > 0 ? tokens.cacheRead / denom : undefined,
+        readTokens: tokens.cacheRead,
+        writeTokens: tokens.cacheWrite,
+      };
+    }
+
     return {
       agentId: s.agentId,
       agentType: s.agentType || "subagent",
@@ -271,6 +488,12 @@ export class SessionTreeStore {
       model: s.model,
       worktreeBadge: this.badge(s.worktreePath, m) || undefined,
       worktreePath: s.worktreePath,
+      // ---- detail ----
+      requests: s.requests,
+      concurrent: s.concurrent,
+      orphanStop: s.orphanStop,
+      tokens,
+      cache,
     };
   }
 

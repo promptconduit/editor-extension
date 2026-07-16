@@ -16,6 +16,16 @@
   `~/.promptconduit/events.jsonl`, ~1s behind your agent, no editor reload,
   nothing sent anywhere. The tree builder, state contract, and renderer are
   editor-agnostic by design, ready to lift into other PromptConduit surfaces.
+- **Click any node to inspect it.** A detail panel opens on the right with the
+  full picture: a turn's complete prompt text, permission mode, per-category
+  **token breakdown** (input / output / cache read / cache write) and the same
+  for cost, a **Memory (prompt cache)** section with the cache-hit rate and an
+  estimated **dollars saved by the cache**, the *complete* per-tool call table
+  (every tool, call counts, failures, time — not just the top chips), the MCP
+  servers, skills, and models used, and permissions requested/denied. Subagent
+  nodes show their own tokens/cost/duration/model; the session root shows
+  working directory, host/OS, and session-wide aggregates. Selection is pure UI
+  and survives the live updates.
 
 ## 0.18.0
 
