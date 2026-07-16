@@ -26,6 +26,10 @@
   nodes show their own tokens/cost/duration/model; the session root shows
   working directory, host/OS, and session-wide aggregates. Selection is pure UI
   and survives the live updates.
+- **Resizable, remembered split.** Drag the divider between the graph and the
+  detail panel to size each to taste; the width is saved as a percentage of the
+  viewport, so it's remembered across reloads and scales to any screen. Stacks
+  vertically on narrow layouts.
 
 ## 0.18.0
 

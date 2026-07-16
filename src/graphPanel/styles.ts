@@ -76,21 +76,34 @@ h1 { font-size: 1.05rem; margin: 1rem 0 0.15rem; display: flex; align-items: cen
         background: var(--vscode-badge-background, #4d4d4d); color: var(--vscode-badge-foreground, #fff); }
 .pill.worktree { background: color-mix(in srgb, var(--accent) 25%, transparent); color: var(--accent); border: 1px solid var(--accent); }
 
-/* ---- two-column layout: graph left, detail right ---- */
-.layout { display: flex; gap: 1.5rem; align-items: flex-start; }
-.graph-col { flex: 1; min-width: 0; }
+/* ---- two-column layout: graph left, resizable detail right ---- */
+.layout { display: flex; align-items: flex-start; }
+.graph-col { flex: 1; min-width: 0; padding-right: 0.4rem; }
 .detail-col {
   width: 24rem; flex: 0 0 24rem;
   position: sticky; top: 3rem;
   max-height: calc(100vh - 4rem); overflow-y: auto;
-  border-left: 1px solid var(--hairline);
   padding: 0.2rem 0 1rem 1.2rem;
   font-size: 0.85rem;
 }
+/* Drag handle between the columns; a hairline that thickens on hover/drag. */
+.divider {
+  flex: 0 0 auto; align-self: stretch;
+  width: 9px; margin: 0 -1px; cursor: col-resize;
+  position: relative; z-index: 6;
+  background: transparent;
+}
+.divider::before {
+  content: ""; position: absolute; top: 0; bottom: 0; left: 4px; width: 1px;
+  background: var(--hairline);
+}
+.divider:hover::before, body.pc-graph-resizing .divider::before { width: 2px; background: var(--accent); }
+body.pc-graph-resizing { cursor: col-resize; user-select: none; }
 @media (max-width: 62rem) {
   .layout { flex-direction: column; }
-  .detail-col { width: 100%; flex-basis: auto; position: static; max-height: none;
-                border-left: none; border-top: 1px solid var(--hairline); padding: 1rem 0 0; }
+  .divider { display: none; }
+  .detail-col { width: 100% !important; flex: 0 0 auto !important; position: static; max-height: none;
+                border-top: 1px solid var(--hairline); padding: 1rem 0 0; }
 }
 
 /* ---- detail panel ---- */

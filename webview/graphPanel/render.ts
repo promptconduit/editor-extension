@@ -468,6 +468,7 @@ export function renderGraphBody(
   const body = state.session
     ? `<div class="layout">
         <div class="graph-col">${headerHtml(state.session, now)}${treeHtml(state.session, selectedId)}</div>
+        <div class="divider" data-divider role="separator" aria-orientation="vertical" title="Drag to resize"></div>
         <aside class="detail-col">${detailHtml(state, now, selectedId)}</aside>
       </div>`
     : emptyHtml(state);
