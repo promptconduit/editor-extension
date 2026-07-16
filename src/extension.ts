@@ -3,6 +3,7 @@ import * as path from "path";
 import * as vscode from "vscode";
 import { CoachingPanel } from "./coachingFeed";
 import { StreamPanel } from "./streamFeed";
+import { GraphPanel } from "./graphPanel/panel";
 import { CostDetailPanel } from "./costPanel/panel";
 import { buildCostPanelState } from "./costPanel/viewModel";
 import { CostStatusBar } from "./statusBar";
@@ -104,13 +105,17 @@ function activateInner(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("promptconduit.visualizer.show", () => {
       VisualizerPanel.show(context.extensionUri);
     }),
+    vscode.commands.registerCommand("promptconduit.graph.show", () => {
+      GraphPanel.show(context.extensionUri);
+    }),
     vscode.commands.registerCommand("promptconduit.refreshPanel", () => {
       // Reload the focused PromptConduit webview in place — picks up an extension
       // update's rebuilt panel bundle without a full window reload.
-      const refreshed = CostDetailPanel.refreshActive() || StreamPanel.refreshActive();
+      const refreshed =
+        CostDetailPanel.refreshActive() || StreamPanel.refreshActive() || GraphPanel.refreshActive();
       if (!refreshed) {
         void vscode.window.showInformationMessage(
-          "Focus a PromptConduit Stream or Cost Breakdown panel, then run Refresh Panel.",
+          "Focus a PromptConduit Stream, Session Graph, or Cost Breakdown panel, then run Refresh Panel.",
         );
       }
     }),
@@ -141,6 +146,16 @@ function activateInner(context: vscode.ExtensionContext): void {
   streamButton.command = "promptconduit.stream.showFeed";
   streamButton.show();
   context.subscriptions.push(streamButton);
+
+  const graphButton = vscode.window.createStatusBarItem(
+    vscode.StatusBarAlignment.Right,
+    97,
+  );
+  graphButton.text = "$(type-hierarchy-sub) Graph";
+  graphButton.tooltip = "Open the live session graph — prompts, tools, subagents, worktrees";
+  graphButton.command = "promptconduit.graph.show";
+  graphButton.show();
+  context.subscriptions.push(graphButton);
 
   terminalFocus = new TerminalFocusController(
     makeTerminalFocusDeps(

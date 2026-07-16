@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.19.0
+
+- **New: live Session Graph — watch your session breathe.** A new editor-tab
+  panel (`PromptConduit: Show Session Graph`, or the `$(type-hierarchy-sub)
+  Graph` status-bar button) renders one AI coding session as a growing tree of
+  graphviz-style boxes: the session root, one box per prompt→Stop turn with
+  its per-turn cost and aggregated tool chips (`Read ×12`, failures in red),
+  and **subagents branching off as nested nodes** with their agent type,
+  duration, per-agent spend, and model. Anything still running pulses; turns
+  end as completed, failed (`StopFailure`), or interrupted (dashed). Nodes
+  that ran in a **different git worktree** than the session get a `⑂` badge.
+  A session picker (live sessions dotted) switches between recent sessions.
+  100% local — the tree grows in place from the tail of
+  `~/.promptconduit/events.jsonl`, ~1s behind your agent, no editor reload,
+  nothing sent anywhere. The tree builder, state contract, and renderer are
+  editor-agnostic by design, ready to lift into other PromptConduit surfaces.
+
 ## 0.18.0
 
 - **Cursor agent-tab detection (best effort) — the gap the latch couldn't

@@ -1,8 +1,8 @@
 {
   "name": "promptconduit",
   "displayName": "PromptConduit",
-  "description": "Local, real-time visibility into your AI coding sessions — live token cost in the status bar, a 3D Orchestration Theater that replays how your agents work, and an offline Agent Coaching report. 100% local.",
-  "version": "0.18.0",
+  "description": "Local, real-time visibility into your AI coding sessions — live token cost in the status bar, a breathing Session Graph of prompts, subagents, and worktrees, a 3D Orchestration Theater that replays how your agents work, and an offline Agent Coaching report. 100% local.",
+  "version": "0.19.0",
   "publisher": "promptconduit",
   "license": "MIT",
   "icon": "resources/icon.png",
@@ -83,6 +83,10 @@
       {
         "command": "promptconduit.visualizer.show",
         "title": "PromptConduit: Show Orchestration Theater"
+      },
+      {
+        "command": "promptconduit.graph.show",
+        "title": "PromptConduit: Show Session Graph"
       },
       {
         "command": "promptconduit.restore.sessions",
@@ -166,7 +170,8 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "capture": "bash scripts/capture-screenshots.sh",
-    "preview": "vite-node dev/preview.ts"
+    "preview": "vite-node dev/preview.ts",
+    "demo:web": "node dev/build-standalone.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.61.1",

@@ -477,6 +477,165 @@ export const samplePromptStoryLines: string[] = [
 
 export const samplePromptStoryJsonl = samplePromptStoryLines.join("\n") + "\n";
 
+// ---------- Session Graph (live tree scene) ----------
+// One Claude Code session exercising every Session Graph node state: a
+// completed turn with tools + a costed subagent, an interrupted turn, a turn
+// whose subagent ran in a DIFFERENT worktree (badge), and a still-open turn
+// with a running subagent (both pulse). Timestamps are recent-relative so the
+// preview page can pass a matching `now`.
+
+export const GRAPH_FIXTURE_NOW = Date.parse("2026-07-06T18:10:00Z");
+
+export const sampleGraphLines: string[] = [
+  v2Envelope("claude-code", "SessionStart", "2026-07-06T18:00:00Z", {
+    sessionId: "cc-graph",
+    repo: "promptconduit/platform",
+    branch: "feat/live-graph",
+    raw: { model: "claude-opus-4-8" },
+  }),
+  // Turn 1: prompt → tools → subagent → Stop with cost. Completed.
+  v2Envelope("claude-code", "UserPromptSubmit", "2026-07-06T18:00:05Z", {
+    sessionId: "cc-graph",
+    promptId: "g1",
+    repo: "promptconduit/platform",
+    branch: "feat/live-graph",
+    raw: { prompt: "map the adapter architecture and find the ingest path" },
+    enrichments: { prompt: { count: 1, chars: 54, words: 10 } },
+  }),
+  v2Envelope("claude-code", "PostToolBatch", "2026-07-06T18:00:20Z", {
+    sessionId: "cc-graph",
+    promptId: "g1",
+    repo: "promptconduit/platform",
+    branch: "feat/live-graph",
+    enrichments: {
+      tools: {
+        total: 9,
+        failed: 1,
+        calls: [
+          { name: "Read", ok: true },
+          { name: "Read", ok: true },
+          { name: "Read", ok: true },
+          { name: "Read", ok: true },
+          { name: "Grep", ok: true },
+          { name: "Grep", ok: true },
+          { name: "Bash", ok: false },
+          { name: "Bash", ok: true },
+          { name: "Edit", ok: true },
+        ],
+      },
+    },
+  }),
+  v2Envelope("claude-code", "SubagentStart", "2026-07-06T18:00:30Z", {
+    sessionId: "cc-graph",
+    promptId: "g1",
+    repo: "promptconduit/platform",
+    branch: "feat/live-graph",
+    raw: { agent_id: "g-a1", agent_type: "Explore" },
+    enrichments: { subagent: { agent_id: "g-a1", agent_type: "Explore", phase: "start", concurrent: 1 } },
+  }),
+  v2Envelope("claude-code", "SubagentStop", "2026-07-06T18:01:55Z", {
+    sessionId: "cc-graph",
+    promptId: "g1",
+    repo: "promptconduit/platform",
+    branch: "feat/live-graph",
+    raw: { agent_id: "g-a1" },
+    enrichments: {
+      subagent: {
+        agent_id: "g-a1",
+        agent_type: "Explore",
+        phase: "stop",
+        duration_ms: 85000,
+        requests: 4,
+        model: "claude-sonnet-5",
+        usd: { total: 0.14, currency: "USD" },
+      },
+    },
+  }),
+  costEnvelope(
+    "claude-code",
+    "2026-07-06T18:02:10Z",
+    "cc-graph",
+    [costRequest({ request_id: "g1-r1", usd: { total: 0.31, currency: "USD" } })],
+    {
+      promptId: "g1",
+      repo: "promptconduit/platform",
+      branch: "feat/live-graph",
+      enrichments: { turn: { duration_ms: 125000, prompt_id: "g1" } },
+    },
+  ),
+  // Turn 2: interrupted by turn 3's prompt.
+  v2Envelope("claude-code", "UserPromptSubmit", "2026-07-06T18:03:00Z", {
+    sessionId: "cc-graph",
+    promptId: "g2",
+    repo: "promptconduit/platform",
+    branch: "feat/live-graph",
+    raw: { prompt: "now wire the ingest into the new panel" },
+    enrichments: { prompt: { count: 2, chars: 38, words: 8 } },
+  }),
+  v2Envelope("claude-code", "PostToolUse", "2026-07-06T18:03:20Z", {
+    sessionId: "cc-graph",
+    promptId: "g2",
+    repo: "promptconduit/platform",
+    branch: "feat/live-graph",
+    enrichments: { tools: { total: 2, calls: [{ name: "Edit", ok: true }, { name: "Edit", ok: true }] } },
+  }),
+  // Turn 3 (interrupts turn 2): fans out a worktree subagent + a running one.
+  v2Envelope("claude-code", "UserPromptSubmit", "2026-07-06T18:08:00Z", {
+    sessionId: "cc-graph",
+    promptId: "g3",
+    repo: "promptconduit/platform",
+    branch: "feat/live-graph",
+    raw: { prompt: "wait — run the fix in a worktree and keep exploring in parallel" },
+    enrichments: { prompt: { count: 3, chars: 63, words: 12, is_interrupt: true } },
+  }),
+  v2Envelope("claude-code", "SubagentStart", "2026-07-06T18:08:10Z", {
+    sessionId: "cc-graph",
+    promptId: "g3",
+    repo: "promptconduit/platform",
+    branch: "feat/live-graph",
+    worktree: true, // vcs.worktree = { is_worktree: true, path: "/worktrees/x" }
+    raw: { agent_id: "g-a2", agent_type: "claude" },
+    enrichments: { subagent: { agent_id: "g-a2", agent_type: "claude", phase: "start", concurrent: 2 } },
+  }),
+  v2Envelope("claude-code", "SubagentStop", "2026-07-06T18:09:30Z", {
+    sessionId: "cc-graph",
+    promptId: "g3",
+    repo: "promptconduit/platform",
+    branch: "feat/live-graph",
+    worktree: true,
+    raw: { agent_id: "g-a2" },
+    enrichments: {
+      subagent: {
+        agent_id: "g-a2",
+        agent_type: "claude",
+        phase: "stop",
+        duration_ms: 80000,
+        model: "claude-opus-4-8",
+        usd: { total: 0.22, currency: "USD" },
+      },
+    },
+  }),
+  v2Envelope("claude-code", "SubagentStart", "2026-07-06T18:09:40Z", {
+    sessionId: "cc-graph",
+    promptId: "g3",
+    repo: "promptconduit/platform",
+    branch: "feat/live-graph",
+    raw: { agent_id: "g-a3", agent_type: "Explore" },
+    enrichments: { subagent: { agent_id: "g-a3", agent_type: "Explore", phase: "start", concurrent: 2 } },
+  }),
+  v2Envelope("claude-code", "PostToolUse", "2026-07-06T18:09:50Z", {
+    sessionId: "cc-graph",
+    promptId: "g3",
+    repo: "promptconduit/platform",
+    branch: "feat/live-graph",
+    enrichments: { tools: { total: 3, calls: [{ name: "Read", ok: true }, { name: "Write", ok: true }, { name: "Bash", ok: true }] } },
+  }),
+  // No Stop for g3 and no SessionEnd: turn 3 + subagent g-a3 + the session all
+  // render as running/live against GRAPH_FIXTURE_NOW.
+];
+
+export const sampleGraphJsonl = sampleGraphLines.join("\n") + "\n";
+
 // ---------- Orchestration Theater (multi-agent scene) ----------
 // A single Claude Code session that fans out to three parallel subagents, each
 // running a few tools, then converges. buildScene() reads raw_event.session_id /

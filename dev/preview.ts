@@ -18,6 +18,9 @@ import type { CostPanelState } from "../src/costPanel/protocol";
 import { buildStreamPanelState, parseStreamLine, StreamState } from "../src/streamFeed";
 import { STREAM_PANEL_CSS } from "../src/streamPanel/styles";
 import type { StreamPanelState } from "../src/streamPanel/protocol";
+import { SessionTreeStore } from "../src/graphPanel/sessionTree";
+import { GRAPH_PANEL_CSS } from "../src/graphPanel/styles";
+import type { GraphPanelState } from "../src/graphPanel/protocol";
 import { signalsSummary } from "../src/statusBar";
 import { parseEnvelopeLine, reduceToSnapshot, reduceToTrends } from "../src/coaching/derive";
 import { buildCoachingInsights } from "../src/coaching/insights";
@@ -29,6 +32,8 @@ import {
   sampleStreamLines,
   samplePromptStoryLines,
   sampleEnrichmentLines,
+  sampleGraphLines,
+  GRAPH_FIXTURE_NOW,
   heavySummary,
   cleanSummary,
 } from "./fixtures";
@@ -98,6 +103,41 @@ function streamPanelPage(state: StreamPanelState): string {
 </body></html>`;
 }
 
+// Session Graph: run the graph fixture through the REAL pipeline
+// (parseEnvelopeV2 → SessionTreeStore → snapshot) and load the actual esbuild
+// webview bundle with the same vscode-api shim — picker, wires, and the
+// breathing pulse all work.
+function graphPanelStateFromFixtures(lines: string[]): GraphPanelState {
+  const store = new SessionTreeStore();
+  for (const line of lines) {
+    const env = parseEnvelopeV2(line);
+    if (env) store.ingest(env);
+  }
+  return { revision: 1, logDisabled: false, ...store.snapshot(undefined, GRAPH_FIXTURE_NOW) };
+}
+
+function graphPanelPage(state: GraphPanelState): string {
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8" />
+<style>${THEME}${GRAPH_PANEL_CSS}</style></head>
+<body>
+<div id="app"></div>
+<script>
+  const STATE = { type: "state", state: ${JSON.stringify(state)} };
+  window.acquireVsCodeApi = function () {
+    return {
+      postMessage: function (msg) {
+        if (msg && msg.type === "ready") {
+          window.dispatchEvent(new MessageEvent("message", { data: STATE }));
+        }
+      },
+      getState() {}, setState() {},
+    };
+  };
+</script>
+<script src="../../media/graphPanel.js"></script>
+</body></html>`;
+}
+
 // Cost Breakdown detail report: run the story fixture through the REAL
 // pipeline (ConversationStore -> buildCostPanelState) and load the actual
 // esbuild webview bundle with a tiny vscode-api shim, exactly like the
@@ -163,6 +203,11 @@ const pages: Record<string, string> = {
   "stream.html": streamPanelPage(streamPanelStateFromFixtures()),
   "stream-drilled.html": streamPanelPage(streamPanelStateFromFixtures("cc-1")),
   "stream-empty.html": streamPanelPage(buildStreamPanelState(new StreamState(), 1, false)),
+  "graph.html": graphPanelPage(graphPanelStateFromFixtures(sampleGraphLines)),
+  "graph-multi.html": graphPanelPage(
+    graphPanelStateFromFixtures([...sampleGraphLines, ...samplePromptStoryLines]),
+  ),
+  "graph-empty.html": graphPanelPage(graphPanelStateFromFixtures([])),
   "landing.html": themed(landingHtml(), false),
   "tooltip.html": themed(
     `<h3>Status-bar tooltip headline <code>signalsSummary()</code></h3>

@@ -41,6 +41,8 @@ export interface PromptSubagent {
   usdTotal?: number;
   /** Stop arrived with no matching start; startedAt is back-computed when possible. */
   orphanStop?: boolean;
+  /** Worktree the subagent ran in (vcs.worktree), when it ran in one. */
+  worktreePath?: string;
 }
 
 /** Pretty-printed envelope JSON kept for the raw-inspector view. */
@@ -65,6 +67,10 @@ export interface PromptGroup {
   permissionMode?: string;
   promptStats?: { chars?: number; words?: number; hasAttachments?: boolean };
   interrupted?: boolean;
+  /** The turn ended with StopFailure rather than a clean Stop. */
+  stopFailed?: boolean;
+  /** Worktree the turn's events ran in (vcs.worktree), when they ran in one. */
+  worktreePath?: string;
   startedAt?: string;
   endedAt?: string;
   turnDurationMs?: number;
@@ -134,6 +140,11 @@ function conversationKeyOf(env: EnvelopeV2): string {
   return env.sessionId || str(env.raw.session_id);
 }
 
+/** The worktree an event ran in (vcs.worktree), or undefined outside one. */
+function worktreeOf(env: EnvelopeV2): string | undefined {
+  return env.vcs.is_worktree ? env.vcs.worktree_path : undefined;
+}
+
 /**
  * PromptGroupStore correlates envelope events into per-prompt groups per
  * conversation. Everything uses ARRIVAL order, not timestamps; re-ingesting
@@ -145,6 +156,8 @@ export class PromptGroupStore {
   /** Every group across all conversations, creation order (raw-budget eviction). */
   private groupOrder: PromptGroup[] = [];
   private rawBytes = 0;
+  /** retainRaw:false skips raw-JSON storage entirely (metadata-only consumers). */
+  constructor(private readonly opts: { retainRaw?: boolean } = {}) {}
 
   /** Ingest one envelope; costEvents = costEventsFrom(env), passed by the caller. */
   record(env: EnvelopeV2, costEvents: CostEvent[]): void {
@@ -179,6 +192,7 @@ export class PromptGroupStore {
         break;
       case "Stop":
       case "stop": // Cursor emits lowercase stop for its per-prompt generations
+      case "StopFailure":
         this.onStop(conv, env, costEvents);
         break;
       case "PermissionRequest":
@@ -222,7 +236,7 @@ export class PromptGroupStore {
   // Rule 2: promptId from the envelope, else (Stop only) the turn slug's prompt_id.
   private pidOf(env: EnvelopeV2): string | undefined {
     if (env.promptId) return env.promptId;
-    if (env.hookEvent === "Stop" || env.hookEvent === "stop") {
+    if (env.hookEvent === "Stop" || env.hookEvent === "stop" || env.hookEvent === "StopFailure") {
       const pid = str(obj(env.enrichments.turn).prompt_id);
       if (pid) return pid;
     }
@@ -338,6 +352,8 @@ export class PromptGroupStore {
       };
     }
     g.startedAt = env.capturedAt;
+    const wt = worktreeOf(env);
+    if (wt) g.worktreePath = wt;
     conv.openId = g.id;
     g.rev += 1;
     this.attachRaw(g, env);
@@ -345,6 +361,8 @@ export class PromptGroupStore {
 
   private onTools(conv: Conversation, env: EnvelopeV2): void {
     const g = this.target(conv, env);
+    const wt = worktreeOf(env);
+    if (wt) g.worktreePath = wt;
     const calls = toolsFrom(env)?.calls ?? [];
     for (const c of calls) {
       if (g.toolCalls.length >= TOOL_CALLS_CAP) {
@@ -379,6 +397,8 @@ export class PromptGroupStore {
         rec.agentType = slug?.agent_type || str(env.raw.agent_type) || rec.agentType;
         rec.startedAt = env.capturedAt;
         if (slug?.concurrent !== undefined) rec.concurrent = slug.concurrent;
+        const wt = worktreeOf(env);
+        if (wt) rec.worktreePath = wt;
       }
     }
     g.rev += 1;
@@ -440,13 +460,16 @@ export class PromptGroupStore {
     }
     if (slug?.usd?.total !== undefined) rec.usdTotal = slug.usd.total;
     rec.endedAt = env.capturedAt;
+    const wt = worktreeOf(env);
+    if (wt) rec.worktreePath = wt;
 
     host.rev += 1;
     this.attachRaw(host, env);
   }
 
   // Rule 6: a Stop closes its prompt's group, or opens an "uncaptured" one
-  // (Cursor's normal generation-per-prompt path).
+  // (Cursor's normal generation-per-prompt path). StopFailure closes the same
+  // way but marks the group failed.
   private onStop(conv: Conversation, env: EnvelopeV2, costEvents: CostEvent[]): void {
     const pid = this.pidOf(env);
     let g = pid ? conv.byId.get(pid) : undefined;
@@ -459,6 +482,9 @@ export class PromptGroupStore {
     }
     const turnDur = numOpt(obj(env.enrichments.turn).duration_ms);
     if (turnDur !== undefined) g.turnDurationMs = turnDur;
+    if (env.hookEvent === "StopFailure") g.stopFailed = true;
+    const wt = worktreeOf(env);
+    if (wt) g.worktreePath = wt;
     g.endedAt = env.capturedAt;
     this.closeGroup(conv, g);
     g.rev += 1;
@@ -479,8 +505,11 @@ export class PromptGroupStore {
 
   // Rule 7: keep pretty-printed envelope JSON per routed event, truncated at
   // 32 KiB, capped at 60/group, under a global 8 MB budget (evict json from
-  // the OLDEST groups first; metadata is never evicted).
+  // the OLDEST groups first; metadata is never evicted). Skipped entirely for
+  // retainRaw:false stores (e.g. the session graph, which never shows raw JSON
+  // and would otherwise duplicate the cost panel's copy).
   private attachRaw(g: PromptGroup, env: EnvelopeV2): void {
+    if (this.opts.retainRaw === false) return;
     if (g.rawEvents.length >= RAW_EVENTS_CAP) return;
     let json: string | undefined;
     let truncated = false;
