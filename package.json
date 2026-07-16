@@ -171,7 +171,8 @@
     "test:e2e": "playwright test",
     "capture": "bash scripts/capture-screenshots.sh",
     "preview": "vite-node dev/preview.ts",
-    "demo:web": "node dev/build-standalone.mjs"
+    "demo:web": "node dev/build-standalone.mjs",
+    "build:cli-graph": "node dev/build-cli-bundle.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.61.1",
