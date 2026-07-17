@@ -358,6 +358,78 @@ describe("PromptGroupStore subagents", () => {
   });
 });
 
+describe("PromptGroupStore StopFailure", () => {
+  it("closes the open group and marks it stopFailed", () => {
+    const store = new PromptGroupStore();
+    ingest(store, [
+      v2Envelope("claude-code", "UserPromptSubmit", "2026-07-06T17:00:00Z", {
+        sessionId: "cc-sf",
+        promptId: "p1",
+        raw: { prompt: "break things" },
+      }),
+      v2Envelope("claude-code", "StopFailure", "2026-07-06T17:00:20Z", {
+        sessionId: "cc-sf",
+        enrichments: { turn: { duration_ms: 20000, prompt_id: "p1" } },
+      }),
+    ]);
+    const [g] = store.groupsFor("cc-sf");
+    expect(g.id).toBe("p1"); // resolved via the turn slug's prompt_id
+    expect(g.stopFailed).toBe(true);
+    expect(g.endedAt).toBe("2026-07-06T17:00:20Z");
+    expect(g.turnDurationMs).toBe(20000);
+  });
+
+  it("a clean Stop leaves stopFailed unset", () => {
+    const store = new PromptGroupStore();
+    ingest(store, happyPathLines("cc-clean", "p1"));
+    expect(store.groupsFor("cc-clean")[0].stopFailed).toBeUndefined();
+  });
+});
+
+describe("PromptGroupStore worktree capture", () => {
+  it("stamps worktreePath on the group and its subagents from vcs.worktree", () => {
+    const store = new PromptGroupStore();
+    ingest(store, [
+      v2Envelope("claude-code", "UserPromptSubmit", "2026-07-06T17:00:00Z", {
+        sessionId: "cc-wt",
+        promptId: "p1",
+        raw: { prompt: "fix in a worktree" },
+        worktree: true, // vcs.worktree = { is_worktree: true, path: "/worktrees/x" }
+      }),
+      v2Envelope("claude-code", "SubagentStart", "2026-07-06T17:00:05Z", {
+        sessionId: "cc-wt",
+        promptId: "p1",
+        raw: { agent_id: "a1", agent_type: "Explore" },
+        worktree: true,
+        enrichments: { subagent: { agent_id: "a1", agent_type: "Explore", phase: "start" } },
+      }),
+    ]);
+    const [g] = store.groupsFor("cc-wt");
+    expect(g.worktreePath).toBe("/worktrees/x");
+    expect(g.subagents[0].worktreePath).toBe("/worktrees/x");
+  });
+
+  it("leaves worktreePath unset outside a worktree", () => {
+    const store = new PromptGroupStore();
+    ingest(store, happyPathLines("cc-nowt", "p1"));
+    const [g] = store.groupsFor("cc-nowt");
+    expect(g.worktreePath).toBeUndefined();
+  });
+});
+
+describe("PromptGroupStore retainRaw:false", () => {
+  it("keeps all correlation metadata but stores no raw JSON", () => {
+    const store = new PromptGroupStore({ retainRaw: false });
+    ingest(store, happyPathLines("cc-noraw", "p1"));
+    const [g] = store.groupsFor("cc-noraw");
+    expect(g.kind).toBe("prompt");
+    expect(g.promptText).toBe("add tests for the parser");
+    expect(g.toolCalls).toHaveLength(3);
+    expect(g.requests).toHaveLength(2);
+    expect(g.rawEvents).toHaveLength(0);
+  });
+});
+
 describe("PromptGroupStore idempotence (dedup)", () => {
   it("re-ingesting the same lines changes nothing (log rotation re-read)", () => {
     const store = new PromptGroupStore();
