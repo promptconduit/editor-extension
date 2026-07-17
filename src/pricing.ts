@@ -81,6 +81,13 @@ export const PRICING: Record<string, ModelPrice> = {
     cacheWrite5m: 0.00001875,
     cacheWrite1h: 0.00003,
   },
+  "claude-sonnet-5": {
+    input: 0.000003,
+    output: 0.000015,
+    cacheRead: 0.0000003,
+    cacheWrite5m: 0.00000375,
+    cacheWrite1h: 0.000006,
+  },
   "claude-sonnet-4-6": {
     input: 0.000003,
     output: 0.000015,
