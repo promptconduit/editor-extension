@@ -2,7 +2,7 @@
   "name": "promptconduit",
   "displayName": "PromptConduit",
   "description": "Local, real-time visibility into your AI coding sessions — live token cost in the status bar, a breathing Session Graph of prompts, subagents, and worktrees, a 3D Orchestration Theater that replays how your agents work, and an offline Agent Coaching report. 100% local.",
-  "version": "0.19.0",
+  "version": "0.20.0",
   "publisher": "promptconduit",
   "license": "MIT",
   "icon": "resources/icon.png",
@@ -87,6 +87,10 @@
       {
         "command": "promptconduit.graph.show",
         "title": "PromptConduit: Show Session Graph"
+      },
+      {
+        "command": "promptconduit.feedback.send",
+        "title": "PromptConduit: Send Feedback"
       },
       {
         "command": "promptconduit.restore.sessions",

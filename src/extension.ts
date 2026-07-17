@@ -4,6 +4,7 @@ import * as vscode from "vscode";
 import { CoachingPanel } from "./coachingFeed";
 import { StreamPanel } from "./streamFeed";
 import { GraphPanel } from "./graphPanel/panel";
+import { sendFeedback } from "./feedback";
 import { CostDetailPanel } from "./costPanel/panel";
 import { buildCostPanelState } from "./costPanel/viewModel";
 import { CostStatusBar } from "./statusBar";
@@ -107,6 +108,9 @@ function activateInner(context: vscode.ExtensionContext): void {
     }),
     vscode.commands.registerCommand("promptconduit.graph.show", () => {
       GraphPanel.show(context.extensionUri);
+    }),
+    vscode.commands.registerCommand("promptconduit.feedback.send", () => {
+      void sendFeedback(context.extension.packageJSON.version as string);
     }),
     vscode.commands.registerCommand("promptconduit.refreshPanel", () => {
       // Reload the focused PromptConduit webview in place — picks up an extension

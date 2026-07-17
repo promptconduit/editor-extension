@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.20.0
+
+- **Send Feedback.** A new command — `PromptConduit: Send Feedback` — lets you
+  fire a note (idea, bug, or just a thought) straight to the team without
+  leaving the editor. It's an explicit, user-initiated send: you type the
+  message and choose to send it; no session or event data is included, only the
+  note plus which editor/version it came from. Anonymous — no account needed.
+
 ## 0.19.0
 
 - **New: live Session Graph — watch your session breathe.** A new editor-tab
