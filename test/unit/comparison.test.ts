@@ -92,11 +92,11 @@ describe("compareModels tool-aware sets", () => {
     expect(other).toHaveLength(3);
   });
 
-  it("composer cache tokens are priced at 0 (Cursor publishes no cache rate) and NOT flagged derived", () => {
+  it("composer cache-read is priced from Cursor docs; cache-write stays 0", () => {
     const cursor = compareModels(opusActual(), "cursor") as ModelComparison[];
     const composer = cursor.find((c) => c.model === "composer-2.5")!;
-    // 1000×0.0000005 + 500×0.0000025 + cache priced at 0
-    expect(composer.altUsd).toBeCloseTo(0.0005 + 0.00125, 10);
+    // 1000×0.0000005 + 500×0.0000025 + 10000×0.0000002 + 2000×0
+    expect(composer.altUsd).toBeCloseTo(0.0005 + 0.00125 + 0.002, 10);
     expect(composer.derivedCacheRates).toBe(false);
   });
 
@@ -116,9 +116,13 @@ describe("cacheRatesFor derivation", () => {
     expect(r.cacheWrite5m).toBeCloseTo(0.000005, 12);
   });
 
-  it("keeps composer cache at 0 without the derived flag", () => {
-    const r = cacheRatesFor("composer-2.5", { input: 0.0000005, output: 0.0000025 });
-    expect(r).toEqual({ cacheRead: 0, cacheWrite5m: 0, derived: false });
+  it("keeps composer cache-write at 0 without the derived flag", () => {
+    const r = cacheRatesFor("composer-2.5", {
+      input: 0.0000005,
+      output: 0.0000025,
+      cacheRead: 0.0000002,
+    });
+    expect(r).toEqual({ cacheRead: 0.0000002, cacheWrite5m: 0, derived: false });
   });
 
   it("passes through real cache rates untouched", () => {

@@ -27,11 +27,14 @@ describe("resolvePrice exact lookups", () => {
     expect(r!.price.cacheWrite1h).toBe(0.000006);
   });
 
-  it("returns composer-2.5 with no cache rates (Cursor publishes none)", () => {
+  it("returns composer-2.5 with cache-read only (no cache-write rate)", () => {
     const r = resolvePrice("composer-2.5");
     expect(r!.key).toBe("composer-2.5");
-    expect(r!.price).toEqual({ input: 0.0000005, output: 0.0000025 });
-    expect(r!.price.cacheRead).toBeUndefined();
+    expect(r!.price).toEqual({
+      input: 0.0000005,
+      output: 0.0000025,
+      cacheRead: 0.0000002,
+    });
     expect(r!.price.cacheWrite5m).toBeUndefined();
   });
 
@@ -39,6 +42,25 @@ describe("resolvePrice exact lookups", () => {
     const r = resolvePrice("composer-2.5-fast");
     expect(r!.key).toBe("composer-2.5-fast");
     expect(r!.price.input).toBe(0.000003);
+    expect(r!.price.cacheRead).toBe(0.0000005);
+  });
+
+  it("resolves claude-sonnet-5 and thinking suffix variants", () => {
+    const r = resolvePrice("claude-sonnet-5-thinking-high");
+    expect(r!.key).toBe("claude-sonnet-5");
+    expect(r!.price.input).toBe(0.000003);
+  });
+
+  it("resolves cursor-grok-4.6-fast via alias, not the standard rate", () => {
+    const r = resolvePrice("cursor-grok-4.6-high-fast");
+    expect(r!.key).toBe("cursor-grok-4.6-fast");
+    expect(r!.price.input).toBe(0.000004);
+  });
+
+  it("resolves gemini-3.7-flash-high via suffix trim", () => {
+    const r = resolvePrice("gemini-3.7-flash-high");
+    expect(r!.key).toBe("gemini-3.7-flash");
+    expect(r!.price.output).toBe(0.0000035);
   });
 });
 
@@ -105,9 +127,16 @@ describe("COMPARISON_MODELS", () => {
       "claude-haiku-4-5",
     ]);
     expect(COMPARISON_MODELS.cursor).toEqual([
-      ...COMPARISON_MODELS.claudeCode,
+      "claude-fable-5",
+      "claude-opus-4-8",
+      "claude-opus-5",
+      "claude-sonnet-4-6",
+      "claude-sonnet-5",
+      "claude-haiku-4-5",
       "composer-2.5",
       "composer-2.5-fast",
+      "cursor-grok-4.6",
+      "cursor-grok-4.6-fast",
     ]);
   });
 });
