@@ -20,9 +20,8 @@ export interface ModelComparison {
 export const COMPARISON_CAVEAT =
   "Assumes the identical token counts you actually used — a different model would likely take different turns, tokens, and cache behavior. Treat this as a rate comparison, not a capability comparison.";
 
-// Cursor's Composer models publish no cache rates at all (see the pricing
-// table comment); the CLI prices their cache tokens at 0 and we mirror that
-// rather than inventing rates Cursor never published. For any OTHER model
+// Cursor's Composer/Grok models publish cache-read only (see the pricing
+// table comment); cache-write tokens stay at 0. For any OTHER model whose
 // whose cache rates are missing/zero while its input rate is priced, we
 // derive them from Anthropic's documented multipliers (read = 0.1x input,
 // 5m write = 1.25x input) and flag derivedCacheRates so the UI can say so.
@@ -37,8 +36,8 @@ export function cacheRatesFor(key: string, price: ModelPrice): {
   if (!missing) {
     return { cacheRead, cacheWrite5m, derived: false };
   }
-  if (key.startsWith("composer-")) {
-    // Genuinely priced at 0 upstream — keep 0, not "derived".
+  if (key.startsWith("composer-") || key.startsWith("cursor-grok-")) {
+    // Cache-write genuinely unpriced upstream — keep 0, not "derived".
     return { cacheRead, cacheWrite5m, derived: false };
   }
   return {

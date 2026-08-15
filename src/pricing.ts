@@ -88,6 +88,13 @@ export const PRICING: Record<string, ModelPrice> = {
     cacheWrite5m: 0.00000375,
     cacheWrite1h: 0.000006,
   },
+  "claude-opus-5": {
+    input: 0.000005,
+    output: 0.000025,
+    cacheRead: 0.0000005,
+    cacheWrite5m: 0.00000625,
+    cacheWrite1h: 0.00001,
+  },
   "claude-sonnet-4-6": {
     input: 0.000003,
     output: 0.000015,
@@ -123,17 +130,70 @@ export const PRICING: Record<string, ModelPrice> = {
     cacheWrite5m: 0.000001,
     cacheWrite1h: 0.0000016,
   },
-  // Cursor's own Composer models. Cursor publishes input/output rates only —
-  // no cache rates — so cache tokens are (deliberately) priced at 0, matching
-  // the CLI. The exact "-fast" key must exist so it doesn't suffix-trim down
-  // to the cheaper standard rate.
+  "gemini-3.5-flash": {
+    input: 0.0000015,
+    output: 0.000009,
+    cacheRead: 0.00000015,
+  },
+  "gemini-3.6-flash": {
+    input: 0.0000015,
+    output: 0.0000075,
+    cacheRead: 0.00000015,
+  },
+  "gemini-3.7-flash": {
+    input: 0.00000075,
+    output: 0.0000035,
+    cacheRead: 0.000000075,
+  },
+  "glm-5.2": {
+    input: 0.0000014,
+    output: 0.0000044,
+    cacheRead: 0.00000026,
+  },
+  "gpt-5.6-sol": {
+    input: 0.000005,
+    output: 0.00003,
+    cacheRead: 0.0000005,
+    cacheWrite5m: 0.00000625,
+  },
+  "kimi-k3": {
+    input: 0.000003,
+    output: 0.000015,
+    cacheRead: 0.0000003,
+  },
+  // Cursor first-party and third-party model rates from cursor.com/docs/models-and-pricing.
+  // Composer/Grok publish cache-read only. The exact "-fast" key must exist so
+  // suffix-trim doesn't land on the cheaper standard rate; Grok fast slugs are
+  // aliased below.
+  "cursor-grok-4.6-fast": {
+    input: 0.000004,
+    output: 0.000012,
+    cacheRead: 0.000001,
+  },
+  "cursor-grok-4.6": {
+    input: 0.000002,
+    output: 0.000006,
+    cacheRead: 0.0000005,
+  },
+  "cursor-grok-4.5-fast": {
+    input: 0.000004,
+    output: 0.000012,
+    cacheRead: 0.000001,
+  },
+  "cursor-grok-4.5": {
+    input: 0.000002,
+    output: 0.000006,
+    cacheRead: 0.0000005,
+  },
   "composer-2.5-fast": {
     input: 0.000003,
     output: 0.000015,
+    cacheRead: 0.0000005,
   },
   "composer-2.5": {
     input: 0.0000005,
     output: 0.0000025,
+    cacheRead: 0.0000002,
   },
 };
 
@@ -154,6 +214,8 @@ export const MODEL_ALIASES: Record<string, string> = {
   "composer-1": "cursor-composer-1",
   "claude-4.5-sonnet": "claude-sonnet-4-5",
   "claude-4.5-opus": "claude-opus-4-5",
+  "cursor-grok-4.6-high-fast": "cursor-grok-4.6-fast",
+  "cursor-grok-4.5-high-fast": "cursor-grok-4.5-fast",
 };
 
 // resolvePrice mirrors PriceTable.ResolvePrice in pricing.go. Resolution
@@ -208,9 +270,13 @@ export const COMPARISON_MODELS: { claudeCode: string[]; cursor: string[] } = {
   cursor: [
     "claude-fable-5",
     "claude-opus-4-8",
+    "claude-opus-5",
     "claude-sonnet-4-6",
+    "claude-sonnet-5",
     "claude-haiku-4-5",
     "composer-2.5",
     "composer-2.5-fast",
+    "cursor-grok-4.6",
+    "cursor-grok-4.6-fast",
   ],
 };
