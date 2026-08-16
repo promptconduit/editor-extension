@@ -11,7 +11,7 @@ describe("buildEdgeCases", () => {
   });
 
   it("flags unpriced models with a fix and a pricing link", () => {
-    const cases = buildEdgeCases(heavySummary, undefined); // has an unpriced composer model
+    const cases = buildEdgeCases(heavySummary, undefined); // has an unpriced model in by_model
     const unpriced = cases.find((c) => c.id === "unpriced");
     expect(unpriced).toBeDefined();
     expect(unpriced!.severity).toBe("warn");
