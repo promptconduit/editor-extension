@@ -39,7 +39,7 @@ export const heavySummary: SessionSummary = {
   totals: { input: 30000, output: 6000, cache_read: 5000, cache_write: 2000, cost_total: 0.92, currency: "USD" },
   by_model: [
     { model: "claude-4.5-opus", model_priced: true, tokens: { input: 30000, output: 6000, cache_read: 5000, cache_write: 2000 }, cost_total: 0.92 },
-    { model: "composer-1", model_priced: false, tokens: { input: 4000, output: 800, cache_read: 0, cache_write: 0 }, cost_total: 0 },
+    { model: "totally-unknown-model-9", model_priced: false, tokens: { input: 4000, output: 800, cache_read: 0, cache_write: 0 }, cost_total: 0 },
   ],
   tools: { total: 52, by_name: { Read: 20, Bash: 18, Edit: 14 } },
   signals: {
