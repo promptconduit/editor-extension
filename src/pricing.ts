@@ -195,14 +195,16 @@ export const PRICING: Record<string, ModelPrice> = {
     output: 0.0000025,
     cacheRead: 0.0000002,
   },
+  // Retired Cursor model; rates from cursor.com/docs/models/cursor-composer-1.
+  "cursor-composer-1": {
+    input: 0.00000125,
+    output: 0.00001,
+    cacheRead: 0.000000125,
+  },
 };
 
 // Mirrors pricing.go modelAliases. Kept small on purpose — resolvePrice also
 // does suffix-stripping, so this only needs the genuinely irregular cases.
-// NOTE: "composer-1" → "cursor-composer-1" is mirrored verbatim from the Go
-// map even though "cursor-composer-1" is not in the bundled table (the CLI
-// can layer it in from a refreshed pricing cache; we cannot), so here it
-// resolves to undefined — same result as the CLI with no cache.
 export const MODEL_ALIASES: Record<string, string> = {
   "claude-3-5-haiku-20241022": "claude-3-5-haiku",
   "claude-3-5-haiku-latest": "claude-3-5-haiku",

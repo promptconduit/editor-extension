@@ -77,12 +77,11 @@ describe("resolvePrice alias resolution", () => {
     expect(r!.key).toBe("claude-sonnet-4-6");
   });
 
-  it("composer-1 aliases to cursor-composer-1, which is not in the bundled table → undefined", () => {
-    // Mirrors the Go behavior with the bundled snapshot only: the alias
-    // exists but its target key isn't in pricing_data.json, and the trim
-    // fallback ("composer") doesn't match either, so resolution fails.
-    expect(MODEL_ALIASES["composer-1"]).toBe("cursor-composer-1");
-    expect(resolvePrice("composer-1")).toBeUndefined();
+  it("composer-1 resolves via cursor-composer-1 alias", () => {
+    const r = resolvePrice("composer-1");
+    expect(r!.key).toBe("cursor-composer-1");
+    expect(r!.price.input).toBe(0.00000125);
+    expect(r!.price.output).toBe(0.00001);
   });
 
   it("resolves dated 3-5-haiku via the alias map", () => {
