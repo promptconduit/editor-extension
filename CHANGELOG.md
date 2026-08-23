@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.20.1
+
+- **Updated cost estimates for latest Cursor and Claude Code models.** Corrected
+  rates for Claude Sonnet 5, GPT-5.6 Sol, and Grok 4.5 Fast; added pricing for
+  Opus 5/4.8 fast mode, GPT-5.4/5.5/5.6 variants, Gemini 3 Pro, and Kimi K2.7
+  Code. Claude Code comparison panel now includes Opus 5 and Sonnet 5.
+
 ## 0.20.0
 
 - **Send Feedback.** A new command — `PromptConduit: Send Feedback` — lets you
