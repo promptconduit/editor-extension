@@ -48,7 +48,14 @@ describe("resolvePrice exact lookups", () => {
   it("resolves claude-sonnet-5 and thinking suffix variants", () => {
     const r = resolvePrice("claude-sonnet-5-thinking-high");
     expect(r!.key).toBe("claude-sonnet-5");
-    expect(r!.price.input).toBe(0.000003);
+    expect(r!.price.input).toBe(0.000002);
+  });
+
+  it("resolves claude-opus-5-fast without trimming to standard opus-5", () => {
+    const r = resolvePrice("claude-opus-5-fast");
+    expect(r!.key).toBe("claude-opus-5-fast");
+    expect(r!.price.input).toBe(0.00001);
+    expect(r!.price.output).toBe(0.00005);
   });
 
   it("resolves cursor-grok-4.6-fast via alias, not the standard rate", () => {
@@ -121,7 +128,9 @@ describe("COMPARISON_MODELS", () => {
   it("cursor is the claude-code set plus the composer models", () => {
     expect(COMPARISON_MODELS.claudeCode).toEqual([
       "claude-fable-5",
+      "claude-opus-5",
       "claude-opus-4-8",
+      "claude-sonnet-5",
       "claude-sonnet-4-6",
       "claude-haiku-4-5",
     ]);

@@ -82,11 +82,11 @@ export const PRICING: Record<string, ModelPrice> = {
     cacheWrite1h: 0.00003,
   },
   "claude-sonnet-5": {
-    input: 0.000003,
-    output: 0.000015,
-    cacheRead: 0.0000003,
-    cacheWrite5m: 0.00000375,
-    cacheWrite1h: 0.000006,
+    input: 0.000002,
+    output: 0.00001,
+    cacheRead: 0.0000002,
+    cacheWrite5m: 0.0000025,
+    cacheWrite1h: 0.000004,
   },
   "claude-opus-5": {
     input: 0.000005,
@@ -94,6 +94,20 @@ export const PRICING: Record<string, ModelPrice> = {
     cacheRead: 0.0000005,
     cacheWrite5m: 0.00000625,
     cacheWrite1h: 0.00001,
+  },
+  "claude-opus-5-fast": {
+    input: 0.00001,
+    output: 0.00005,
+    cacheRead: 0.000001,
+    cacheWrite5m: 0.0000125,
+    cacheWrite1h: 0.00002,
+  },
+  "claude-opus-4-8-fast": {
+    input: 0.00001,
+    output: 0.00005,
+    cacheRead: 0.000001,
+    cacheWrite5m: 0.0000125,
+    cacheWrite1h: 0.00002,
   },
   "claude-sonnet-4-6": {
     input: 0.000003,
@@ -151,10 +165,57 @@ export const PRICING: Record<string, ModelPrice> = {
     cacheRead: 0.00000026,
   },
   "gpt-5.6-sol": {
+    input: 0.000004,
+    output: 0.00002,
+    cacheRead: 0.0000004,
+    cacheWrite5m: 0.000005,
+  },
+  "gpt-5.6-terra": {
+    input: 0.000002,
+    output: 0.000012,
+    cacheRead: 0.0000002,
+    cacheWrite5m: 0.0000025,
+  },
+  "gpt-5.6-luna": {
+    input: 0.0000002,
+    output: 0.0000012,
+    cacheRead: 0.00000002,
+    cacheWrite5m: 0.00000025,
+  },
+  "gpt-5.5": {
     input: 0.000005,
     output: 0.00003,
     cacheRead: 0.0000005,
-    cacheWrite5m: 0.00000625,
+  },
+  "gpt-5.4": {
+    input: 0.0000025,
+    output: 0.000015,
+    cacheRead: 0.00000025,
+  },
+  "gemini-2.5-flash": {
+    input: 0.0000003,
+    output: 0.0000025,
+    cacheRead: 0.00000003,
+  },
+  "gemini-3-flash": {
+    input: 0.0000005,
+    output: 0.000003,
+    cacheRead: 0.00000005,
+  },
+  "gemini-3-pro": {
+    input: 0.000002,
+    output: 0.000012,
+    cacheRead: 0.0000002,
+  },
+  "gemini-3.1-pro": {
+    input: 0.000002,
+    output: 0.000012,
+    cacheRead: 0.0000002,
+  },
+  "kimi-k2.7-code": {
+    input: 0.00000095,
+    output: 0.000004,
+    cacheRead: 0.00000019,
   },
   "kimi-k3": {
     input: 0.000003,
@@ -177,7 +238,7 @@ export const PRICING: Record<string, ModelPrice> = {
   },
   "cursor-grok-4.5-fast": {
     input: 0.000004,
-    output: 0.000012,
+    output: 0.000018,
     cacheRead: 0.000001,
   },
   "cursor-grok-4.5": {
@@ -265,7 +326,9 @@ export function resolvePrice(
 export const COMPARISON_MODELS: { claudeCode: string[]; cursor: string[] } = {
   claudeCode: [
     "claude-fable-5",
+    "claude-opus-5",
     "claude-opus-4-8",
+    "claude-sonnet-5",
     "claude-sonnet-4-6",
     "claude-haiku-4-5",
   ],

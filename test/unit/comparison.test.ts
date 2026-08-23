@@ -37,7 +37,13 @@ describe("compareModels known-rate math (claude-code)", () => {
     const list = result as ModelComparison[];
     expect(Array.isArray(list)).toBe(true);
     expect(list.map((c) => c.model).sort()).toEqual(
-      ["claude-fable-5", "claude-haiku-4-5", "claude-sonnet-4-6"].sort(),
+      [
+        "claude-fable-5",
+        "claude-haiku-4-5",
+        "claude-opus-5",
+        "claude-sonnet-4-6",
+        "claude-sonnet-5",
+      ].sort(),
     );
   });
 
@@ -70,7 +76,9 @@ describe("compareModels known-rate math (claude-code)", () => {
     const list = result as ModelComparison[];
     expect(list.map((m) => m.model)).toEqual([
       "claude-haiku-4-5",
+      "claude-sonnet-5",
       "claude-sonnet-4-6",
+      "claude-opus-5",
       "claude-fable-5",
     ]);
   });
@@ -89,7 +97,7 @@ describe("compareModels tool-aware sets", () => {
   it("unknown tools fall back to the claude-code set", () => {
     const other = compareModels(opusActual(), "gemini-cli") as ModelComparison[];
     expect(other.map((c) => c.model)).not.toContain("composer-2.5");
-    expect(other).toHaveLength(3);
+    expect(other).toHaveLength(5);
   });
 
   it("composer cache-read is priced from Cursor docs; cache-write stays 0", () => {
@@ -104,7 +112,7 @@ describe("compareModels tool-aware sets", () => {
     const dated = opusActual({ model: "claude-opus-4-8-20260101" });
     const list = compareModels(dated, "claude-code") as ModelComparison[];
     expect(list.map((c) => c.model)).not.toContain("claude-opus-4-8");
-    expect(list).toHaveLength(3);
+    expect(list).toHaveLength(5);
   });
 });
 
