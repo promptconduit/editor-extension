@@ -6,6 +6,7 @@
 // Keep the slugs in lockstep with contract.ts INSIGHT_SLUGS and the web content.
 
 import { COACHING_SITE_BASE, INSIGHT_SLUGS } from "./contract";
+import { coachingArticleUrl } from "../marketingUrl";
 
 export interface CoachingArticle {
   type: string; // canonical insight type
@@ -18,7 +19,7 @@ export interface CoachingArticle {
 
 function article(type: string, title: string, summary: string, body: string[]): CoachingArticle {
   const slug = INSIGHT_SLUGS[type] ?? type;
-  return { type, slug, title, summary, body, url: `${COACHING_SITE_BASE}/${slug}` };
+  return { type, slug, title, summary, body, url: coachingArticleUrl(slug) };
 }
 
 export const ARTICLES: Record<string, CoachingArticle> = {

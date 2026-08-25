@@ -11,6 +11,8 @@
 // pure data + types — no `vscode`, no HTML — so it unit-tests cleanly and both
 // the derivation and the renderer import it.
 
+import { coachingArticleUrl, marketingUrl } from "../marketingUrl";
+
 export const COACHING_SCHEMA_VERSION = 1;
 
 /** A counted dimension value, e.g. one MCP server or one permission mode. */
@@ -169,8 +171,8 @@ export const INSIGHT_SLUGS: Record<string, string> = {
 
 export const COACHING_SITE_BASE = "https://promptconduit.dev/coaching";
 
-/** Resolve an insight type to its absolute article URL. */
+/** Resolve an insight type to its absolute article URL (with UTM params). */
 export function articleUrlFor(type: string): string {
   const slug = INSIGHT_SLUGS[type] ?? "";
-  return slug ? `${COACHING_SITE_BASE}/${slug}` : COACHING_SITE_BASE;
+  return slug ? coachingArticleUrl(slug) : marketingUrl("/coaching", "coaching", "index");
 }

@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- **Extension funnel instrumentation.** All outbound `promptconduit.dev` links from
+  the cost panel and coaching panel now carry UTM params (`utm_source=extension`,
+  `utm_medium=cost_panel|coaching`, `utm_campaign=…`) so we can attribute
+  extension-driven traffic in analytics. No activation pings or background
+  telemetry — cost tracking remains 100% local.
+- **Accurate Pro & Team upsell copy** in the cost panel zero-state, with pricing
+  ($10/mo Pro, $15/seat Team) and links to `/pricing` and the app getting-started flow.
+
 ## 0.20.1
 
 - **Updated cost estimates for latest Cursor and Claude Code models.** Corrected

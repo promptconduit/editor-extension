@@ -174,7 +174,8 @@ describe("renderCoachingHtml", () => {
     expect(html).toContain("Skills &amp; subagents");
     expect(html).toContain("Explore");
     expect(html).toContain("interrupt"); // the interruption insight copy
-    expect(html).toContain("https://promptconduit.dev/coaching/reduce-interruptions");
+    expect(html).toContain("utm_source=extension");
+    expect(html).toContain("coaching/reduce-interruptions");
   });
 
   it("renders a zero-state when there are no events", () => {
