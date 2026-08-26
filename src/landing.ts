@@ -11,6 +11,7 @@
 // conventions (var(--vscode-...) variables) so light/dark themes match.
 
 import { learnMoreSectionHtml } from "./html";
+import { marketingUrl, appMarketingUrl } from "./marketingUrl";
 
 /**
  * Inner HTML body for the cost webview's zero-state ("no cost yet") view.
@@ -97,7 +98,7 @@ export function landingHtml(): string {
           <span class="desc"> — source, issues, and the open-source CLI.</span>
         </li>
         <li>
-          <a href="https://promptconduit.dev">promptconduit.dev</a>
+          <a href="${marketingUrl("", "cost_panel", "home")}">promptconduit.dev</a>
           <span class="desc"> — docs and product home.</span>
         </li>
       </ul>
@@ -105,28 +106,24 @@ export function landingHtml(): string {
 
     <section class="card upsell" aria-labelledby="pro-h">
       <h2 id="pro-h">PromptConduit Pro &amp; Team</h2>
-      <p>The free extension shows the cost of the session in front of you. Pro and
-        Team add the long view across every session, and work with the tools you
-        already use — Claude Code, Cursor, and more.</p>
+      <p>The free extension prices every turn locally. Pro and Team add the long
+        view — cloud history, trends, and digests — for individuals or whole teams.</p>
       <ul class="feat">
         <li>
-          <strong>Cross-session observability</strong>
-          <span class="desc">Every session in one place instead of one tab at a time.</span>
+          <strong>Pro — $10/mo</strong>
+          <span class="desc">Personal cloud sync, 90-day history, weekly digest, and a
+            cross-machine skill library for one developer. 14-day trial, no card.</span>
         </li>
         <li>
-          <strong>History &amp; cost trends</strong>
-          <span class="desc">See where spend is going over days and weeks, not just right now.</span>
-        </li>
-        <li>
-          <strong>Session replay</strong>
-          <span class="desc">Step back through a session to see what drove the cost.</span>
-        </li>
-        <li>
-          <strong>Team cost rollups</strong>
-          <span class="desc">Roll spend up across a whole team, per project and per model.</span>
+          <strong>Team — $15/seat/mo</strong>
+          <span class="desc">Everything in Pro plus shared team library, member cost rollups,
+            and coaching trends across your org.</span>
         </li>
       </ul>
-      <a class="cta" href="https://promptconduit.dev">Explore Pro &amp; Team at promptconduit.dev &rarr;</a>
+      <a class="cta" href="${marketingUrl("/pricing", "cost_panel", "pro_upsell")}">Compare plans at promptconduit.dev &rarr;</a>
+      <p class="muted" style="margin-top: 0.75rem; font-size: 0.85rem;">
+        Already syncing? <a href="${appMarketingUrl("/getting-started", "cost_panel", "getting_started")}">Open the app</a>
+      </p>
     </section>
 
     <p class="muted" style="margin-top: 1.5rem;">
