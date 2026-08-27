@@ -10,6 +10,7 @@ import type { SessionSubagentSummary, FocusSource } from "../state";
 import type { Tip } from "../tips";
 import type { EdgeCase } from "../edgeCases";
 import type { ResourceLink } from "../links";
+import type { CostScope, ScopeChip, ScopeTotals } from "../costScope";
 
 /** One conversation, fully prepared for rendering. */
 export interface SessionView {
@@ -38,7 +39,13 @@ export interface CostPanelState {
   sessions: SessionView[];
   /** How the displayed conversation was chosen (terminal / pinned / activity). */
   focusSource: FocusSource;
-  /** Host-derived coaching content for the displayed conversation. */
+  /** Active cost scope (session / branch / PR). */
+  scope: CostScope;
+  scopeChips: ScopeChip[];
+  scopeTotals: ScopeTotals;
+  /** Highest-signal coaching tip for the displayed conversation. */
+  topTip?: Tip;
+  /** Host-derived coaching content for the displayed conversation (advanced drawer). */
   tips: Tip[];
   edgeCases: EdgeCase[];
   links: ResourceLink[];
@@ -53,10 +60,14 @@ export type WebviewCommand =
   | "followActive"
   | "showAll"
   | "showSession"
-  | "refresh";
+  | "refresh"
+  | "openStream"
+  | "openGraph"
+  | "openAllSessions"
+  | "setScope";
 
 export type WebviewMessage =
   | { type: "ready" }
   | { type: "open_external"; url: string }
-  | { type: "command"; id: WebviewCommand }
+  | { type: "command"; id: WebviewCommand; scope?: CostScope }
   | { type: "log"; level: "info" | "warn" | "error"; msg: string };

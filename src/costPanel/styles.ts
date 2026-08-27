@@ -214,7 +214,30 @@ ul.links { padding-left: 1.2rem; }
 .tip strong { display: block; margin-bottom: 0.15rem; }
 .tip-more { display: inline-block; margin-top: 0.2rem; }
 
-/* ---- session cards (all-sessions mode) ---- */
+.scope-chips { display: flex; gap: 0.25rem; flex-wrap: wrap; }
+button.scope-chip {
+  font: inherit; font-size: 0.72rem; padding: 0.1rem 0.5rem; border-radius: 999px;
+  border: 1px solid var(--hairline); background: transparent; cursor: pointer;
+  color: var(--vscode-descriptionForeground);
+}
+button.scope-chip.active {
+  background: color-mix(in srgb, var(--accent) 18%, var(--paper));
+  color: var(--ink); border-color: var(--accent);
+}
+button.scope-chip.disabled { opacity: 0.45; cursor: default; }
+.top-tip h2 { margin-top: 1.2rem; }
+details.advanced-drawer { margin-top: 1.6rem; border: 1px solid var(--hairline); border-radius: 4px; padding: 0.5rem 0.8rem; }
+details.advanced-drawer > summary { cursor: pointer; list-style: none; }
+details.advanced-drawer > summary::-webkit-details-marker { display: none; }
+details.advanced-drawer > summary .label::before { content: "▸ "; }
+details.advanced-drawer[open] > summary .label::before { content: "▾ "; }
+.advanced-body { padding-top: 0.6rem; }
+.panel-footer {
+  display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 2rem; padding-top: 1rem;
+  border-top: 1px solid var(--hairline);
+}
+.req-row.compact { font-size: 0.82rem; }
+
 details.session-card { padding-left: 1.4rem; }
 .perms { margin-top: 0.3rem; }
 `;

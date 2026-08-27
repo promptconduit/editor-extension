@@ -11,6 +11,7 @@ import type { PromptGroup, PromptSubagent, PromptToolCall } from "../../src/prom
 import type { CostEvent, ModelTotal, SessionSummary, Tokens } from "../../src/types";
 import { compareModels, COMPARISON_CAVEAT, ModelComparison } from "../../src/costPanel/comparison";
 import { glossaryFor } from "../../src/costPanel/glossary";
+import { shortLandingHtml } from "../../src/landingShort";
 import { escapeHtml, highlightJson } from "./jsonHighlight";
 
 // ---------- formatting ----------
@@ -347,14 +348,11 @@ export function rawEventsHtml(g: PromptGroup): string {
 
 function requestRow(r: CostEvent): string {
   const cost = r.model_priced ? fmtUSD(r.cost.total) : "unpriced";
-  const sig = r.signals
-    ? `<span class="muted">${termHtml("cache_hit_rate", "cache hit")} ${pct(r.signals.cache_hit_rate)}</span>`
-    : "";
-  return `<div class="req-row">
+  const cache = r.tokens.cache_read + r.tokens.cache_write;
+  return `<div class="req-row compact">
     <span class="req-cost">${cost}</span>
     <span class="muted">${escapeHtml(r.model)}</span>
-    <span class="muted">${termHtml("input_tokens", "in")} ${num(r.tokens.input)} · ${termHtml("output_tokens", "out")} ${num(r.tokens.output)} · ${termHtml("cache_read", "cache read")} ${num(r.tokens.cache_read)} · ${termHtml("cache_write", "cache write")} ${num(r.tokens.cache_write)}</span>
-    ${sig}
+    <span class="muted">${num(r.tokens.input + r.tokens.output + cache)} tokens · cache ${num(cache)}</span>
   </div>`;
 }
 
@@ -425,11 +423,9 @@ export function promptGroupHtml(g: PromptGroup, maxCost: number, tool: string): 
     <div class="entry-body">
       ${fullPrompt}
       ${g.requests.map(requestRow).join("")}
-      ${comparisonHtml(groupModelTotal(g), tool, "this prompt")}
       ${toolCallsHtml(g)}
       ${subagentsHtml(g)}
       ${permissions}
-      ${rawEventsHtml(g)}
     </div>
   </details>`;
 }
@@ -524,13 +520,12 @@ export function ledgerHtml(s: SessionView): string {
   </section>`;
 }
 
-function heroHtml(s: SessionView): string {
-  const t = s.summary.totals;
-  const cost = t.cost_total > 0 ? fmtUSDHero(t.cost_total) : "unpriced";
-  const requests = s.summary.by_model.reduce((n) => n, 0);
-  void requests;
+function heroHtml(state: CostPanelState, s: SessionView): string {
+  const scoped = state.scopeTotals;
+  const cost =
+    scoped.usd > 0 ? fmtUSDHero(scoped.usd) : scoped.hasUnpriced ? "unpriced" : "—";
   return `<header class="hero">
-    <p class="kicker">This session would cost</p>
+    <p class="kicker">${escapeHtml(scoped.kicker)}</p>
     <p class="hero-cost">${cost}</p>
     <div class="hero-meta">
       ${toolBadge(s.tool)}
@@ -542,21 +537,49 @@ function heroHtml(s: SessionView): string {
   </header>`;
 }
 
-function tipsHtml(state: CostPanelState): string {
-  if (state.tips.length === 0) {
+function topTipHtml(state: CostPanelState): string {
+  const t = state.topTip;
+  if (!t) {
     return "";
   }
-  return `<section>
-    <h2>Tips for this session</h2>
-    ${state.tips
-      .map(
-        (t) => `<div class="tip-card">
-          <strong>${escapeHtml(t.title)}</strong>
-          <p class="muted">${escapeHtml(t.detail)}${t.link ? ` <a href="${escapeHtml(t.link.href)}">${escapeHtml(t.link.label)}</a>` : ""}</p>
-        </div>`,
-      )
-      .join("")}
+  return `<section class="top-tip">
+    <h2>Do better</h2>
+    <div class="tip-card">
+      <strong>${escapeHtml(t.title)}</strong>
+      <p class="muted">${escapeHtml(t.detail)}${t.link ? ` <a href="${escapeHtml(t.link.href)}">${escapeHtml(t.link.label)}</a>` : ""}</p>
+    </div>
   </section>`;
+}
+
+function advancedDrawerHtml(s: SessionView, state: CostPanelState): string {
+  const dominant = s.summary.by_model[0];
+  const rawBlocks = s.prompts
+    .map((g) => rawEventsHtml(g))
+    .filter(Boolean)
+    .join("");
+  const inner = `
+    ${driversHtml(s.summary)}
+    ${comparisonHtml(dominant, s.tool, "this session")}
+    ${byModelHtml(s.summary)}
+    ${edgeCasesHtml(state)}
+    ${linksHtml(state)}
+    ${rawBlocks ? `<section><h2>Raw events</h2>${rawBlocks}</section>` : ""}
+  `.trim();
+  if (!inner) {
+    return "";
+  }
+  return `<details class="advanced-drawer" data-exp="advanced">
+    <summary><span class="label">Advanced</span></summary>
+    <div class="advanced-body">${inner}</div>
+  </details>`;
+}
+
+function panelFooterHtml(): string {
+  return `<footer class="panel-footer">
+    <button type="button" class="tb" data-cmd="openStream">$(pulse) Stream</button>
+    <button type="button" class="tb" data-cmd="openGraph">$(type-hierarchy-sub) Graph</button>
+    <button type="button" class="tb" data-cmd="openAllSessions">$(list-tree) All sessions</button>
+  </footer>`;
 }
 
 function edgeCasesHtml(state: CostPanelState): string {
@@ -592,14 +615,7 @@ function linksHtml(state: CostPanelState): string {
 }
 
 function sessionTail(s: SessionView, state: CostPanelState): string {
-  const dominant = s.summary.by_model[0];
-  return `
-    ${comparisonHtml(dominant, s.tool, "this session")}
-    ${byModelHtml(s.summary)}
-    ${tipsHtml(state)}
-    ${edgeCasesHtml(state)}
-    ${linksHtml(state)}
-  `;
+  return `${advancedDrawerHtml(s, state)}${panelFooterHtml()}`;
 }
 
 function sessionCard(s: SessionView, state: CostPanelState): string {
@@ -632,8 +648,18 @@ const FOCUS_NOTES: Record<string, string> = {
 };
 
 function toolbarHtml(state: CostPanelState): string {
+  const chips = state.scopeChips
+    .map((c) => {
+      const cls = ["scope-chip", c.active ? "active" : "", c.disabled ? "disabled" : ""]
+        .filter(Boolean)
+        .join(" ");
+      const dis = c.disabled ? " disabled" : "";
+      return `<button type="button" class="${cls}" data-cmd="setScope" data-scope="${escapeHtml(c.id)}"${dis}>${escapeHtml(c.label)}</button>`;
+    })
+    .join("");
   return `<nav class="toolbar">
     <span class="focus-note muted">${escapeHtml(FOCUS_NOTES[state.focusSource] ?? "")}</span>
+    <span class="scope-chips">${chips}</span>
     <span class="toolbar-spacer"></span>
     <button type="button" class="tb" data-cmd="expandAll">Expand all</button>
     <button type="button" class="tb" data-cmd="collapseAll">Collapse all</button>
@@ -658,29 +684,24 @@ export interface RenderZones {
 export function renderZones(state: CostPanelState): RenderZones {
   if (state.sessions.length === 0) {
     return {
-      top: `${toolbarHtml(state)}
-      <header class="hero">
-        <p class="kicker">AI Session Cost</p>
-        <p class="hero-cost muted">—</p>
-        <p class="muted">100% local. Run an AI coding session with PromptConduit hooks installed and this report fills in live.</p>
-      </header>`,
-      rest: "",
+      top: `${toolbarHtml(state)}${shortLandingHtml()}`,
+      rest: panelFooterHtml(),
     };
   }
   if (state.mode === "session") {
     const s = state.sessions[0];
     return {
-      top: `${toolbarHtml(state)}${heroHtml(s)}${driversHtml(s.summary)}`,
+      top: `${toolbarHtml(state)}${heroHtml(state, s)}${topTipHtml(state)}`,
       ledger: {
         header: `<h2>Cost per prompt</h2>
-          <p class="muted small">Each entry is one prompt, newest first — expand for its requests, tool calls, subagents, and raw events.</p>`,
+          <p class="muted small">Each entry is one prompt, newest first — expand for model, tokens, and tool calls.</p>`,
         items: ledgerItems(s),
         footer: ledgerFooter(s),
       },
       rest: sessionTail(s, state),
     };
   }
-  const total = state.sessions.reduce((s, v) => s + v.summary.totals.cost_total, 0);
+  const total = state.sessions.reduce((sum, v) => sum + v.summary.totals.cost_total, 0);
   return {
     top: `${toolbarHtml(state)}
     <header class="hero">
@@ -692,7 +713,7 @@ export function renderZones(state: CostPanelState): RenderZones {
       <h2>By session</h2>
       ${state.sessions.map((s) => sessionCard(s, state)).join("")}
     </section>`,
-    rest: `${tipsHtml(state)}${edgeCasesHtml(state)}${linksHtml(state)}`,
+    rest: `${advancedDrawerHtml(state.sessions[0], state)}${panelFooterHtml()}`,
   };
 }
 
