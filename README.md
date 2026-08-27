@@ -29,6 +29,8 @@ Advanced drawer.
 **Session Graph** — a live tree of prompts, tools, subagents, and worktrees
 (command palette: *PromptConduit: Show Session Graph*).
 
+![Session Graph panel in Cursor](https://raw.githubusercontent.com/promptconduit/editor-extension/main/resources/screenshots/graph-window.png)
+
 **Stream** — a live event feed (command palette: *PromptConduit: Show Stream Panel*).
 
 ![Stream panel in Cursor](https://raw.githubusercontent.com/promptconduit/editor-extension/main/resources/screenshots/stream-window.png)
