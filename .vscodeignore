@@ -32,6 +32,9 @@ package-lock.json
 media/*.map
 out/**/*.map
 
-# README/marketplace screenshots are referenced by absolute raw URL, so they
-# don't need to bloat the installed VSIX (they live in git for the raw links).
-resources/screenshots/**
+# README gallery images (relative paths in README — must ship in the VSIX).
+# Other screenshot variants and dev-only captures stay out of the package.
+resources/screenshots/agent-coaching-*
+resources/screenshots/orchestration-theater-*
+resources/screenshots/stream-*
+resources/screenshots/*-panel.png
