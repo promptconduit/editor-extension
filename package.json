@@ -1,8 +1,8 @@
 {
   "name": "promptconduit",
   "displayName": "PromptConduit",
-  "description": "Local, real-time visibility into your AI coding sessions — live token cost in the status bar, a breathing Session Graph of prompts, subagents, and worktrees, a 3D Orchestration Theater that replays how your agents work, and an offline Agent Coaching report. 100% local.",
-  "version": "0.20.1",
+  "description": "See what each AI prompt costs — live in your status bar, with a per-prompt ledger, coaching tips, and branch/PR spend scopes. 100% local. Also: Session Graph, Stream, Orchestration Theater, and Agent Coaching.",
+  "version": "0.21.0",
   "publisher": "promptconduit",
   "license": "MIT",
   "icon": "resources/icon.png",

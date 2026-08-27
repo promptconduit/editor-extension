@@ -2,13 +2,24 @@
 
 ## Unreleased
 
-- **Extension funnel instrumentation.** All outbound `promptconduit.dev` links from
-  the cost panel and coaching panel now carry UTM params (`utm_source=extension`,
-  `utm_medium=cost_panel|coaching`, `utm_campaign=…`) so we can attribute
-  extension-driven traffic in analytics. No activation pings or background
-  telemetry — cost tracking remains 100% local.
-- **Accurate Pro & Team upsell copy** in the cost panel zero-state, with pricing
-  ($10/mo Pro, $15/seat Team) and links to `/pricing` and the app getting-started flow.
+## 0.21.0
+
+- **Simpler cost home — cost per prompt first.** One status-bar item
+  (`⚡ request · session`) opens a focused **AI Cost Breakdown**: per-prompt
+  ledger, one coaching tip, and Session / This branch / This PR scope chips.
+  What-if comparisons, by-model tables, and raw JSON move into a collapsed
+  **Advanced** drawer. Stream, Graph, and All sessions remain in the command
+  palette and panel footer.
+- **Cursor prompts captured.** Agent and Composer turns now show real prompt
+  text in the ledger (via `beforeSubmitPrompt`) instead of "(uncaptured turn)".
+- **Branch and PR spend scopes.** Roll up session cost for your current git
+  branch or open GitHub PR (when `gh` has resolved one). PR scope is GitHub-only
+  today; branch scope works on any git host.
+- **Stream readability.** Collapsed `preToolUse`/`postToolUse` pairs into single
+  rows in the activity feed.
+- **Extension funnel instrumentation.** Outbound `promptconduit.dev` links carry
+  UTM params for attribution. No activation pings — cost tracking remains 100% local.
+- **Accurate Pro & Team upsell copy** in the cost panel zero-state.
 
 ## 0.20.1
 
