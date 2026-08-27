@@ -1,19 +1,9 @@
 # PromptConduit
 
-Local, real-time visibility into your AI coding sessions — **computed entirely on
-your machine**. PromptConduit is a growing set of in-editor surfaces over the
-same local data your AI assistant already produces:
-
-- **Realtime token cost** — `⚡ <request cost> · 🕘 <session cost>` in the
-  status bar, with a click-through **AI Cost Breakdown** panel.
-- **Orchestration Theater** — a 3D replay of how your agents actually work:
-  sub-agents spawning, tool calls reaching out to fetch URLs / read-write files /
-  hit cloud APIs, with hover cards linking the GitHub issue and PR behind each
-  node. Run **"PromptConduit: Show Orchestration Theater"** from the command
-  palette.
-
-Everything reads the local event log (`~/.promptconduit/events.jsonl`); none of
-your code or prompts leave your device.
+**See what each AI prompt costs** — computed entirely on your machine. One click
+from the status bar opens a per-prompt cost ledger with coaching tips and
+optional branch/PR scopes. Everything reads your local event log
+(`~/.promptconduit/events.jsonl`); none of your code or prompts leave your device.
 
 ## Install
 
@@ -30,22 +20,26 @@ The extension drives the `promptconduit` CLI, so install that too — see
 
 ## Screenshots
 
-**AI Cost Breakdown** — a per-prompt ledger with cache/tier signals and a
-"what if" model comparison.
+**AI Cost Breakdown** — per-prompt ledger, one coaching tip up front, Session /
+This branch / This PR scope chips. Raw JSON and what-if comparisons live in an
+Advanced drawer.
 
 ![AI Cost Breakdown panel in Cursor](https://raw.githubusercontent.com/promptconduit/editor-extension/main/resources/screenshots/cost-breakdown-window.png)
 
-**Orchestration Theater** — a 3D replay of sub-agents spawning and tool calls
-fanning out.
+**Session Graph** — a live tree of prompts, tools, subagents, and worktrees
+(command palette: *PromptConduit: Show Session Graph*).
 
-![Orchestration Theater panel in Cursor](https://raw.githubusercontent.com/promptconduit/editor-extension/main/resources/screenshots/orchestration-theater-window.png)
-
-**Stream** — a live event feed that follows your most-recently-active AI session.
+**Stream** — a live event feed (command palette: *PromptConduit: Show Stream Panel*).
 
 ![Stream panel in Cursor](https://raw.githubusercontent.com/promptconduit/editor-extension/main/resources/screenshots/stream-window.png)
 
-**Agent Coaching** — an offline report on how you drive the agent (interruptions,
-plan-mode use, tool success, subagents).
+**Orchestration Theater** — a 3D replay of sub-agents spawning and tool calls
+fanning out (command palette: *PromptConduit: Show Orchestration Theater*).
+
+![Orchestration Theater panel in Cursor](https://raw.githubusercontent.com/promptconduit/editor-extension/main/resources/screenshots/orchestration-theater-window.png)
+
+**Agent Coaching** — an offline report on how you drive the agent (command palette:
+*PromptConduit: Show Agent Coaching*).
 
 ![Agent Coaching panel in Cursor](https://raw.githubusercontent.com/promptconduit/editor-extension/main/resources/screenshots/agent-coaching-window.png)
 
@@ -56,33 +50,37 @@ it for the **AI Cost Breakdown** panel.
 
 ## The AI Cost Breakdown panel
 
-The breakdown is an estimate of what your session would cost at **pay-as-you-go
-API rates** — *"this is what the same tokens would bill à la carte if you
-weren't on a subscription."* It's also an educational tool for spending fewer
-tokens:
+The breakdown estimates what your session would cost at **pay-as-you-go API
+rates** — useful whether you're on a subscription or paying per token.
 
-- **Cost per prompt** — every request as a row with a relative-cost bar, so the
-  expensive prompts stand out. Click one for its token split and cache stats.
-- **What's driving your cost** — a color-coded readout of cache-hit rate,
-  fresh-input share, model tier, and tool-call volume.
-- **Make it cheaper** — actionable tips, each linking the official docs for the
-  technique (prompt caching, model choice, batching).
-- **Reading these numbers** — edge cases (unpriced models, estimated vs. exact
-  counts, subscription-vs-API) explained, each with a concrete fix.
-- **Learn more** — the official Claude *and* Cursor cost docs, tool-aware: the
-  active assistant's links come first, but both are always shown.
+- **Cost per prompt** — every prompt as a row with a relative-cost bar. Expand
+  for model, tokens, and cache stats.
+- **Do better** — one actionable coaching tip for the session.
+- **Scope chips** — Session, **This branch** (your current feature branch), or
+  **This PR** (when `gh` has resolved an open PR on the branch).
+- **Advanced** (collapsed) — what-if model comparison, by-model table, raw event
+  JSON, and learn-more links.
 
 Works for **Claude Code** and **Cursor**.
 
+## More surfaces
+
+All available from the command palette (`⇧⌘P`):
+
+| Command | What it does |
+|---------|----------------|
+| Show Cost Breakdown | Per-prompt ledger (also via status bar) |
+| Show Stream Panel | Live event feed |
+| Show Session Graph | 2D tree of turns, tools, subagents |
+| Show Orchestration Theater | 3D replay of agent orchestration |
+| Show Agent Coaching | Offline coaching report |
+| Show All Sessions Cost | Multi-session overview |
+
 ## How it works
 
-The extension spawns the `promptconduit` CLI (`promptconduit cost watch --json`)
-scoped to your workspace and renders the cost records it streams on stdout. The
-CLI reads local AI transcripts, prices each turn against a bundled rate table,
-and writes nothing to any server. See `cli/internal/cost` for the engine.
-
-- **Claude Code** — exact token counts straight from the transcript (today).
-- **Cursor native agent** — estimate + reconcile (a later milestone).
+The extension tails `~/.promptconduit/events.jsonl` (written by the
+`promptconduit` CLI hooks) and prices each turn against a bundled rate table.
+See `cli/internal/cost` for the pricing engine.
 
 ## Requirements
 
@@ -98,7 +96,7 @@ If it isn't on your `PATH`, set `promptconduit.cost.binaryPath`.
 
 | Setting | Default | Description |
 |---|---|---|
-| `promptconduit.cost.enabled` | `true` | Show the status-bar cost item. |
+| `promptconduit.cost.enabled` | `true` | Show the realtime token-cost item in the status bar. |
 | `promptconduit.cost.binaryPath` | `""` | Override the CLI path (auto-detected otherwise). |
 
 ## Develop
@@ -109,26 +107,17 @@ npm run compile        # or: npm run watch
 ```
 
 Press **F5** in VS Code / Cursor to launch an Extension Development Host, open a
-folder where you run Claude Code, and watch the status bar update as you work.
+folder where you run Claude Code or Cursor agent, and watch the status bar update.
 
 ## Publishing
 
 Targets: **Open VSX** (for Cursor) and the **VS Code Marketplace**.
 
-One-time setup:
-1. Push this directory to its own GitHub repo (the `repository` field in
-   `package.json` points at `promptconduit/editor-extension`).
-2. Create access tokens and add them as repo **secrets**:
-   - `OVSX_TOKEN` — Open VSX token from <https://open-vsx.org> (namespace must exist:
-     `npx ovsx create-namespace promptconduit`).
-   - `VSCE_PAT` — VS Code Marketplace PAT from <https://marketplace.visualstudio.com/manage>
-     (create the `promptconduit` publisher first).
-
 Release: bump `version` in `package.json`, commit, then tag — the `Publish`
-workflow does the rest:
+workflow publishes to Open VSX automatically:
 
 ```bash
-git tag v0.1.0 && git push origin v0.1.0
+git tag v0.21.0 && git push origin v0.21.0
 ```
 
 Or publish locally:
