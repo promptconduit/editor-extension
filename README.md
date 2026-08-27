@@ -24,26 +24,15 @@ The extension drives the `promptconduit` CLI, so install that too — see
 This branch / This PR scope chips. Raw JSON and what-if comparisons live in an
 Advanced drawer.
 
-![AI Cost Breakdown panel in Cursor](https://raw.githubusercontent.com/promptconduit/editor-extension/main/resources/screenshots/cost-breakdown-window.png)
+![AI Cost Breakdown — per-prompt cost ledger with scope chips](./resources/screenshots/cost-breakdown-window.png)
 
 **Session Graph** — a live tree of prompts, tools, subagents, and worktrees
 (command palette: *PromptConduit: Show Session Graph*).
 
-![Session Graph panel in Cursor](https://raw.githubusercontent.com/promptconduit/editor-extension/main/resources/screenshots/graph-window.png)
+![Session Graph — live turn tree with per-prompt cost](./resources/screenshots/graph-window.png)
 
-**Stream** — a live event feed (command palette: *PromptConduit: Show Stream Panel*).
-
-![Stream panel in Cursor](https://raw.githubusercontent.com/promptconduit/editor-extension/main/resources/screenshots/stream-window.png)
-
-**Orchestration Theater** — a 3D replay of sub-agents spawning and tool calls
-fanning out (command palette: *PromptConduit: Show Orchestration Theater*).
-
-![Orchestration Theater panel in Cursor](https://raw.githubusercontent.com/promptconduit/editor-extension/main/resources/screenshots/orchestration-theater-window.png)
-
-**Agent Coaching** — an offline report on how you drive the agent (command palette:
-*PromptConduit: Show Agent Coaching*).
-
-![Agent Coaching panel in Cursor](https://raw.githubusercontent.com/promptconduit/editor-extension/main/resources/screenshots/agent-coaching-window.png)
+Stream, Orchestration Theater, and Agent Coaching are available from the command
+palette — see [More surfaces](#more-surfaces) below.
 
 ## Realtime token cost
 

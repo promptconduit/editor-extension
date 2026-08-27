@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.21.2
+
+- **Open VSX gallery: cost-first images only.** README now shows just the cost
+  breakdown and session graph screenshots (bundled in the VSIX via relative
+  paths) instead of Stream / Theater images that cached stale on the registry.
+
 ## 0.21.1
 
 - **Refreshed Open VSX / README screenshots** for all panels (cost breakdown,
