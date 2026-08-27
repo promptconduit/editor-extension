@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import { ConversationStore, ConversationView, FocusSource } from "./state";
 import { CostEvent, SessionSummary } from "./types";
 import { EnvelopeV2 } from "./envelope";
+import { scopeTooltipLines } from "./costScope";
 import { shortId } from "./streamFeed";
 
 const SHOW_DETAILS_COMMAND = "promptconduit.cost.showDetails";
@@ -228,7 +229,7 @@ export class CostStatusBar {
     const reqStr = lastEvent ? lastRequestLabel(lastEvent) : "—";
 
     const sessStr = this.sessionCostLabel();
-    this.item.text = `$(zap) ${reqStr} · $(history) ${sessStr}`;
+    this.item.text = `$(zap) ${reqStr} · ${sessStr}`;
 
     const tip = new vscode.MarkdownString();
     tip.isTrusted = false;
@@ -259,6 +260,9 @@ export class CostStatusBar {
       const signals = signalsSummary(s);
       if (signals) {
         tip.appendMarkdown(`\n${signals}\n`);
+      }
+      for (const line of scopeTooltipLines(this.store)) {
+        tip.appendMarkdown(`\n${line}`);
       }
     } else {
       tip.appendMarkdown(`No priced turns yet this session.\n`);

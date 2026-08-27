@@ -201,9 +201,21 @@ document.addEventListener("click", (e) => {
       cmd === "followActive" ||
       cmd === "showAll" ||
       cmd === "showSession" ||
-      cmd === "refresh"
+      cmd === "refresh" ||
+      cmd === "openStream" ||
+      cmd === "openGraph" ||
+      cmd === "openAllSessions"
     ) {
       vscode.postMessage({ type: "command", id: cmd });
+    }
+    return;
+  }
+
+  const scopeBtn = target.closest<HTMLButtonElement>("button[data-scope]");
+  if (scopeBtn && !scopeBtn.disabled) {
+    const scope = scopeBtn.dataset.scope;
+    if (scope === "session" || scope === "branch" || scope === "pr") {
+      vscode.postMessage({ type: "command", id: "setScope", scope });
     }
     return;
   }

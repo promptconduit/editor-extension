@@ -11,8 +11,8 @@
 // prompt id), with arrival-order fallbacks: the currently-open group, the
 // last-closed group (for tool results trailing a Stop by < 30s), and a
 // per-conversation "preamble" group for events before the first prompt. A Stop
-// with no matching prompt opens an "uncaptured" group — that is Cursor's
-// NORMAL generation-per-prompt path, not an error.
+// with no matching prompt opens an "uncaptured" group — a genuine orphan when
+// no beforeSubmitPrompt/UserPromptSubmit was captured for that turn.
 
 import { EnvelopeV2, subagentFrom, toolsFrom } from "./envelope";
 import { CostEvent, Tokens } from "./types";
@@ -59,8 +59,8 @@ export interface PromptRawEvent {
 export interface PromptGroup {
   id: string;
   /**
-   * "prompt" = opened by a UserPromptSubmit; "uncaptured" = a Stop with no
-   * prompt (Cursor's NORMAL path); "preamble" = events before the first prompt.
+   * "prompt" = opened by a UserPromptSubmit or beforeSubmitPrompt; "uncaptured"
+   * = a Stop with no matching prompt; "preamble" = events before the first prompt.
    */
   kind: "prompt" | "uncaptured" | "preamble";
   promptText?: string;
@@ -177,6 +177,7 @@ export class PromptGroupStore {
 
     switch (env.hookEvent) {
       case "UserPromptSubmit":
+      case "beforeSubmitPrompt":
         this.onPrompt(conv, env);
         break;
       case "PostToolUse":
@@ -467,9 +468,8 @@ export class PromptGroupStore {
     this.attachRaw(host, env);
   }
 
-  // Rule 6: a Stop closes its prompt's group, or opens an "uncaptured" one
-  // (Cursor's normal generation-per-prompt path). StopFailure closes the same
-  // way but marks the group failed.
+  // Rule 6: a Stop closes its prompt's group, or opens an "uncaptured" one when
+  // no prompt was captured. StopFailure closes the same way but marks failed.
   private onStop(conv: Conversation, env: EnvelopeV2, costEvents: CostEvent[]): void {
     const pid = this.pidOf(env);
     let g = pid ? conv.byId.get(pid) : undefined;

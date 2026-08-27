@@ -112,7 +112,8 @@ test("Cost Breakdown detail report renders the per-prompt ledger", async () => {
   // The mode label is wrapped in a glossary tooltip, so its hidden <strong>
   // term shadows the visible chip text for getByText — target the chip by class.
   await expect(webview.locator(".chip-plan").first()).toBeVisible();
-  await expect(webview.getByText("PR #65", { exact: false })).toBeVisible();
+  // PR #65 also appears in footer links — target the scope chip specifically.
+  await expect(webview.locator('.scope-chip[data-scope="pr"]')).toBeVisible();
   await expect(webview.getByText("worktree").first()).toBeVisible();
   // The toolbar exposes a Refresh control (reload the panel without a window reload).
   await expect(webview.getByRole("button", { name: "Refresh" })).toBeVisible();

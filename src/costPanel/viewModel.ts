@@ -6,6 +6,7 @@ import { ConversationStore, ConversationView } from "../state";
 import { buildTips } from "../tips";
 import { buildEdgeCases } from "../edgeCases";
 import { learnMoreLinks } from "../links";
+import { aggregateScope, scopeChips, type CostScope } from "../costScope";
 import { CostPanelState, SessionView } from "./protocol";
 
 let revision = 0;
@@ -35,6 +36,7 @@ function toSessionView(v: ConversationView, isActive: boolean): SessionView {
 export function buildCostPanelState(
   store: ConversationStore,
   mode: "session" | "all",
+  scope: CostScope = "session",
 ): CostPanelState {
   const displayKey = store.displayKey;
   const display = displayKey ? store.viewForKey(displayKey) : undefined;
@@ -46,13 +48,18 @@ export function buildCostPanelState(
     sessions = store.list().map((v) => toSessionView(v, v.key === displayKey));
   }
 
+  const tips = buildTips(display?.summary, display?.lastEvent);
   revision += 1;
   return {
     mode,
     revision,
     sessions,
     focusSource: store.focusSource,
-    tips: buildTips(display?.summary, display?.lastEvent),
+    scope,
+    scopeChips: scopeChips(store, scope),
+    scopeTotals: aggregateScope(store, scope),
+    topTip: tips[0],
+    tips,
     edgeCases: buildEdgeCases(display?.summary, display?.lastEvent),
     links: learnMoreLinks(display?.tool),
   };

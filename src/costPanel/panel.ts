@@ -6,6 +6,7 @@ import * as vscode from "vscode";
 import { makeNonce, webviewCsp, webviewShellHtml, isSafeHttpUrl, bustCache } from "../webviewHost";
 import { COST_PANEL_CSS } from "./styles";
 import { CostPanelState, WebviewMessage } from "./protocol";
+import type { CostScope } from "../costScope";
 
 const VIEW_TYPE = "promptconduitCostBreakdown";
 
@@ -13,6 +14,9 @@ const VIEW_TYPE = "promptconduitCostBreakdown";
 const COMMAND_MAP: Record<string, string> = {
   pinSession: "promptconduit.cost.pinSession",
   followActive: "promptconduit.cost.followActive",
+  openStream: "promptconduit.stream.showFeed",
+  openGraph: "promptconduit.graph.show",
+  openAllSessions: "promptconduit.cost.showAllSessions",
 };
 
 export class CostDetailPanel {
@@ -21,16 +25,17 @@ export class CostDetailPanel {
   private readonly panel: vscode.WebviewPanel;
   private readonly extensionUri: vscode.Uri;
   private mode: "session" | "all";
+  scope: CostScope = "session";
   private ready = false;
   private pendingState: CostPanelState | undefined;
   // Bumped on every shell (re)render so a refresh cache-busts the bundle URI.
   private htmlRev = 0;
-  private readonly getState: (mode: "session" | "all") => CostPanelState;
+  private readonly getState: (mode: "session" | "all", scope: CostScope) => CostPanelState;
 
   private constructor(
     extensionUri: vscode.Uri,
     mode: "session" | "all",
-    getState: (mode: "session" | "all") => CostPanelState,
+    getState: (mode: "session" | "all", scope: CostScope) => CostPanelState,
   ) {
     this.extensionUri = extensionUri;
     this.mode = mode;
@@ -92,7 +97,7 @@ export class CostDetailPanel {
     switch (msg.type) {
       case "ready":
         this.ready = true;
-        this.push(this.pendingState ?? this.getState(this.mode));
+        this.push(this.pendingState ?? this.getState(this.mode, this.scope));
         this.pendingState = undefined;
         break;
       case "open_external":
@@ -103,9 +108,12 @@ export class CostDetailPanel {
       case "command":
         if (msg.id === "refresh") {
           this.refresh();
+        } else if (msg.id === "setScope" && msg.scope) {
+          this.scope = msg.scope;
+          this.push(this.getState(this.mode, this.scope));
         } else if (msg.id === "showAll" || msg.id === "showSession") {
           this.mode = msg.id === "showAll" ? "all" : "session";
-          this.push(this.getState(this.mode));
+          this.push(this.getState(this.mode, this.scope));
         } else if (COMMAND_MAP[msg.id]) {
           await vscode.commands.executeCommand(COMMAND_MAP[msg.id]);
         }
@@ -129,12 +137,12 @@ export class CostDetailPanel {
   static show(
     extensionUri: vscode.Uri,
     mode: "session" | "all",
-    getState: (mode: "session" | "all") => CostPanelState,
+    getState: (mode: "session" | "all", scope: CostScope) => CostPanelState,
   ): void {
     if (CostDetailPanel.current) {
       CostDetailPanel.current.mode = mode;
       CostDetailPanel.current.panel.reveal(vscode.ViewColumn.Active, false);
-      CostDetailPanel.current.push(getState(mode));
+      CostDetailPanel.current.push(getState(mode, CostDetailPanel.current.scope));
       return;
     }
     CostDetailPanel.current = new CostDetailPanel(extensionUri, mode, getState);
@@ -144,7 +152,7 @@ export class CostDetailPanel {
   static refresh(): void {
     const p = CostDetailPanel.current;
     if (p) {
-      p.push(p.getState(p.mode));
+      p.push(p.getState(p.mode, p.scope));
     }
   }
 

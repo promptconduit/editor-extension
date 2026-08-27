@@ -7,6 +7,7 @@ import { GraphPanel } from "./graphPanel/panel";
 import { sendFeedback } from "./feedback";
 import { CostDetailPanel } from "./costPanel/panel";
 import { buildCostPanelState } from "./costPanel/viewModel";
+import type { CostScope } from "./costScope";
 import { CostStatusBar } from "./statusBar";
 import { CostFeedController } from "./costFeed";
 import { resolveBinary } from "./binary";
@@ -44,8 +45,8 @@ function activateInner(context: vscode.ExtensionContext): void {
   statusBar = new CostStatusBar();
   context.subscriptions.push(statusBar);
 
-  const panelState = (mode: "session" | "all") =>
-    buildCostPanelState(statusBar!.storeRef, mode);
+  const panelState = (mode: "session" | "all", scope?: CostScope) =>
+    buildCostPanelState(statusBar!.storeRef, mode, scope ?? CostDetailPanel.current?.scope ?? "session");
 
   statusBar.setOnChange(() => CostDetailPanel.refresh());
 
@@ -138,7 +139,6 @@ function activateInner(context: vscode.ExtensionContext): void {
   allSessionsButton.text = "$(list-tree) All sessions";
   allSessionsButton.tooltip = "Open the multi-session AI cost overview";
   allSessionsButton.command = "promptconduit.cost.showAllSessions";
-  allSessionsButton.show();
   context.subscriptions.push(allSessionsButton);
 
   const streamButton = vscode.window.createStatusBarItem(
@@ -148,7 +148,6 @@ function activateInner(context: vscode.ExtensionContext): void {
   streamButton.text = "$(pulse) Stream";
   streamButton.tooltip = "Open the live PromptConduit event stream";
   streamButton.command = "promptconduit.stream.showFeed";
-  streamButton.show();
   context.subscriptions.push(streamButton);
 
   const graphButton = vscode.window.createStatusBarItem(
@@ -158,7 +157,6 @@ function activateInner(context: vscode.ExtensionContext): void {
   graphButton.text = "$(type-hierarchy-sub) Graph";
   graphButton.tooltip = "Open the live session graph — prompts, tools, subagents, worktrees";
   graphButton.command = "promptconduit.graph.show";
-  graphButton.show();
   context.subscriptions.push(graphButton);
 
   terminalFocus = new TerminalFocusController(

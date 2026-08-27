@@ -65,6 +65,12 @@ describe("renderBody (session mode)", () => {
     expect(html).toContain("accept edits");
   });
 
+  it("renders scope chips and a single do-better tip", () => {
+    expect(html).toContain("data-scope=\"session\"");
+    expect(html).toContain("data-scope=\"branch\"");
+    expect(html).toContain("Do better");
+  });
+
   it("renders tool calls with MCP chip and failure marker", () => {
     expect(html).toContain("mcp__github__search_issues");
     expect(html).toContain("1 failed");
@@ -75,7 +81,8 @@ describe("renderBody (session mode)", () => {
     expect(html).toContain("claude-sonnet-4-6");
   });
 
-  it("renders model comparison both directions with the caveat", () => {
+  it("puts model comparison in the advanced drawer", () => {
+    expect(html).toContain("Advanced");
     expect(html).toContain("What if");
     expect(html).toContain("would have saved");
     expect(html).toContain("rate comparison, not a capability comparison");
@@ -87,10 +94,16 @@ describe("renderBody (session mode)", () => {
     expect(html).toContain("feat/cost-breakdown-detail-report");
   });
 
-  it("renders raw events with highlighted JSON and copy buttons", () => {
-    expect(html).toContain("Raw events");
+  it("puts raw events in the advanced drawer with highlighted JSON", () => {
     expect(html).toContain('class="tape"');
     expect(html).toContain("Copy JSON");
+    expect(html).toContain("Raw events");
+  });
+
+  it("renders panel footer links to stream, graph, and all sessions", () => {
+    expect(html).toContain('data-cmd="openStream"');
+    expect(html).toContain('data-cmd="openGraph"');
+    expect(html).toContain('data-cmd="openAllSessions"');
   });
 
   it("uses data attributes for geometry (CSP forbids style attrs)", () => {
