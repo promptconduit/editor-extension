@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 0.21.1
+
+- **Refreshed Open VSX / README screenshots** for all panels (cost breakdown,
+  session graph, stream, orchestration theater, agent coaching) using current UI.
+
 ## 0.21.0
 
 - **Simpler cost home — cost per prompt first.** One status-bar item
