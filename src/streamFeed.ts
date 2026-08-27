@@ -371,6 +371,38 @@ export class StreamState {
   }
 }
 
+// Collapse preToolUse/postToolUse pairs into one readable row in the stream feed.
+const TOOL_PRE = new Set(["preToolUse", "PreToolUse"]);
+const TOOL_POST = new Set(["postToolUse", "PostToolUse", "postToolUseFailure", "PostToolUseFailure"]);
+
+export function collapseToolPairs(events: StreamEvent[]): StreamEvent[] {
+  const out: StreamEvent[] = [];
+  for (let i = 0; i < events.length; i++) {
+    const cur = events[i]!;
+    const next = events[i + 1];
+    if (
+      next &&
+      cur.sessionKey === next.sessionKey &&
+      TOOL_PRE.has(cur.hookEvent) &&
+      TOOL_POST.has(next.hookEvent)
+    ) {
+      out.push({
+        ...cur,
+        hookEvent: `${cur.hookEvent} → ${next.hookEvent}`,
+        toolsSummary: next.toolsSummary || cur.toolsSummary,
+        capturedAt: next.capturedAt || cur.capturedAt,
+        rawJson: next.rawJson ?? cur.rawJson,
+        rawTruncated: next.rawTruncated || cur.rawTruncated,
+        eventId: `${cur.eventId}+${next.eventId}`,
+      });
+      i++;
+      continue;
+    }
+    out.push(cur);
+  }
+  return out;
+}
+
 /**
  * Build the serializable webview state. Pure given its inputs (the preview and
  * tests pass `logDisabled` explicitly; the live controller reads the env flag).
@@ -396,7 +428,7 @@ export function buildStreamPanelState(
         count: buf.events.length,
       },
       selected: state.selectedVia,
-      events: [...buf.events],
+      events: collapseToolPairs([...buf.events]),
     };
   }
   return {
@@ -405,7 +437,7 @@ export function buildStreamPanelState(
     logDisabled: disabled,
     sessionCount: state.sessionCount,
     session: undefined,
-    events: state.allEntries(),
+    events: collapseToolPairs(state.allEntries()),
   };
 }
 
