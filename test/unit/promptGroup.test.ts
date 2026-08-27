@@ -183,7 +183,30 @@ describe("PromptGroupStore interruption", () => {
 });
 
 describe("PromptGroupStore Cursor path", () => {
-  it("opens one 'uncaptured' group per prompt-less Stop (Cursor's normal path)", () => {
+  it("correlates beforeSubmitPrompt with its Stop into one prompt group", () => {
+    const store = new PromptGroupStore();
+    ingest(store, [
+      v2Envelope("cursor", "beforeSubmitPrompt", "2026-07-06T17:00:00Z", {
+        sessionId: "cur-1",
+        promptId: "cp1",
+        raw: { prompt: "refactor the cost panel", conversation_id: "tab-1" },
+        enrichments: { prompt: { count: 1, chars: 22, words: 4 } },
+      }),
+      costEnvelope("cursor", "2026-07-06T17:00:30Z", "cur-1", [costRequest({ request_id: "gen-1" })], {
+        promptId: "cp1",
+        raw: { conversation_id: "tab-1" },
+        enrichments: { turn: { duration_ms: 30000, prompt_id: "cp1" } },
+      }),
+    ]);
+    const groups = store.groupsFor("tab-1");
+    expect(groups).toHaveLength(1);
+    expect(groups[0].kind).toBe("prompt");
+    expect(groups[0].id).toBe("cp1");
+    expect(groups[0].promptText).toBe("refactor the cost panel");
+    expect(groups[0].requests).toHaveLength(1);
+  });
+
+  it("opens one 'uncaptured' group per prompt-less Stop (genuine orphan)", () => {
     const store = new PromptGroupStore();
     ingest(store, [
       costEnvelope("cursor", "2026-07-06T17:00:00Z", "cur-1", [costRequest({ request_id: "gen-1" })]),
