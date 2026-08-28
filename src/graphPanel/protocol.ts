@@ -188,6 +188,8 @@ export interface GraphPanelState {
   selectedKey?: string;
   /** The selected session's tree; undefined when no sessions exist yet. */
   session?: GraphSessionNode;
+  /** Picker is filtered to the open workspace (editor host). */
+  workspaceScoped?: boolean;
 }
 
 export type HostMessage = { type: "state"; state: GraphPanelState };

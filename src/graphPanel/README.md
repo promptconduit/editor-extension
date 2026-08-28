@@ -11,12 +11,19 @@ grows in place from the tail of `~/.promptconduit/events.jsonl`.
 ```
 events.jsonl ──tail──▶ parseEnvelopeV2 ──▶ SessionTreeStore.ingest(env)
                                                    │
-                                       .snapshot(selectedKey) ──▶ GraphPanelState
-                                                                       │
-                              mountSessionGraph(el).update(state) ─────┘
+                    .snapshot(selectedKey, now, { scope, followKey })
+                                                   │
+                                          GraphPanelState
+                                                   │
+                              mountSessionGraph(el).update(state)
                                      │
                      render() ─▶ innerHTML ─▶ drawConnectors() (SVG elbow wires)
 ```
+
+The editor host passes a workspace `scope` (open folder paths) so the picker
+defaults to this repo, plus `followKey` from the focused Cursor tab / Claude
+Code terminal. Other hosts (CLI-served page, standalone demo) omit both and
+keep the previous global-recency default.
 
 - **`sessionTree.ts`** — `SessionTreeStore`: wraps the shared `PromptGroupStore`
   (turn grouping, tool aggregation, subagent start/stop pairing) plus per-session

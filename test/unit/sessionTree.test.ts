@@ -434,3 +434,77 @@ describe("SessionTreeStore picker and selection", () => {
     expect(store.snapshot(undefined, NOW).sessions).toHaveLength(1);
   });
 });
+
+describe("SessionTreeStore workspace scope", () => {
+  const tt = (session: string, repo: string, cwd: string, ts = T0): string =>
+    v2Envelope("cursor", "beforeSubmitPrompt", ts, {
+      sessionId: session,
+      repo,
+      raw: { conversation_id: session, prompt: "hi" },
+      enrichments: { env: { cwd } },
+    });
+
+  it("filters the picker to the open workspace and defaults to a live session there", () => {
+    const store = new SessionTreeStore();
+    ingest(store, [
+      tt("other", "scotthavird/claude-config", "/Users/me/claude-config", "2026-07-06T17:01:50Z"),
+      tt("here", "scotthavird/TumblingTimmy", "/Users/me/TumblingTimmy", T0),
+    ]);
+    const snap = store.snapshot(undefined, NOW, {
+      scope: { workspaceRoots: ["/Users/me/TumblingTimmy"], workspaceRepos: ["TumblingTimmy"] },
+    });
+    expect(snap.workspaceScoped).toBe(true);
+    expect(snap.sessions.map((s) => s.key)).toEqual(["here"]);
+    expect(snap.selectedKey).toBe("here");
+  });
+
+  it("still shows a followed session even when git context is the wrong repo", () => {
+    const store = new SessionTreeStore();
+    ingest(store, [
+      tt("mislabeled", "scotthavird/claude-config", "/Users/me/claude-config", "2026-07-06T17:01:50Z"),
+      tt("other", "scotthavird/other", "/Users/me/other", T0),
+    ]);
+    const snap = store.snapshot(undefined, NOW, {
+      scope: { workspaceRoots: ["/Users/me/TumblingTimmy"], workspaceRepos: ["TumblingTimmy"] },
+      followKey: "mislabeled",
+    });
+    expect(snap.sessions.map((s) => s.key)).toEqual(["mislabeled"]);
+    expect(snap.selectedKey).toBe("mislabeled");
+  });
+
+  it("matches by folder basename when cwd is missing", () => {
+    const store = new SessionTreeStore();
+    ingest(store, [
+      v2Envelope("claude-code", "UserPromptSubmit", T0, {
+        sessionId: "by-repo",
+        repo: "scotthavird/TumblingTimmy",
+        raw: { prompt: "hi" },
+      }),
+      v2Envelope("claude-code", "UserPromptSubmit", T0, {
+        sessionId: "other",
+        repo: "scotthavird/claude-config",
+        raw: { prompt: "nope" },
+      }),
+    ]);
+    const snap = store.snapshot(undefined, NOW, {
+      scope: { workspaceRoots: ["/Users/me/TumblingTimmy"], workspaceRepos: ["TumblingTimmy"] },
+    });
+    expect(snap.sessions.map((s) => s.key)).toEqual(["by-repo"]);
+  });
+
+  it("reads cwd from vcs.working_directory when env.cwd is absent", () => {
+    const store = new SessionTreeStore();
+    ingest(store, [
+      v2Envelope("cursor", "beforeSubmitPrompt", T0, {
+        sessionId: "via-vcs",
+        repo: "scotthavird/TumblingTimmy",
+        raw: { conversation_id: "via-vcs" },
+        enrichments: { vcs: { repo: "scotthavird/TumblingTimmy", working_directory: "/Users/me/TumblingTimmy" } },
+      }),
+    ]);
+    const snap = store.snapshot(undefined, NOW, {
+      scope: { workspaceRoots: ["/Users/me/TumblingTimmy"] },
+    });
+    expect(snap.selectedKey).toBe("via-vcs");
+  });
+});

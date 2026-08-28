@@ -39,7 +39,13 @@ const CURSOR_BIN = process.env.CURSOR_BIN; // extracted Cursor Electron binary
 const EXT_DEV_PATH = process.env.EXT_DEV_PATH ?? process.cwd(); // repo root (has out/)
 
 let seq = 0;
-function line(hook: string, ts: string, extra: Record<string, unknown>, enrichments: Record<string, unknown> = {}): string {
+function line(
+  hook: string,
+  ts: string,
+  extra: Record<string, unknown>,
+  enrichments: Record<string, unknown> = {},
+  cwd?: string,
+): string {
   return JSON.stringify({
     schema: 2,
     event_id: `e2e-graph-${++seq}`,
@@ -50,32 +56,36 @@ function line(hook: string, ts: string, extra: Record<string, unknown>, enrichme
     hook_event: hook,
     captured_at: ts,
     raw_event: { session_id: "cc-e2e", hook_event_name: hook, ...(extra.raw ?? {}) },
-    enrichments: { vcs: { repo: "promptconduit/demo-repo", branch: "main" }, ...enrichments },
+    enrichments: {
+      vcs: { repo: "promptconduit/demo-repo", branch: "main" },
+      ...(cwd ? { env: { cwd } } : {}),
+      ...enrichments,
+    },
   });
 }
 
-function writeSeededHome(): { home: string; eventsPath: string; at: (s: number) => string } {
+function writeSeededHome(cwd: string): { home: string; eventsPath: string; at: (s: number) => string } {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "pc-home-"));
   const dir = path.join(home, ".promptconduit");
   fs.mkdirSync(dir, { recursive: true });
   const base = Date.now() - 120_000; // two minutes of history, safely "live"
   const at = (offsetSec: number) => new Date(base + offsetSec * 1000).toISOString();
   const events = [
-    line("SessionStart", at(0), { raw: { model: "claude-opus-4-8" } }),
+    line("SessionStart", at(0), { raw: { model: "claude-opus-4-8" } }, {}, cwd),
     // Turn 1: completed, with tools and a paired subagent carrying cost.
-    line("UserPromptSubmit", at(5), { prompt_id: "p1", raw: { prompt: "explore the adapter architecture" } }),
+    line("UserPromptSubmit", at(5), { prompt_id: "p1", raw: { prompt: "explore the adapter architecture" } }, {}, cwd),
     line("PostToolBatch", at(10), { prompt_id: "p1" }, {
       tools: { total: 3, failed: 0, calls: [{ name: "Read", ok: true }, { name: "Read", ok: true }, { name: "Grep", ok: true }] },
-    }),
+    }, cwd),
     line("SubagentStart", at(15), { prompt_id: "p1", raw: { agent_id: "e2e-a1", agent_type: "Explore" } }, {
       subagent: { agent_id: "e2e-a1", agent_type: "Explore", phase: "start", concurrent: 1 },
-    }),
+    }, cwd),
     line("SubagentStop", at(55), { prompt_id: "p1", raw: { agent_id: "e2e-a1" } }, {
       subagent: { agent_id: "e2e-a1", agent_type: "Explore", phase: "stop", duration_ms: 40000, usd: { total: 0.12, currency: "USD" } },
-    }),
-    line("Stop", at(60), { prompt_id: "p1" }, { turn: { duration_ms: 55000, prompt_id: "p1" } }),
+    }, cwd),
+    line("Stop", at(60), { prompt_id: "p1" }, { turn: { duration_ms: 55000, prompt_id: "p1" } }, cwd),
     // Turn 2: OPEN — renders running (pulsing) until the appended Stop below.
-    line("UserPromptSubmit", at(70), { prompt_id: "p2", raw: { prompt: "now wire it into the panel" } }),
+    line("UserPromptSubmit", at(70), { prompt_id: "p2", raw: { prompt: "now wire it into the panel" } }, {}, cwd),
   ];
   const eventsPath = path.join(dir, "events.jsonl");
   fs.writeFileSync(eventsPath, events.join("\n") + "\n");
@@ -95,10 +105,10 @@ function launchEnv(home: string): NodeJS.ProcessEnv {
 test("Session Graph renders the live tree and updates in place from the tail", async () => {
   test.skip(!CURSOR_BIN, "CURSOR_BIN not set — run via the e2e-cursor workflow");
 
-  const { home, eventsPath, at } = writeSeededHome();
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "pc-ws-"));
+  const { home, eventsPath, at } = writeSeededHome(workspace);
   const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), "pc-ud-"));
   const extensionsDir = fs.mkdtempSync(path.join(os.tmpdir(), "pc-ext-"));
-  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "pc-ws-"));
   fs.mkdirSync("out/screenshots", { recursive: true });
 
   const userDir = path.join(userDataDir, "User");
@@ -174,7 +184,7 @@ test("Session Graph renders the live tree and updates in place from the tail", a
   // turn flip to completed in place — no reopen, no refresh.
   fs.appendFileSync(
     eventsPath,
-    line("Stop", at(125), { prompt_id: "p2" }, { turn: { duration_ms: 55000, prompt_id: "p2" } }) + "\n",
+    line("Stop", at(125), { prompt_id: "p2" }, { turn: { duration_ms: 55000, prompt_id: "p2" } }, workspace) + "\n",
   );
   await expect(turn2).toHaveAttribute("data-state", "completed", { timeout: 10_000 });
   await win.screenshot({ path: "out/screenshots/graph-03-turn-closed-live.png" });

@@ -111,6 +111,13 @@ describe("renderGraphBody", () => {
     );
     expect(empty).toContain("No sessions yet");
 
+    const scopedEmpty = renderGraphBody(
+      { revision: 1, logDisabled: false, sessions: [], workspaceScoped: true },
+      GRAPH_FIXTURE_NOW,
+    );
+    expect(scopedEmpty).toContain("No AI sessions in this workspace");
+    expect(scopedEmpty).not.toContain("No sessions yet");
+
     const disabled = renderGraphBody(
       { revision: 1, logDisabled: true, sessions: [] },
       GRAPH_FIXTURE_NOW,

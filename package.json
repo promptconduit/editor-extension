@@ -150,12 +150,12 @@
         "promptconduit.cursorTabs.enabled": {
           "type": "boolean",
           "default": true,
-          "description": "Cursor only (best effort): follow the selected agent/chat tab by reading Cursor's local workspace state, so the Stream panel and status-bar cost switch to that conversation. Self-disables if the state database is unreadable."
+          "description": "Cursor only (best effort): follow the selected agent/chat tab by reading Cursor's local workspace state, so the Stream panel, Session Graph, and status-bar cost switch to that conversation. Self-disables if the state database is unreadable."
         },
         "promptconduit.stream.followSelection": {
           "type": "boolean",
           "default": true,
-          "description": "When you focus a terminal running Claude Code or select a Cursor agent tab, drill the open Stream panel into that session automatically. Event activity never moves the view either way."
+          "description": "When you focus a terminal running Claude Code or select a Cursor agent tab, drill the open Stream panel and Session Graph into that session automatically. Event activity never moves the view either way."
         }
       }
     }
