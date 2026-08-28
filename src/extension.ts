@@ -52,18 +52,19 @@ function activateInner(context: vscode.ExtensionContext): void {
 
   // Selection gestures (a focused terminal, a selected Cursor agent tab) latch
   // the status bar AND — when followSelection is on — drill an open Stream
-  // panel into that session. Event recency still never moves the stream. The
-  // last gesture is remembered so a Stream panel opened AFTER the gesture
-  // starts on the selected session.
+  // panel and Session Graph into that session. Event recency still never moves
+  // the stream. The last gesture is remembered so a panel opened AFTER the
+  // gesture starts on the selected session.
   const followSelection = () =>
     vscode.workspace
       .getConfiguration("promptconduit.stream")
       .get<boolean>("followSelection", true);
   let lastSelection: { key: string; source: "terminal" | "cursor-tab" } | undefined;
-  const followStream = (key: string, source: "terminal" | "cursor-tab") => {
+  const followSurfaces = (key: string, source: "terminal" | "cursor-tab") => {
     lastSelection = { key, source };
     if (followSelection()) {
       StreamPanel.active?.selectSession(key, source);
+      GraphPanel.active?.followSession(key);
     }
   };
 
@@ -109,6 +110,9 @@ function activateInner(context: vscode.ExtensionContext): void {
     }),
     vscode.commands.registerCommand("promptconduit.graph.show", () => {
       GraphPanel.show(context.extensionUri);
+      if (lastSelection && followSelection()) {
+        GraphPanel.active?.followSession(lastSelection.key);
+      }
     }),
     vscode.commands.registerCommand("promptconduit.feedback.send", () => {
       void sendFeedback(context.extension.packageJSON.version as string);
@@ -165,7 +169,7 @@ function activateInner(context: vscode.ExtensionContext): void {
       (sessionKey) => {
         statusBar?.setFocusedKey(sessionKey);
         if (sessionKey) {
-          followStream(sessionKey, "terminal");
+          followSurfaces(sessionKey, "terminal");
         }
       },
       // Deliberately closing a Claude terminal dismisses that session so a later
@@ -196,7 +200,7 @@ function activateInner(context: vscode.ExtensionContext): void {
       onFocusedComposer: (composerId) => {
         statusBar?.setCursorTabKey(composerId);
         if (composerId) {
-          followStream(composerId, "cursor-tab");
+          followSurfaces(composerId, "cursor-tab");
         }
       },
       onDisabled: (reason) => {

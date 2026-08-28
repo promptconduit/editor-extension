@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **Session Graph follows this workspace.** The picker and default view show
+  sessions whose git folder matches the open editor folder, instead of
+  auto-selecting the most recently live session on the machine (which could be
+  another repo). The focused Cursor agent tab / Claude Code terminal still
+  wins, so a mis-tagged current chat remains visible. Other repos stay in
+  `events.jsonl`; they just don't steal the graph.
+
 ## 0.21.2
 
 - **Open VSX gallery: cost-first images only.** README now shows just the cost

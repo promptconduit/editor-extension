@@ -31,6 +31,8 @@ export interface VCSEnrichment {
   commit_hash?: string;
   commit_message?: string;
   remote_url?: string;
+  /** Absolute working directory used for git context (CLI vcs slug). */
+  working_directory?: string;
   is_worktree?: boolean;
   worktree_path?: string;
   // Working-tree state (CLI omits zero/false values).
@@ -208,6 +210,7 @@ export function parseEnvelopeV2(line: string): EnvelopeV2 | null {
       commit_hash: str(commit.hash) || undefined,
       commit_message: str(commit.message) || undefined,
       remote_url: str(vcsSrc.remote_url) || undefined,
+      working_directory: str(vcsSrc.working_directory) || undefined,
       is_worktree: worktree.is_worktree === true || undefined,
       worktree_path: str(worktree.path) || undefined,
       dirty: vcsSrc.dirty === true || undefined,

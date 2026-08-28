@@ -26,6 +26,22 @@ import type {
 
 /** A session with no events for this long (and no SessionEnd) counts as idle, not live. */
 export const LIVE_WINDOW_MS = 5 * 60_000;
+
+/** Limit the graph picker to the editor's open workspace (optional). */
+export interface GraphScope {
+  /** Absolute paths of open workspace folders. */
+  workspaceRoots?: string[];
+  /** Repo slugs (`owner/repo`) or folder basenames that count as this workspace. */
+  workspaceRepos?: string[];
+}
+
+/** Extra snapshot inputs from the editor host (follow-tab, workspace filter). */
+export interface GraphSnapshotOpts {
+  scope?: GraphScope;
+  /** Focused Cursor tab / Claude Code terminal session key. */
+  followKey?: string;
+}
+
 /** At most this many session metas; beyond it the least-recently-active is evicted. */
 const MAX_SESSIONS = 30;
 /** Turn boxes rendered per session; older turns collapse into an "N earlier" stub. */
@@ -43,6 +59,47 @@ function parseTs(ts: string | undefined): number {
   if (!ts) return NaN;
   const ms = Date.parse(ts);
   return Number.isNaN(ms) ? NaN : ms;
+}
+
+/** Path basename without node:path so this module stays host-agnostic. */
+function basename(p: string): string {
+  const norm = p.replace(/[\\/]+$/, "");
+  const i = Math.max(norm.lastIndexOf("/"), norm.lastIndexOf("\\"));
+  return i >= 0 ? norm.slice(i + 1) : norm;
+}
+
+function slashPath(p: string): string {
+  return p.replace(/\\/g, "/").replace(/\/+$/, "");
+}
+
+/** True when cwd is the root or a nested path (portable, slash-normalized). */
+export function isUnderRoot(cwd: string, root: string): boolean {
+  const a = slashPath(cwd);
+  const b = slashPath(root);
+  if (!a || !b) return false;
+  return a === b || a.startsWith(b + "/");
+}
+
+function repoShort(repo: string): string {
+  const i = repo.lastIndexOf("/");
+  return i >= 0 ? repo.slice(i + 1) : repo;
+}
+
+function scopeActive(scope?: GraphScope): boolean {
+  return (scope?.workspaceRoots?.length ?? 0) > 0 || (scope?.workspaceRepos?.length ?? 0) > 0;
+}
+
+/** True when this session belongs to the open workspace. No scope → everything. */
+export function sessionInScope(m: { cwd?: string; repo?: string }, scope?: GraphScope): boolean {
+  if (!scopeActive(scope)) return true;
+  const roots = scope?.workspaceRoots ?? [];
+  const repos = scope?.workspaceRepos ?? [];
+  const cwd = m.cwd;
+  if (cwd && roots.some((r) => isUnderRoot(cwd, r))) return true;
+  const repo = m.repo;
+  if (!repo) return false;
+  const short = repoShort(repo);
+  return repos.includes(repo) || repos.includes(short) || roots.some((r) => basename(r) === short);
 }
 
 // The session key of an envelope — the same rule as ConversationStore.key /
@@ -199,6 +256,7 @@ export class SessionTreeStore {
       if (e.os) m.os = e.os_version ? `${e.os} ${e.os_version}` : e.os;
       if (e.arch) m.arch = e.arch;
     }
+    if (!m.cwd) m.cwd = env.vcs.working_directory;
     if (!m.startedAt) m.startedAt = env.capturedAt;
     if (env.hookEvent === "SessionEnd") {
       m.ended = true;
@@ -213,11 +271,20 @@ export class SessionTreeStore {
 
   /**
    * Build the serializable webview state. `selectedKey` is the user's latched
-   * pick (undefined → most recently active live session, else most recent).
-   * `now` is injectable for tests.
+   * pick (undefined → followKey if set, else most recently active live session
+   * in scope, else most recent in scope). `now` is injectable for tests.
    */
-  snapshot(selectedKey: string | undefined, now: number = Date.now()): Omit<GraphPanelState, "revision" | "logDisabled"> {
-    const metas = [...this.meta.values()].sort((a, b) => b.lastActivity - a.lastActivity);
+  snapshot(
+    selectedKey: string | undefined,
+    now: number = Date.now(),
+    opts?: GraphSnapshotOpts,
+  ): Omit<GraphPanelState, "revision" | "logDisabled"> {
+    const all = [...this.meta.values()].sort((a, b) => b.lastActivity - a.lastActivity);
+    const scope = opts?.scope;
+    const followKey = opts?.followKey;
+    const metas = all.filter(
+      (m) => sessionInScope(m, scope) || m.key === selectedKey || m.key === followKey,
+    );
     const sessions: SessionPickerItem[] = metas.map((m) => ({
       key: m.key,
       tool: m.tool,
@@ -228,14 +295,15 @@ export class SessionTreeStore {
       turnCount: this.store.groupsFor(m.key).length,
     }));
 
-    let selected = selectedKey !== undefined ? metas.find((m) => m.key === selectedKey) : undefined;
-    if (!selected) {
-      selected = metas.find((m) => this.isLive(m, now)) ?? metas[0];
-    }
+    let selected: SessionMeta | undefined;
+    if (selectedKey !== undefined) selected = metas.find((m) => m.key === selectedKey);
+    if (!selected && followKey) selected = metas.find((m) => m.key === followKey);
+    if (!selected) selected = metas.find((m) => this.isLive(m, now)) ?? metas[0];
     return {
       sessions,
       selectedKey: selected?.key,
       session: selected ? this.buildSession(selected, now) : undefined,
+      workspaceScoped: scopeActive(scope) || undefined,
     };
   }
 

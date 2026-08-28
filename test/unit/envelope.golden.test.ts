@@ -37,6 +37,7 @@ describe("v2 envelope contract (golden)", () => {
     expect(env!.vcs.commit_hash).toBe("d2065769abcdef");
     expect(env!.vcs.is_worktree).toBe(true);
     expect(env!.vcs.worktree_path).toBe("/Users/dev/promptconduit-worktrees/feat-x");
+    expect(env!.vcs.working_directory).toBe("/Users/dev/project");
     expect(env!.vcs.pr?.number).toBe(42);
     expect(env!.trace.trace_id).toBe("0af7651916cd43dd8448eb211c80319c");
   });

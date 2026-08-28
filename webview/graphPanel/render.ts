@@ -447,6 +447,13 @@ function emptyHtml(state: GraphPanelState): string {
     <p>Unset that variable and restart your AI tool to start streaming events.</p>
   </div>`;
   }
+  if (state.workspaceScoped) {
+    return `<div class="empty muted">
+    <p>No AI sessions in this workspace yet. Sessions from other repos stay in
+    <code>~/.promptconduit/events.jsonl</code> but this graph follows the folder you have open.</p>
+    <p>Run a Claude Code or Cursor agent here with PromptConduit hooks installed and it will appear, growing live.</p>
+  </div>`;
+  }
   return `<div class="empty muted">
     <p>No sessions yet. Run an AI coding session (Claude Code or a Cursor agent) with the
     <code>promptconduit</code> CLI hooks installed and it will appear here, growing live —

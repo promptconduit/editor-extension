@@ -12,7 +12,7 @@ import * as vscode from "vscode";
 import { parseEnvelopeV2 } from "../envelope";
 import { RawEventTail, logDisabled } from "../tail";
 import { bustCache, makeNonce, webviewCsp, webviewShellHtml } from "../webviewHost";
-import { SessionTreeStore } from "./sessionTree";
+import { SessionTreeStore, type GraphScope } from "./sessionTree";
 import { GRAPH_PANEL_CSS } from "./styles";
 import type { GraphPanelState, WebviewMessage } from "./protocol";
 
@@ -31,16 +31,20 @@ const HEARTBEAT_MS = 15_000;
 export class GraphController {
   private readonly tail: RawEventTail;
   private readonly store = new SessionTreeStore();
-  // The user's explicit pick, latched; undefined → follow the store's default
-  // (most recently active live session).
+  // The user's explicit pick, latched; undefined → followKey, else the store's
+  // default (most recently active live session in the open workspace).
   private selectedKey: string | undefined;
+  private followKey: string | undefined;
   private disposed = false;
   private pending = false;
   private throttle: NodeJS.Timeout | undefined;
   private heartbeat: NodeJS.Timeout | undefined;
   private revision = 0;
 
-  constructor(private readonly push: (state: GraphPanelState) => void) {
+  constructor(
+    private readonly push: (state: GraphPanelState) => void,
+    private readonly getScope?: () => GraphScope | undefined,
+  ) {
     this.tail = new RawEventTail({
       onLines: (lines) => this.ingest(lines),
     });
@@ -73,6 +77,13 @@ export class GraphController {
     this.render();
   }
 
+  /** Follow a focused Cursor agent tab or Claude Code terminal. */
+  followSession(key: string): void {
+    this.followKey = key;
+    this.selectedKey = key;
+    this.render();
+  }
+
   private ingest(lines: string[]): void {
     for (const line of lines) {
       const env = parseEnvelopeV2(line);
@@ -98,18 +109,33 @@ export class GraphController {
     }, RENDER_THROTTLE_MS);
   }
 
+  /** Re-snapshot after the open workspace folders change. */
+  refreshScope(): void {
+    this.render();
+  }
+
   private render(): void {
     if (this.disposed) {
       return;
     }
     this.revision += 1;
-    const snap = this.store.snapshot(this.selectedKey);
+    const snap = this.store.snapshot(this.selectedKey, Date.now(), {
+      scope: this.getScope?.(),
+      followKey: this.followKey,
+    });
     this.push({
       revision: this.revision,
       logDisabled: logDisabled(),
       ...snap,
     });
   }
+}
+
+/** Open-folder scope for the graph picker. Empty window → no filter. */
+export function workspaceGraphScope(): GraphScope | undefined {
+  const folders = vscode.workspace.workspaceFolders ?? [];
+  if (folders.length === 0) return undefined;
+  return { workspaceRoots: folders.map((f) => f.uri.fsPath) };
 }
 
 /**
@@ -137,6 +163,10 @@ export class GraphPanel {
     GraphPanel.current = new GraphPanel(extensionUri);
   }
 
+  static get active(): GraphPanel | undefined {
+    return GraphPanel.current && !GraphPanel.current.disposed ? GraphPanel.current : undefined;
+  }
+
   private constructor(extensionUri: vscode.Uri) {
     this.extensionUri = extensionUri;
     this.panel = vscode.window.createWebviewPanel(
@@ -155,15 +185,22 @@ export class GraphPanel {
     this.panel.webview.onDidReceiveMessage((msg: WebviewMessage) => {
       this.onMessage(msg);
     });
-    this.controller = new GraphController((state) => this.push(state));
+    this.controller = new GraphController((state) => this.push(state), workspaceGraphScope);
+    const folderSub = vscode.workspace.onDidChangeWorkspaceFolders(() => this.controller.refreshScope());
     this.panel.onDidDispose(() => {
       this.disposed = true;
+      folderSub.dispose();
       this.controller.dispose();
       if (GraphPanel.current === this) {
         GraphPanel.current = undefined;
       }
     });
     this.controller.start();
+  }
+
+  /** Follow a focused Cursor agent tab or Claude Code terminal. */
+  followSession(key: string): void {
+    this.controller.followSession(key);
   }
 
   // (Re)build the webview document with a fresh nonce and cache-busted bundle
