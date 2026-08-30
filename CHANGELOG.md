@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Cursor Grok 4.6/4.5 sessions are priced.** Hook payloads send short slugs
+  (`grok-4.6`, `cursor-grok-4.6-high`) that previously missed the table and
+  showed as unpriced in the status bar; they now resolve to the published
+  Cursor Grok rates. Fast mode still uses the higher Fast rate, not Standard.
+
 - **Session Graph follows this workspace.** The picker and default view show
   sessions whose git folder matches the open editor folder, instead of
   auto-selecting the most recently live session on the machine (which could be
