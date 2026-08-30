@@ -64,6 +64,28 @@ describe("resolvePrice exact lookups", () => {
     expect(r!.price.input).toBe(0.000004);
   });
 
+  it("resolves cursor-grok-4.6-high via suffix trim to the standard rate", () => {
+    const r = resolvePrice("cursor-grok-4.6-high");
+    expect(r!.key).toBe("cursor-grok-4.6");
+    expect(r!.price.input).toBe(0.000002);
+  });
+
+  it("resolves short grok-4.6 slugs via the cursor- prefix retry", () => {
+    expect(resolvePrice("grok-4.6")!.key).toBe("cursor-grok-4.6");
+    expect(resolvePrice("grok-4.6")!.price.input).toBe(0.000002);
+    expect(resolvePrice("grok-4.6-high")!.key).toBe("cursor-grok-4.6");
+    const fast = resolvePrice("grok-4.6-high-fast");
+    expect(fast!.key).toBe("cursor-grok-4.6-fast");
+    expect(fast!.price.input).toBe(0.000004);
+  });
+
+  it("resolves grok-4.5-fast-xhigh to the Grok 4.5 fast rate", () => {
+    const r = resolvePrice("grok-4.5-fast-xhigh");
+    expect(r!.key).toBe("cursor-grok-4.5-fast");
+    expect(r!.price.input).toBe(0.000004);
+    expect(r!.price.output).toBe(0.000018);
+  });
+
   it("resolves gemini-3.7-flash-high via suffix trim", () => {
     const r = resolvePrice("gemini-3.7-flash-high");
     expect(r!.key).toBe("gemini-3.7-flash");

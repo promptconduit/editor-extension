@@ -225,7 +225,8 @@ export const PRICING: Record<string, ModelPrice> = {
   // Cursor first-party and third-party model rates from cursor.com/docs/models-and-pricing.
   // Composer/Grok publish cache-read only. The exact "-fast" key must exist so
   // suffix-trim doesn't land on the cheaper standard rate; Grok fast slugs are
-  // aliased below.
+  // aliased below. Short hook slugs (grok-4.6) retry as cursor-grok-4.6 in
+  // resolvePrice.
   "cursor-grok-4.6-fast": {
     input: 0.000004,
     output: 0.000012,
@@ -284,15 +285,31 @@ export const MODEL_ALIASES: Record<string, string> = {
 // resolvePrice mirrors PriceTable.ResolvePrice in pricing.go. Resolution
 // order: exact key, alias map, then progressively shorter dash-delimited
 // prefixes of the ORIGINAL model string (so "claude-opus-4-8-20260101"
-// resolves to "claude-opus-4-8"). Case-sensitive throughout, like the Go
-// code. Returns the matched table key alongside the rates so callers can
-// dedupe (e.g. exclude the actual model from a comparison set).
+// resolves to "claude-opus-4-8"). Cursor hook payloads often send the short
+// Grok slug (grok-4.6) instead of the table key (cursor-grok-4.6); when the
+// first pass misses and the slug starts with "grok-", retry as "cursor-"+slug.
+// Case-sensitive throughout, like the Go code. Returns the matched table key
+// alongside the rates so callers can dedupe (e.g. exclude the actual model
+// from a comparison set).
 export function resolvePrice(
   model: string,
 ): { key: string; price: ModelPrice } | undefined {
   if (model === "") {
     return undefined;
   }
+  const hit = lookupPrice(model);
+  if (hit) {
+    return hit;
+  }
+  if (model.startsWith("grok-")) {
+    return lookupPrice("cursor-" + model);
+  }
+  return undefined;
+}
+
+function lookupPrice(
+  model: string,
+): { key: string; price: ModelPrice } | undefined {
   const exact = PRICING[model];
   if (exact) {
     return { key: model, price: exact };
