@@ -17,6 +17,8 @@ const COMMAND_MAP: Record<string, string> = {
   openStream: "promptconduit.stream.showFeed",
   openGraph: "promptconduit.graph.show",
   openAllSessions: "promptconduit.cost.showAllSessions",
+  login: "promptconduit.account.login",
+  dismissLogin: "promptconduit.account.dismissLogin",
 };
 
 export class CostDetailPanel {

@@ -2,7 +2,7 @@
   "name": "promptconduit",
   "displayName": "PromptConduit",
   "description": "See what each AI prompt costs — live in your status bar, with a per-prompt ledger, coaching tips, and branch/PR spend scopes. 100% local. Also: Session Graph, Stream, Orchestration Theater, and Agent Coaching.",
-  "version": "0.21.2",
+  "version": "0.22.0",
   "publisher": "promptconduit",
   "license": "MIT",
   "icon": "resources/icon.png",
@@ -61,6 +61,14 @@
         "command": "promptconduit.cost.followActive",
         "title": "PromptConduit: Follow Active Cost Session",
         "icon": "$(sync)"
+      },
+      {
+        "command": "promptconduit.account.login",
+        "title": "PromptConduit: Sign In"
+      },
+      {
+        "command": "promptconduit.account.dismissLogin",
+        "title": "PromptConduit: Dismiss Sign-In Prompt"
       },
       {
         "command": "promptconduit.coaching.showTab",

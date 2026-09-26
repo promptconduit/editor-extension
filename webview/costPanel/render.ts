@@ -520,6 +520,22 @@ export function ledgerHtml(s: SessionView): string {
   </section>`;
 }
 
+export function syncOfferHtml(state: CostPanelState): string {
+  const offer = state.syncOffer;
+  if (!offer || offer.sessions <= 0) {
+    return "";
+  }
+  const sessions = `${offer.sessions} session${offer.sessions === 1 ? "" : "s"}`;
+  return `<section class="sync-offer">
+    <h2>Keep this month</h2>
+    <p>The last ${offer.windowDays} days would cost <strong>${fmtUSDHero(offer.usd)}</strong> at public API rates, across ${sessions}. <code>promptconduit login</code> syncs that history so you can see it on another machine.</p>
+    <p class="sync-actions">
+      <button type="button" class="tb" data-cmd="login">promptconduit login</button>
+      <button type="button" class="tb" data-cmd="dismissLogin">Not now</button>
+    </p>
+  </section>`;
+}
+
 function heroHtml(state: CostPanelState, s: SessionView): string {
   const scoped = state.scopeTotals;
   const cost =
@@ -684,14 +700,14 @@ export interface RenderZones {
 export function renderZones(state: CostPanelState): RenderZones {
   if (state.sessions.length === 0) {
     return {
-      top: `${toolbarHtml(state)}${shortLandingHtml()}`,
+      top: `${toolbarHtml(state)}${syncOfferHtml(state)}${shortLandingHtml()}`,
       rest: panelFooterHtml(),
     };
   }
   if (state.mode === "session") {
     const s = state.sessions[0];
     return {
-      top: `${toolbarHtml(state)}${heroHtml(state, s)}${topTipHtml(state)}`,
+      top: `${toolbarHtml(state)}${heroHtml(state, s)}${syncOfferHtml(state)}${topTipHtml(state)}`,
       ledger: {
         header: `<h2>Cost per prompt</h2>
           <p class="muted small">Each entry is one prompt, newest first — expand for model, tokens, and tool calls.</p>`,
@@ -709,6 +725,7 @@ export function renderZones(state: CostPanelState): RenderZones {
       <p class="hero-cost">${total > 0 ? fmtUSDHero(total) : "unpriced"}</p>
       <p class="muted small">Across every tracked conversation on this machine.</p>
     </header>
+    ${syncOfferHtml(state)}
     <section>
       <h2>By session</h2>
       ${state.sessions.map((s) => sessionCard(s, state)).join("")}

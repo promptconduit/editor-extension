@@ -89,7 +89,7 @@ describe("resolvePrice exact lookups", () => {
   it("resolves gemini-3.7-flash-high via suffix trim", () => {
     const r = resolvePrice("gemini-3.7-flash-high");
     expect(r!.key).toBe("gemini-3.7-flash");
-    expect(r!.price.output).toBe(0.0000035);
+    expect(r!.price.output).toBe(0.00000375);
   });
 });
 
