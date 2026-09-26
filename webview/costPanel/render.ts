@@ -10,6 +10,7 @@ import type { CostPanelState, SessionView } from "../../src/costPanel/protocol";
 import type { PromptGroup, PromptSubagent, PromptToolCall } from "../../src/promptGroup";
 import type { CostEvent, ModelTotal, SessionSummary, Tokens } from "../../src/types";
 import { compareModels, COMPARISON_CAVEAT, ModelComparison } from "../../src/costPanel/comparison";
+import { applyRateCard } from "../../src/pricing";
 import { glossaryFor } from "../../src/costPanel/glossary";
 import { shortLandingHtml } from "../../src/landingShort";
 import { escapeHtml, highlightJson } from "./jsonHighlight";
@@ -698,6 +699,7 @@ export interface RenderZones {
 }
 
 export function renderZones(state: CostPanelState): RenderZones {
+  applyRateCard(state.rateCard);
   if (state.sessions.length === 0) {
     return {
       top: `${toolbarHtml(state)}${syncOfferHtml(state)}${shortLandingHtml()}`,

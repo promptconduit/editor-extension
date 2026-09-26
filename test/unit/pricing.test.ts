@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import * as fs from "fs";
 import * as path from "path";
-import { PRICING, MODEL_ALIASES, resolvePrice, COMPARISON_MODELS } from "../../src/pricing";
+import { PRICING, MODEL_ALIASES, resolvePrice, COMPARISON_MODELS, applyRateCard } from "../../src/pricing";
 
 describe("resolvePrice exact lookups", () => {
   it("returns claude-fable-5 rates verbatim", () => {
@@ -227,5 +227,26 @@ describe("parity with cli/internal/cost/pricing_data.json", () => {
     // toEqual is symmetric on plain objects: this asserts every CLI model +
     // rate is present and identical, AND that PRICING has no extra models.
     expect(PRICING).toEqual(expected);
+  });
+});
+
+describe("published rate card overlay", () => {
+  it("overrides a bundled row and restores it when cleared", () => {
+    const bundled = resolvePrice("cursor-grok-4.7");
+    expect(bundled?.price.input).toBe(0.000002);
+    try {
+      applyRateCard({
+        "cursor-grok-4.7": { input: 0.000009, output: 0.000009, cacheRead: 0.000001 },
+        "gpt-6-astra": { input: 0.000003, output: 0.000004 },
+      });
+      expect(resolvePrice("cursor-grok-4.7")?.price.input).toBe(0.000009);
+      expect(resolvePrice("grok-4.7-high")?.price.input).toBe(0.000009);
+      expect(resolvePrice("gpt-6-astra")?.price.input).toBe(0.000003);
+      expect(PRICING["cursor-grok-4.7"].input).toBe(0.000002);
+    } finally {
+      applyRateCard(undefined);
+    }
+    expect(resolvePrice("cursor-grok-4.7")?.price.input).toBe(0.000002);
+    expect(resolvePrice("gpt-6-astra")).toBeUndefined();
   });
 });

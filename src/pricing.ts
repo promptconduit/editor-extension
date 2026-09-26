@@ -24,6 +24,27 @@ export interface ModelPrice {
 //   cacheRead    ← cache_read_input_token_cost
 //   cacheWrite5m ← cache_creation_input_token_cost      (5-minute TTL, 1.25x input)
 //   cacheWrite1h ← cache_creation_input_token_cost_1h   (1-hour TTL, 2x input)
+/** Date stamped on the embedded snapshot. A published card older than this is ignored. */
+export const BUNDLED_CARD_UPDATED = "2026-09-25";
+
+let rateCardOverlay: Record<string, ModelPrice> | undefined;
+
+/**
+ * Replace bundled rows with a published PromptConduit card for this webview.
+ * Pass undefined to use the bundled table only. The extension host reads the
+ * file; this module stays free of filesystem access so the webview can import it.
+ */
+export function applyRateCard(card: Record<string, ModelPrice> | undefined): void {
+  rateCardOverlay = card && Object.keys(card).length > 0 ? card : undefined;
+}
+
+function pricingTable(): Record<string, ModelPrice> {
+  if (!rateCardOverlay) {
+    return PRICING;
+  }
+  return { ...PRICING, ...rateCardOverlay };
+}
+
 export const PRICING: Record<string, ModelPrice> = {
   "claude-fable-5": {
     input: 0.00001,
@@ -388,13 +409,14 @@ export function resolvePrice(
 function lookupPrice(
   model: string,
 ): { key: string; price: ModelPrice } | undefined {
-  const exact = PRICING[model];
+  const table = pricingTable();
+  const exact = table[model];
   if (exact) {
     return { key: model, price: exact };
   }
   const canonical = MODEL_ALIASES[model];
   if (canonical !== undefined) {
-    const aliased = PRICING[canonical];
+    const aliased = table[canonical];
     if (aliased) {
       return { key: canonical, price: aliased };
     }
@@ -409,7 +431,7 @@ function lookupPrice(
       break;
     }
     trimmed = trimmed.slice(0, idx);
-    const mp = PRICING[trimmed];
+    const mp = table[trimmed];
     if (mp) {
       return { key: trimmed, price: mp };
     }
