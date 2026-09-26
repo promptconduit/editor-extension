@@ -17,6 +17,7 @@ import { SessionRestoreController, makeRestoreDeps, recordDismissed } from "./se
 import { TerminalFocusController, makeTerminalFocusDeps } from "./terminalFocus";
 import { CursorTabTracker, runComposerQuery } from "./cursorTabs";
 import { SyncOfferController, shellQuote } from "./syncOffer";
+import { readPublishedRateCard } from "./rateCard";
 
 let statusBar: CostStatusBar | undefined;
 let costFeed: CostFeedController | undefined;
@@ -51,13 +52,19 @@ function activateInner(context: vscode.ExtensionContext): void {
   syncOffers.setOnChange(() => statusBar?.setSyncOffer(syncOffers.current()));
   syncOffers.start();
 
-  const panelState = (mode: "session" | "all", scope?: CostScope) =>
-    buildCostPanelState(
+  const panelState = (mode: "session" | "all", scope?: CostScope) => {
+    const state = buildCostPanelState(
       statusBar!.storeRef,
       mode,
       scope ?? CostDetailPanel.current?.scope ?? "session",
       syncOffers.current(),
     );
+    const card = readPublishedRateCard();
+    if (card) {
+      state.rateCard = card;
+    }
+    return state;
+  };
 
   statusBar.setOnChange(() => CostDetailPanel.refresh());
 

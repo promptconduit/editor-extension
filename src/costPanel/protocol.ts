@@ -11,6 +11,7 @@ import type { Tip } from "../tips";
 import type { EdgeCase } from "../edgeCases";
 import type { ResourceLink } from "../links";
 import type { CostScope, ScopeChip, ScopeTotals } from "../costScope";
+import type { ModelPrice } from "../pricing";
 
 /** One conversation, fully prepared for rendering. */
 export interface SessionView {
@@ -54,6 +55,11 @@ export interface CostPanelState {
    * not already syncing. The panel offers `promptconduit login`.
    */
   syncOffer?: SyncOffer;
+  /**
+   * Published PromptConduit rate card, per-token USD, when it is as new as the
+   * rates bundled in this extension. Absent means the bundled table is used.
+   */
+  rateCard?: Record<string, ModelPrice>;
 }
 
 /** Local 30-day API-equivalent spend, shown as the reason to sign in. */
