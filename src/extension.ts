@@ -16,6 +16,7 @@ import { UpdatePromptController } from "./updatePrompt";
 import { SessionRestoreController, makeRestoreDeps, recordDismissed } from "./sessionRestore";
 import { TerminalFocusController, makeTerminalFocusDeps } from "./terminalFocus";
 import { CursorTabTracker, runComposerQuery } from "./cursorTabs";
+import { SyncOfferController, shellQuote } from "./syncOffer";
 
 let statusBar: CostStatusBar | undefined;
 let costFeed: CostFeedController | undefined;
@@ -45,8 +46,18 @@ function activateInner(context: vscode.ExtensionContext): void {
   statusBar = new CostStatusBar();
   context.subscriptions.push(statusBar);
 
+  const syncOffers = new SyncOfferController(context);
+  context.subscriptions.push({ dispose: () => syncOffers.dispose() });
+  syncOffers.setOnChange(() => statusBar?.setSyncOffer(syncOffers.current()));
+  syncOffers.start();
+
   const panelState = (mode: "session" | "all", scope?: CostScope) =>
-    buildCostPanelState(statusBar!.storeRef, mode, scope ?? CostDetailPanel.current?.scope ?? "session");
+    buildCostPanelState(
+      statusBar!.storeRef,
+      mode,
+      scope ?? CostDetailPanel.current?.scope ?? "session",
+      syncOffers.current(),
+    );
 
   statusBar.setOnChange(() => CostDetailPanel.refresh());
 
@@ -83,6 +94,21 @@ function activateInner(context: vscode.ExtensionContext): void {
     }),
     vscode.commands.registerCommand("promptconduit.cost.followActive", () => {
       statusBar?.followActive();
+    }),
+    vscode.commands.registerCommand("promptconduit.account.login", () => {
+      const bin = resolveCli();
+      if (!bin) {
+        void vscode.window.showErrorMessage(
+          "PromptConduit CLI was not found. Install it, then run promptconduit login.",
+        );
+        return;
+      }
+      const term = vscode.window.createTerminal({ name: "PromptConduit login" });
+      term.show();
+      term.sendText(`${shellQuote(bin)} login`);
+    }),
+    vscode.commands.registerCommand("promptconduit.account.dismissLogin", () => {
+      syncOffers.dismiss();
     }),
     vscode.commands.registerCommand("promptconduit.coaching.showTab", () => {
       CoachingPanel.show();

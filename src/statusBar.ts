@@ -77,6 +77,7 @@ export class CostStatusBar {
   private pending = false;
   private throttle: NodeJS.Timeout | undefined;
   private onChange: (() => void) | undefined;
+  private syncLine: string | undefined;
 
   constructor() {
     this.item = vscode.window.createStatusBarItem(
@@ -95,6 +96,18 @@ export class CostStatusBar {
   /** Register a callback when display selection or totals change. */
   setOnChange(fn: () => void): void {
     this.onChange = fn;
+  }
+
+  /** One tooltip line offering login, once the host has a 30-day local total. */
+  setSyncOffer(offer: { usd: number; sessions: number; windowDays: number } | undefined): void {
+    const line = offer
+      ? `Last ${offer.windowDays} days: **${fmtUSD(offer.usd)}** across ${offer.sessions} sessions. Run \`promptconduit login\` to sync that history.`
+      : undefined;
+    if (line === this.syncLine) {
+      return;
+    }
+    this.syncLine = line;
+    this.scheduleRender();
   }
 
   get storeRef(): ConversationStore {
@@ -269,6 +282,9 @@ export class CostStatusBar {
     }
     if (lastEvent) {
       tip.appendMarkdown(`\nLast request: ${lastRequestLabel(lastEvent)} (${lastEvent.model})\n`);
+    }
+    if (this.syncLine) {
+      tip.appendMarkdown(`\n${this.syncLine}\n`);
     }
     tip.appendMarkdown(
       `\n_Follows your last gesture — a prompt, a focused terminal, or a selected Cursor agent tab (best effort). Pin to lock it._\n`,

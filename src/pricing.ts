@@ -32,10 +32,24 @@ export const PRICING: Record<string, ModelPrice> = {
     cacheWrite5m: 0.0000125,
     cacheWrite1h: 0.00002,
   },
+  "claude-fable-5-1": {
+    input: 0.00001,
+    output: 0.00005,
+    cacheRead: 0.00000025,
+    cacheWrite5m: 0.0000125,
+    cacheWrite1h: 0.00002,
+  },
   "claude-mythos-5": {
     input: 0.00001,
     output: 0.00005,
     cacheRead: 0.000001,
+    cacheWrite5m: 0.0000125,
+    cacheWrite1h: 0.00002,
+  },
+  "claude-mythos-5-1": {
+    input: 0.00001,
+    output: 0.00005,
+    cacheRead: 0.00000025,
     cacheWrite5m: 0.0000125,
     cacheWrite1h: 0.00002,
   },
@@ -95,6 +109,13 @@ export const PRICING: Record<string, ModelPrice> = {
     cacheWrite5m: 0.00000625,
     cacheWrite1h: 0.00001,
   },
+  "claude-opus-5-5": {
+    input: 0.000004,
+    output: 0.00002,
+    cacheRead: 0.0000002,
+    cacheWrite5m: 0.000005,
+    cacheWrite1h: 0.000008,
+  },
   "claude-opus-5-fast": {
     input: 0.00001,
     output: 0.00005,
@@ -150,19 +171,41 @@ export const PRICING: Record<string, ModelPrice> = {
     cacheRead: 0.00000015,
   },
   "gemini-3.6-flash": {
-    input: 0.0000015,
-    output: 0.0000075,
-    cacheRead: 0.00000015,
+    input: 0.00000075,
+    output: 0.00000375,
+    cacheRead: 0.000000075,
   },
   "gemini-3.7-flash": {
     input: 0.00000075,
-    output: 0.0000035,
+    output: 0.00000375,
+    cacheRead: 0.000000075,
+  },
+  "gemini-3.8-flash": {
+    input: 0.00000075,
+    output: 0.00000375,
     cacheRead: 0.000000075,
   },
   "glm-5.2": {
     input: 0.0000014,
     output: 0.0000044,
     cacheRead: 0.00000026,
+  },
+  "gpt-6-sol": {
+    input: 0.000002,
+    output: 0.00001,
+    cacheRead: 0.0000002,
+    cacheWrite5m: 0.0000025,
+  },
+  "gpt-6-luna": {
+    input: 0.0000001,
+    output: 0.0000005,
+    cacheRead: 0.00000001,
+    cacheWrite5m: 0.000000125,
+  },
+  "gpt-5.3-codex": {
+    input: 0.00000175,
+    output: 0.000014,
+    cacheRead: 0.000000175,
   },
   "gpt-5.6-sol": {
     input: 0.000004,
@@ -222,11 +265,41 @@ export const PRICING: Record<string, ModelPrice> = {
     output: 0.000015,
     cacheRead: 0.0000003,
   },
-  // Cursor first-party and third-party model rates from cursor.com/docs/models-and-pricing.
+  "muse-spark-1.3": {
+    input: 0.00000125,
+    output: 0.00000425,
+    cacheRead: 0.00000015,
+  },
+  "grok-build-0.1": {
+    input: 0.000001,
+    output: 0.000002,
+    cacheRead: 0.0000002,
+  },
+  // Cursor first-party rates from cursor.com/docs/models-and-pricing (2026-09-25).
   // Composer/Grok publish cache-read only. The exact "-fast" key must exist so
   // suffix-trim doesn't land on the cheaper standard rate; Grok fast slugs are
   // aliased below. Short hook slugs (grok-4.6) retry as cursor-grok-4.6 in
   // resolvePrice.
+  "cursor-grok-4.7-500k-fast": {
+    input: 0.000006,
+    output: 0.000018,
+    cacheRead: 0.0000015,
+  },
+  "cursor-grok-4.7-500k": {
+    input: 0.000004,
+    output: 0.000012,
+    cacheRead: 0.000001,
+  },
+  "cursor-grok-4.7-fast": {
+    input: 0.000004,
+    output: 0.000012,
+    cacheRead: 0.000001,
+  },
+  "cursor-grok-4.7": {
+    input: 0.000002,
+    output: 0.000006,
+    cacheRead: 0.0000005,
+  },
   "cursor-grok-4.6-fast": {
     input: 0.000004,
     output: 0.000012,
@@ -278,6 +351,11 @@ export const MODEL_ALIASES: Record<string, string> = {
   "composer-1": "cursor-composer-1",
   "claude-4.5-sonnet": "claude-sonnet-4-5",
   "claude-4.5-opus": "claude-opus-4-5",
+  "claude-fable-5.1": "claude-fable-5-1",
+  "claude-mythos-5.1": "claude-mythos-5-1",
+  "claude-opus-5.5": "claude-opus-5-5",
+  "cursor-grok-4.7-500k-high-fast": "cursor-grok-4.7-500k-fast",
+  "cursor-grok-4.7-high-fast": "cursor-grok-4.7-fast",
   "cursor-grok-4.6-high-fast": "cursor-grok-4.6-fast",
   "cursor-grok-4.5-high-fast": "cursor-grok-4.5-fast",
 };

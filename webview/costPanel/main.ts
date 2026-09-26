@@ -204,7 +204,9 @@ document.addEventListener("click", (e) => {
       cmd === "refresh" ||
       cmd === "openStream" ||
       cmd === "openGraph" ||
-      cmd === "openAllSessions"
+      cmd === "openAllSessions" ||
+      cmd === "login" ||
+      cmd === "dismissLogin"
     ) {
       vscode.postMessage({ type: "command", id: cmd });
     }

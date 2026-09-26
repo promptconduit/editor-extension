@@ -49,6 +49,18 @@ export interface CostPanelState {
   tips: Tip[];
   edgeCases: EdgeCase[];
   links: ResourceLink[];
+  /**
+   * Set when the user has enough locally priced sessions to see value and is
+   * not already syncing. The panel offers `promptconduit login`.
+   */
+  syncOffer?: SyncOffer;
+}
+
+/** Local 30-day API-equivalent spend, shown as the reason to sign in. */
+export interface SyncOffer {
+  usd: number;
+  sessions: number;
+  windowDays: number;
 }
 
 export type HostMessage =
@@ -64,7 +76,9 @@ export type WebviewCommand =
   | "openStream"
   | "openGraph"
   | "openAllSessions"
-  | "setScope";
+  | "setScope"
+  | "login"
+  | "dismissLogin";
 
 export type WebviewMessage =
   | { type: "ready" }

@@ -226,6 +226,16 @@ button.scope-chip.active {
 }
 button.scope-chip.disabled { opacity: 0.45; cursor: default; }
 .top-tip h2 { margin-top: 1.2rem; }
+.sync-offer {
+  margin-top: 1.2rem;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid var(--hairline);
+  border-left: 3px solid var(--accent);
+  border-radius: 4px;
+}
+.sync-offer h2 { margin: 0 0 0.35rem; }
+.sync-offer p { margin: 0.35rem 0; }
+.sync-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.6rem; }
 details.advanced-drawer { margin-top: 1.6rem; border: 1px solid var(--hairline); border-radius: 4px; padding: 0.5rem 0.8rem; }
 details.advanced-drawer > summary { cursor: pointer; list-style: none; }
 details.advanced-drawer > summary::-webkit-details-marker { display: none; }

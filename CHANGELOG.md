@@ -2,17 +2,12 @@
 
 ## Unreleased
 
-- **Cursor Grok 4.6/4.5 sessions are priced.** Hook payloads send short slugs
-  (`grok-4.6`, `cursor-grok-4.6-high`) that previously missed the table and
-  showed as unpriced in the status bar; they now resolve to the published
-  Cursor Grok rates. Fast mode still uses the higher Fast rate, not Standard.
+## 0.22.0
 
-- **Session Graph follows this workspace.** The picker and default view show
-  sessions whose git folder matches the open editor folder, instead of
-  auto-selecting the most recently live session on the machine (which could be
-  another repo). The focused Cursor agent tab / Claude Code terminal still
-  wins, so a mis-tagged current chat remains visible. Other repos stay in
-  `events.jsonl`; they just don't steal the graph.
+- **September 2026 model rates.** Adds Claude Fable 5.1, Mythos 5.1, and Opus 5.5 (cache reads at the published 0.025× and 0.05× rates), Cursor Grok 4.7 including fast and 500k context, Gemini 3.8 Flash, Muse Spark 1.3, GPT-6 Sol and Luna, GPT-5.3 Codex, and Grok Build 0.1. Gemini 3.6 and 3.7 Flash now use Google's current standard API rates ($0.75 / $3.75 per million through December 31, 2026).
+- **Sign in after a real total.** Once the last 30 days contain at least three priced sessions and the CLI is not already syncing, the cost panel offers `promptconduit login` and names that month's API-equivalent spend. Dismiss hides it. A saved API key, or local-only mode, stays quiet.
+- **Cursor Grok 4.6/4.5 sessions are priced.** Hook payloads send short slugs (`grok-4.6`, `cursor-grok-4.6-high`) that previously missed the table and showed as unpriced in the status bar; they now resolve to the published Cursor Grok rates. Fast mode still uses the higher Fast rate, not Standard.
+- **Session Graph follows this workspace.** The picker and default view show sessions whose git folder matches the open editor folder, instead of auto-selecting the most recently live session on the machine (which could be another repo). The focused Cursor agent tab / Claude Code terminal still wins, so a mis-tagged current chat remains visible. Other repos stay in `events.jsonl`; they just don't steal the graph.
 
 ## 0.21.2
 
