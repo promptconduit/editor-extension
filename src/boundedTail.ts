@@ -163,6 +163,12 @@ export interface LineTailOptions extends SliceOptions {
   seedBytes: number;
   /** Bytes re-read from the end after rotation/truncation/a large gap. Defaults to seedBytes. */
   reseedBytes?: number;
+  /**
+   * Where the file is renamed to on rotation (default `${file}.1`). When the
+   * live file's inode changes and this path holds the old inode, the bytes
+   * appended before the rename are drained from it first (bounded).
+   */
+  rotatedFile?: string;
   pollMs?: number;
 }
 
@@ -170,6 +176,13 @@ export class LineTail {
   private cursor: Cursor | undefined; // undefined = not positioned (file absent)
   private inode = 0;
   private lastLine: string | undefined;
+  // Dedup after a reseed: lines are held back until `lastLine` is found (emit
+  // only what follows it) or the reseed window [.., skipEnd) is fully read
+  // without finding it (then everything held is new). Persists across polls,
+  // so a reseed read that stops part-way can't re-emit already-seen lines.
+  private skipping = false;
+  private skipEnd = 0;
+  private skipBuf: string[] = [];
   private watcher: fs.FSWatcher | undefined;
   private poll: NodeJS.Timeout | undefined;
   private disposed = false;
@@ -242,31 +255,55 @@ export class LineTail {
     try {
       stat = fs.statSync(this.opts.file);
     } catch {
-      // Gone (deleted, or mid-rename): re-seed once it reappears.
-      this.cursor = undefined;
-      this.inode = 0;
+      // Gone (deleted, or mid-rename). Keep the cursor and inode: when the file
+      // reappears with a new inode, the rotated copy can still be drained.
       return;
     }
     const cur = this.cursor;
+    const rotated = cur !== undefined && this.inode !== 0 && stat.ino !== this.inode;
+    if (rotated) {
+      this.drainRotated(cur);
+    }
     const reseed =
       !cur ||
-      (this.inode !== 0 && stat.ino !== this.inode) ||
+      rotated ||
       stat.size < cur.offset ||
       stat.size - cur.offset > this.reseedBytes;
     if (reseed) {
       this.position(stat, this.reseedBytes);
-      const lines: string[] = [];
-      this.cursor!.drain(this.opts.file, stat.size, this.opts, (ls) => {
-        for (const l of ls) lines.push(l);
-      });
-      const fresh = this.afterLastSeen(lines);
-      if (fresh.length > 0) {
-        this.emit(fresh);
-      }
-      return;
+      this.skipBuf = [];
+      this.skipping = this.lastLine !== undefined;
+      this.skipEnd = stat.size;
     }
     this.inode = stat.ino;
-    cur.drain(this.opts.file, stat.size, this.opts, (lines) => this.emit(lines));
+    this.cursor!.drain(this.opts.file, stat.size, this.opts, (lines) => this.accept(lines));
+    this.settleSkip();
+  }
+
+  // The live file was renamed away (rotation). If the rotated path still holds
+  // the inode we were reading, finish it from our offset (bounded by the reseed
+  // budget), including a final line that never got its newline.
+  private drainRotated(cur: Cursor): void {
+    const rotatedFile = this.opts.rotatedFile ?? `${this.opts.file}.1`;
+    let rstat: fs.Stats;
+    try {
+      rstat = fs.statSync(rotatedFile);
+    } catch {
+      return;
+    }
+    if (rstat.ino !== this.inode || rstat.size < cur.offset) {
+      return;
+    }
+    const end = Math.min(rstat.size, cur.offset + this.reseedBytes);
+    cur.drain(rotatedFile, end, this.opts, (lines) => this.accept(lines));
+    if (cur.offset >= rstat.size) {
+      const tail = cur.splitter.carry;
+      cur.splitter.carry = "";
+      if (tail.trim().length > 0) {
+        this.accept([tail]);
+      }
+    }
+    this.settleSkip();
   }
 
   private position(stat: fs.Stats, budget: number): void {
@@ -275,14 +312,38 @@ export class LineTail {
     this.inode = stat.ino;
   }
 
-  // After a rewrite (e.g. a prune via temp file + rename) the new file usually
-  // still contains lines we already emitted. Skip through the last one we saw.
-  private afterLastSeen(lines: string[]): string[] {
-    if (this.lastLine === undefined) {
-      return lines;
+  // Route a batch of complete lines through the post-reseed dedup.
+  private accept(lines: string[]): void {
+    if (!this.skipping) {
+      this.emit(lines);
+      return;
     }
-    const idx = lines.lastIndexOf(this.lastLine);
-    return idx >= 0 ? lines.slice(idx + 1) : lines;
+    const idx = this.lastLine === undefined ? -1 : lines.lastIndexOf(this.lastLine);
+    if (idx >= 0) {
+      // Found where we left off: everything held so far was already seen.
+      this.skipping = false;
+      this.skipBuf = [];
+      const fresh = lines.slice(idx + 1);
+      if (fresh.length > 0) {
+        this.emit(fresh);
+      }
+      return;
+    }
+    for (const l of lines) this.skipBuf.push(l);
+  }
+
+  // Once the whole reseed window has been read without finding the last-seen
+  // line, the held lines are all new (e.g. a fresh file after rotation).
+  private settleSkip(): void {
+    if (!this.skipping || !this.cursor || this.cursor.offset < this.skipEnd) {
+      return;
+    }
+    this.skipping = false;
+    const held = this.skipBuf;
+    this.skipBuf = [];
+    if (held.length > 0) {
+      this.emit(held);
+    }
   }
 
   private noteEmitted(lines: string[]): void {

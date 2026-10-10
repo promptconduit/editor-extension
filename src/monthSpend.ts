@@ -33,7 +33,9 @@ interface PricedRequest {
 
 /**
  * Running 30-day accumulator: one entry per priced request_id (first
- * occurrence inside the window wins). Entries that age out are pruned.
+ * occurrence wins). Requests already older than the window are not kept;
+ * future-dated ones are kept (the scan offset has moved past them) and only
+ * counted once `now` reaches them. Entries that age out are pruned.
  */
 export class MonthSpendAccumulator {
   private readonly reqs = new Map<string, PricedRequest>();
@@ -55,7 +57,7 @@ export class MonthSpendAccumulator {
         continue;
       }
       const ts = Date.parse(ev.ts);
-      if (Number.isNaN(ts) || ts < cutoff || ts > now) {
+      if (Number.isNaN(ts) || ts < cutoff) {
         continue;
       }
       if (this.reqs.has(ev.request_id)) {
@@ -99,7 +101,18 @@ export function accumulateMonthSpend(
   return acc.total(now);
 }
 
+/**
+ * Identity of a file across renames: device + inode + birth time. An inode
+ * number alone can be reused by a new file after a delete; the birth time
+ * (preserved by rename) tells them apart. Where the filesystem reports no
+ * birth time (0), dev + inode is the best available.
+ */
+export function fileIdentity(stat: Pick<fs.Stats, "dev" | "ino" | "birthtimeMs">): string {
+  return `${stat.dev}:${stat.ino}:${stat.birthtimeMs}`;
+}
+
 interface FileProgress {
+  identity: string;
   offset: number;
   decoder: StringDecoder;
   splitter: LineSplitter;
@@ -108,6 +121,8 @@ interface FileProgress {
 export interface MonthSpendScannerOptions {
   sliceBytes?: number;
   windowMs?: number;
+  /** File identity function (tests inject one to simulate inode reuse). */
+  identify?: (stat: fs.Stats) => string;
 }
 
 /**
@@ -116,8 +131,9 @@ export interface MonthSpendScannerOptions {
  */
 export class MonthSpendScanner {
   private readonly acc: MonthSpendAccumulator;
-  private progress = new Map<number, FileProgress>(); // keyed by inode
+  private progress = new Map<string, FileProgress>(); // keyed by fileIdentity()
   private readonly sliceBytes: number;
+  private readonly identify: (stat: fs.Stats) => string;
 
   constructor(
     private readonly files: () => string[],
@@ -125,10 +141,11 @@ export class MonthSpendScanner {
   ) {
     this.acc = new MonthSpendAccumulator(opts.windowMs);
     this.sliceBytes = Math.max(1, opts.sliceBytes ?? DEFAULT_SLICE_BYTES);
+    this.identify = opts.identify ?? fileIdentity;
   }
 
   async scan(now: number): Promise<MonthSpend> {
-    const next = new Map<number, FileProgress>();
+    const next = new Map<string, FileProgress>();
     for (const file of this.files()) {
       await this.scanFile(file, now, next);
     }
@@ -136,7 +153,7 @@ export class MonthSpendScanner {
     return this.acc.total(now);
   }
 
-  private async scanFile(file: string, now: number, next: Map<number, FileProgress>): Promise<void> {
+  private async scanFile(file: string, now: number, next: Map<string, FileProgress>): Promise<void> {
     let fh: fs.promises.FileHandle;
     try {
       fh = await fs.promises.open(file, "r");
@@ -145,11 +162,12 @@ export class MonthSpendScanner {
     }
     try {
       const stat = await fh.stat();
-      let prog = this.progress.get(stat.ino);
-      if (!prog || stat.size < prog.offset) {
-        prog = { offset: 0, decoder: new StringDecoder("utf8"), splitter: new LineSplitter(false) };
+      const identity = this.identify(stat);
+      let prog = this.progress.get(identity);
+      if (!prog || prog.identity !== identity || stat.size < prog.offset) {
+        prog = { identity, offset: 0, decoder: new StringDecoder("utf8"), splitter: new LineSplitter(false) };
       }
-      next.set(stat.ino, prog);
+      next.set(identity, prog);
       if (stat.size <= prog.offset) {
         return;
       }

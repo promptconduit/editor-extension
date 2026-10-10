@@ -575,7 +575,7 @@ export class StreamPanel {
   // Bumped on every shell (re)render so a refresh cache-busts the bundle URI.
   private htmlRev = 0;
   private lastState: StreamPanelState | undefined;
-  // rawJson of the rows in lastState, served on request (see slimStreamState).
+  // rawJson of the rows in the last DELIVERED state, served on request.
   private lastRaw = new Map<string, string>();
   // lastState has not been delivered (the panel was hidden or not ready).
   private stale = false;
@@ -671,9 +671,9 @@ export class StreamPanel {
   }
 
   private push(state: StreamPanelState): void {
-    const slim = slimStreamState(state);
-    this.lastState = slim.state;
-    this.lastRaw = slim.raw;
+    // Keep the full state; slimming happens only when it's actually delivered,
+    // so a hidden panel does no per-push work beyond holding a reference.
+    this.lastState = state;
     this.stale = true;
     if (this.ready && this.panel.visible) {
       this.deliver();
@@ -684,8 +684,10 @@ export class StreamPanel {
     if (!this.lastState) {
       return;
     }
+    const slim = slimStreamState(this.lastState);
+    this.lastRaw = slim.raw;
     this.stale = false;
-    void this.panel.webview.postMessage({ type: "state", state: this.lastState });
+    void this.panel.webview.postMessage({ type: "state", state: slim.state });
   }
 
   private async onMessage(msg: WebviewMessage): Promise<void> {

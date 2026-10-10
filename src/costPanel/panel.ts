@@ -159,10 +159,14 @@ export class CostDetailPanel {
     mode: "session" | "all",
     getState: (mode: "session" | "all", scope: CostScope) => CostPanelState,
   ): void {
-    if (CostDetailPanel.current) {
-      CostDetailPanel.current.mode = mode;
-      CostDetailPanel.current.panel.reveal(vscode.ViewColumn.Active, false);
-      CostDetailPanel.current.push(getState(mode, CostDetailPanel.current.scope));
+    const p = CostDetailPanel.current;
+    if (p) {
+      p.mode = mode;
+      // Push once, before revealing: pushFresh clears `dirty` and cancels any
+      // pending throttled refresh, so the reveal's view-state change doesn't
+      // push the same state a second time.
+      p.pushFresh();
+      p.panel.reveal(vscode.ViewColumn.Active, false);
       return;
     }
     CostDetailPanel.current = new CostDetailPanel(extensionUri, mode, getState);
@@ -206,6 +210,10 @@ export class CostDetailPanel {
   }
 
   private pushFresh(): void {
+    if (this.refreshTimer) {
+      clearTimeout(this.refreshTimer);
+      this.refreshTimer = undefined;
+    }
     this.dirty = false;
     this.lastRefreshAt = Date.now();
     this.push(this.getState(this.mode, this.scope));
