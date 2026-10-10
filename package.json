@@ -2,7 +2,7 @@
   "name": "promptconduit",
   "displayName": "PromptConduit",
   "description": "See what each AI prompt costs — live in your status bar, with a per-prompt ledger, coaching tips, and branch/PR spend scopes. 100% local. Also: Session Graph, Stream, Orchestration Theater, and Agent Coaching.",
-  "version": "0.22.0",
+  "version": "0.23.0",
   "publisher": "promptconduit",
   "license": "MIT",
   "icon": "resources/icon.png",
@@ -125,7 +125,11 @@
         },
         "promptconduit.visualizer.githubEnrichment": {
           "type": "string",
-          "enum": ["fetch", "inferOnly", "off"],
+          "enum": [
+            "fetch",
+            "inferOnly",
+            "off"
+          ],
           "enumDescriptions": [
             "Fetch issue/PR titles and status from github.com (sends only owner/repo/number for the current repo).",
             "Infer issue/PR numbers from branch and commit messages, but make no network calls.",
@@ -141,7 +145,11 @@
         },
         "promptconduit.restore.mode": {
           "type": "string",
-          "enum": ["auto", "prompt", "off"],
+          "enum": [
+            "auto",
+            "prompt",
+            "off"
+          ],
           "enumDescriptions": [
             "On startup, silently reopen interrupted Claude Code sessions in this workspace (a summary notification confirms what was restored).",
             "On startup, ask before reopening interrupted sessions.",
