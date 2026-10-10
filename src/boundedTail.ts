@@ -231,23 +231,39 @@ export interface LineTailOptions extends SliceOptions {
   onLines: (lines: string[]) => void;
   /** Bytes read from the end of the file by readInitial(). */
   seedBytes: number;
-  /** Bytes re-read from the end after rotation/truncation/a large gap. Defaults to seedBytes. */
+  /**
+   * Bytes re-read from the end after rotation/truncation/a rewrite. Defaults
+   * to seedBytes. Plain appends are always read in full (in slices).
+   */
   reseedBytes?: number;
   /**
    * Where the file is renamed to on rotation (default `${file}.1`). When the
    * live file's inode changes and this path holds the old inode, the bytes
-   * appended before the rename are drained from it first (bounded).
+   * appended before the rename are drained from it first (to EOF, in slices).
    */
   rotatedFile?: string;
   pollMs?: number;
+}
+
+// The CLI writes the envelope's top-level event_id near the start of each line;
+// look only at the head so a nested "event_id" deep in a payload isn't picked.
+const EVENT_ID_RE = /"event_id"\s*:\s*"((?:[^"\\]|\\.)*)"/;
+const EVENT_ID_HEAD_CHARS = 512;
+
+/** Identity of a line for dedup: its envelope event_id, else the full text. */
+export function lineKey(line: string): string {
+  const m = EVENT_ID_RE.exec(line.length > EVENT_ID_HEAD_CHARS ? line.slice(0, EVENT_ID_HEAD_CHARS) : line);
+  return m ? `id:${m[1]}` : `txt:${line}`;
 }
 
 export class LineTail {
   private cursor: Cursor | undefined; // undefined = not positioned (file absent)
   // Identity of the file the cursor reads (see sameFile). Undefined until positioned.
   private fp: FileFingerprint | undefined;
-  private lastLine: string | undefined;
-  // Dedup after a reseed: lines are held back until `lastLine` is found (emit
+  // lineKey() of the last emitted line: its envelope event_id when present (so
+  // a rewrite that alters the line, e.g. a reprice, still matches), else text.
+  private lastKey: string | undefined;
+  // Dedup after a reseed: lines are held back until `lastKey` is found (emit
   // only what follows it) or the reseed window [.., skipEnd) is fully read
   // without finding it (then everything held is new). Persists across polls,
   // so a reseed read that stops part-way can't re-emit already-seen lines.
@@ -349,13 +365,18 @@ export class LineTail {
         if (prefix && prefix.length > this.fp.prefix.length) {
           this.fp.prefix = prefix; // extend the fingerprint as the file grows
         }
-        reseed = stat.size < cur.offset || stat.size - cur.offset > this.reseedBytes;
+        // Same file: read every appended byte (sliced), however many. Only a
+        // shrink means our offset is meaningless.
+        reseed = stat.size < cur.offset;
       }
     }
     if (reseed) {
-      this.flushSkip(); // held lines from an unsettled window are new: emit them
+      // A skip window still open here was cut short before reaching lastKey,
+      // so what it holds may already have been delivered: discard it and
+      // restart the skip against the same lastKey in the new window.
+      this.skipBuf = [];
       this.position(stat, this.reseedBytes);
-      this.skipping = this.lastLine !== undefined;
+      this.skipping = this.lastKey !== undefined;
       this.skipEnd = stat.size;
     }
     this.cursor!.drain(this.opts.file, stat.size, this.opts, (lines) => this.accept(lines));
@@ -364,7 +385,7 @@ export class LineTail {
 
   // The file we were reading was replaced. If the rotated path holds that same
   // file (identity, not just inode), finish it from our offset (bounded by the
-  // reseed budget). Only newline-terminated lines are emitted.
+  // EOF, in slices). Only newline-terminated lines are emitted.
   private drainRotated(cur: Cursor): void {
     if (!this.fp) {
       return;
@@ -378,8 +399,7 @@ export class LineTail {
     if (rstat.size < cur.offset || !sameFile(this.fp, rstat, readPrefixSync(this.rotatedFile))) {
       return;
     }
-    const end = Math.min(rstat.size, cur.offset + this.reseedBytes);
-    cur.drain(this.rotatedFile, end, this.opts, (lines) => this.accept(lines));
+    cur.drain(this.rotatedFile, rstat.size, this.opts, (lines) => this.accept(lines));
     if (cur.offset >= rstat.size) {
       cur.finish((lines) => this.accept(lines));
     }
@@ -399,7 +419,15 @@ export class LineTail {
       this.emit(lines);
       return;
     }
-    const idx = this.lastLine === undefined ? -1 : lines.lastIndexOf(this.lastLine);
+    let idx = -1;
+    if (this.lastKey !== undefined) {
+      for (let k = lines.length - 1; k >= 0; k--) {
+        if (lineKey(lines[k]) === this.lastKey) {
+          idx = k;
+          break;
+        }
+      }
+    }
     if (idx >= 0) {
       // Found where we left off: everything held so far was already seen.
       this.skipping = false;
@@ -436,7 +464,7 @@ export class LineTail {
 
   private noteEmitted(lines: string[]): void {
     if (lines.length > 0) {
-      this.lastLine = lines[lines.length - 1];
+      this.lastKey = lineKey(lines[lines.length - 1]);
     }
   }
 

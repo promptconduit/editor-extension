@@ -44,7 +44,9 @@ export const MAX_FUTURE_SKEW_MS = 24 * 60 * 60 * 1000;
 /**
  * Running 30-day accumulator: one entry per priced request_id. When a
  * request_id appears more than once, the copy with the earliest timestamp
- * wins, so a skewed future-dated copy can't shadow a correct one. Requests
+ * wins, so a skewed future-dated copy can't shadow a correct one; among
+ * copies with the same timestamp the one read LAST wins, so a rewritten
+ * (re-scanned) file carrying repriced costs replaces the old values. Requests
  * already older than the window, or more than a day in the future, are not
  * kept. Slightly-future ones are kept (the scan offset has moved past them)
  * and counted once `now` reaches them. Entries that age out are pruned.
@@ -73,8 +75,8 @@ export class MonthSpendAccumulator {
         continue;
       }
       const prev = this.reqs.get(ev.request_id);
-      if (prev && prev.ts <= ts) {
-        continue;
+      if (prev && prev.ts < ts) {
+        continue; // keep the earlier-dated copy
       }
       this.reqs.set(ev.request_id, { ts, usd: ev.cost.total, session: ev.session_id ?? "" });
     }

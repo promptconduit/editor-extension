@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
-import { LineTail, LineSplitter, readTailLines } from "../../src/boundedTail";
+import { LineTail, LineSplitter, readTailLines, lineKey } from "../../src/boundedTail";
 import { TailReader } from "../../src/visualizer/tailReader";
 import { RawEventTail } from "../../src/tail";
 import { readHistory } from "../../src/visualizer/eventLog";
@@ -225,7 +225,7 @@ describe("LineTail", () => {
     expect(ids(got)).toEqual(Array.from({ length: 39 }, (_, k) => k + 1));
   });
 
-  it("emits lines held by an unsettled skip window when a new reseed starts", () => {
+  it("a cut-short skip window is discarded, and the skip restarts against the same last line", () => {
     fs.writeFileSync(file, lines(0, 10));
     let reads = 0;
     let failAt = -1;
@@ -240,35 +240,60 @@ describe("LineTail", () => {
       },
     });
     tail.readInitial();
-    // Rewrite #1 (fresh content, new inode); its reseed read fails part-way,
-    // so some new lines are held, waiting for the window to be read.
+    // Rewrite #1 keeps the seen lines 0..9 and adds 10..11; its reseed read
+    // fails part-way, before reaching line 9, so it holds already-seen lines.
     const tmp = path.join(dir, "rw.tmp");
-    fs.writeFileSync(tmp, lines(10, 20));
+    fs.writeFileSync(tmp, lines(0, 12));
     fs.renameSync(tmp, file);
-    failAt = reads + 4;
+    failAt = reads + 3;
     tail.readNew();
     expect(got).toEqual([]);
-    // Rewrite #2 before the next poll; nothing at events.jsonl.1 to drain.
-    fs.writeFileSync(tmp, lines(20, 22));
+    // Rewrite #2 before the next poll (still containing line 9).
+    fs.writeFileSync(tmp, lines(0, 14));
     fs.renameSync(tmp, file);
     tail.readNew();
-    const out = ids(got);
-    expect(out.slice(-2)).toEqual([20, 21]);
-    const held = out.slice(0, -2);
-    expect(held.length).toBeGreaterThan(0); // previously dropped
-    held.forEach((v, k) => expect(v).toBe(10 + k));
+    expect(ids(got)).toEqual([10, 11, 12, 13]); // no re-delivery of 0..9
   });
 
-  it("drains the rotated file even when the poll lands while events.jsonl is missing", () => {
-    fs.writeFileSync(file, lines(0, 5));
+  it("dedups a rewrite by event_id even when the last-seen line was altered", () => {
+    const ev = (id: string, usd: number) => JSON.stringify({ schema: 2, event_id: id, usd });
+    fs.writeFileSync(file, [ev("e1", 1), ev("e2", 2), ev("e3", 3)].join("\n") + "\n");
     const { tail, got } = makeTail({ seedBytes: 1 << 20 });
     tail.readInitial();
-    fs.appendFileSync(file, lines(5, 7));
-    fs.renameSync(file, `${file}.1`);
-    tail.readNew(); // live file absent mid-rotation
-    fs.writeFileSync(file, lines(7, 8));
+    // A reprice rewrite: same events, new numbers, plus one new event.
+    const tmp = path.join(dir, "rp.tmp");
+    fs.writeFileSync(tmp, [ev("e1", 10), ev("e2", 20), ev("e3", 30), ev("e4", 4)].join("\n") + "\n");
+    fs.renameSync(tmp, file);
     tail.readNew();
-    expect(ids(got)).toEqual([5, 6, 7]);
+    expect(got).toEqual([ev("e4", 4)]);
+  });
+
+  it("lineKey uses the envelope event_id and falls back to the text", () => {
+    expect(lineKey('{"schema":2,"event_id":"abc","x":1}')).toBe("id:abc");
+    expect(lineKey('{"schema":2,"event_id":"abc","x":2}')).toBe("id:abc");
+    expect(lineKey('{"i":1}')).toBe('txt:{"i":1}');
+    // A nested event_id far into the payload is not mistaken for the envelope's.
+    expect(lineKey(`{"i":1,"pad":"${"x".repeat(600)}","raw":{"event_id":"n"}}`)).toMatch(/^txt:/);
+  });
+
+  it("reads every appended byte of the same file, even past the reseed budget", () => {
+    fs.writeFileSync(file, lines(0, 5));
+    const { tail, got } = makeTail({ seedBytes: 1 << 20, reseedBytes: 200, sliceBytes: 64 });
+    tail.readInitial();
+    fs.appendFileSync(file, lines(5, 305)); // far more than 200 bytes in one poll
+    tail.readNew();
+    expect(ids(got)).toEqual(Array.from({ length: 300 }, (_, k) => k + 5));
+  });
+
+  it("drains the rotated remainder to EOF, past the reseed budget", () => {
+    fs.writeFileSync(file, lines(0, 5));
+    const { tail, got } = makeTail({ seedBytes: 1 << 20, reseedBytes: 200, sliceBytes: 64 });
+    tail.readInitial();
+    fs.appendFileSync(file, lines(5, 305));
+    fs.renameSync(file, `${file}.1`);
+    fs.writeFileSync(file, lines(305, 307));
+    tail.readNew();
+    expect(ids(got)).toEqual(Array.from({ length: 302 }, (_, k) => k + 5));
   });
 
   it("after rotation to a fresh file, emits every line of the new file", () => {
@@ -521,6 +546,17 @@ describe("MonthSpendScanner", () => {
     fs.closeSync(fd);
     fs.appendFileSync(file, cost("b", "s3", 4) + "\n");
     expect(await scanner.scan(NOW)).toEqual({ usd: 7, sessions: 3 }); // y not counted
+  });
+
+  it("reflects repriced values after a rewrite (same request_id, same ts)", async () => {
+    fs.writeFileSync(file, cost("a", "s1", 1) + "\n" + cost("b", "s2", 2) + "\n");
+    const scanner = new MonthSpendScanner(() => [`${file}.1`, file]);
+    expect(await scanner.scan(NOW)).toEqual({ usd: 3, sessions: 2 });
+    // `cost reprice`-style rewrite: same requests and timestamps, new totals.
+    const tmp = path.join(dir, "rp.tmp");
+    fs.writeFileSync(tmp, cost("a", "s1", 1.5) + "\n" + cost("b", "s2", 4) + "\n");
+    fs.renameSync(tmp, file);
+    expect(await scanner.scan(NOW)).toEqual({ usd: 5.5, sessions: 2 });
   });
 
   it("prefers the correctly dated copy over a future-dated duplicate", async () => {
