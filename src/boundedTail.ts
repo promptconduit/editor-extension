@@ -123,6 +123,76 @@ class Cursor {
       }
     }
   }
+
+  /**
+   * The file is final (rotated away): flush the decoder's buffered bytes and
+   * hand over any newline-terminated lines. The trailing fragment without a
+   * newline may be a write in progress, so it is dropped, never emitted.
+   */
+  finish(sink: (lines: string[]) => void): void {
+    const lines = this.splitter.push(this.decoder.end());
+    this.splitter.carry = "";
+    if (lines.length > 0) {
+      sink(lines);
+    }
+  }
+}
+
+// ---- file identity -----------------------------------------------------------
+//
+// dev + inode alone is not a reliable identity: an inode number can be reused
+// by a new file after a delete. A fingerprint of the file's first bytes (an
+// append-only log never rewrites them) tells such files apart. Birth time is
+// not used: without statx some platforms report ctime there, which changes on
+// every append.
+
+export const FINGERPRINT_BYTES = 256;
+
+export interface FileFingerprint {
+  dev: number;
+  ino: number;
+  /** First up-to-FINGERPRINT_BYTES bytes seen so far. */
+  prefix: Buffer;
+}
+
+/** Read the first `n` bytes of a file (fewer if it is shorter). */
+export function readPrefixSync(file: string, n = FINGERPRINT_BYTES): Buffer | undefined {
+  let fd: number;
+  try {
+    fd = fs.openSync(file, "r");
+  } catch {
+    return undefined;
+  }
+  try {
+    const buf = Buffer.alloc(n);
+    const read = fs.readSync(fd, buf, 0, n, 0);
+    return buf.subarray(0, read);
+  } catch {
+    return undefined;
+  } finally {
+    try {
+      fs.closeSync(fd);
+    } catch {
+      // ignore
+    }
+  }
+}
+
+/**
+ * True when `current` (a fresh read of the file's first bytes) is consistent
+ * with the fingerprint: same dev + inode, and the bytes we fingerprinted are
+ * still the file's first bytes. A file shorter than the stored prefix does
+ * not match.
+ */
+export function sameFile(
+  fp: FileFingerprint,
+  stat: { dev: number; ino: number },
+  current: Buffer | undefined,
+): boolean {
+  if (stat.dev !== fp.dev || stat.ino !== fp.ino || current === undefined) {
+    return false;
+  }
+  return current.length >= fp.prefix.length && current.subarray(0, fp.prefix.length).equals(fp.prefix);
 }
 
 export interface TailRead {
@@ -174,7 +244,8 @@ export interface LineTailOptions extends SliceOptions {
 
 export class LineTail {
   private cursor: Cursor | undefined; // undefined = not positioned (file absent)
-  private inode = 0;
+  // Identity of the file the cursor reads (see sameFile). Undefined until positioned.
+  private fp: FileFingerprint | undefined;
   private lastLine: string | undefined;
   // Dedup after a reseed: lines are held back until `lastLine` is found (emit
   // only what follows it) or the reseed window [.., skipEnd) is fully read
@@ -187,9 +258,11 @@ export class LineTail {
   private poll: NodeJS.Timeout | undefined;
   private disposed = false;
   private readonly reseedBytes: number;
+  private readonly rotatedFile: string;
 
   constructor(private readonly opts: LineTailOptions) {
     this.reseedBytes = opts.reseedBytes ?? opts.seedBytes;
+    this.rotatedFile = opts.rotatedFile ?? `${opts.file}.1`;
   }
 
   /** Current read offset (tests). */
@@ -251,65 +324,73 @@ export class LineTail {
     if (this.disposed) {
       return;
     }
+    const cur = this.cursor;
     let stat: fs.Stats;
     try {
       stat = fs.statSync(this.opts.file);
     } catch {
-      // Gone (deleted, or mid-rename). Keep the cursor and inode: when the file
-      // reappears with a new inode, the rotated copy can still be drained.
+      // Gone (deleted, or mid-rename). If it was renamed to the rotated path,
+      // finish it from there now; the file is re-seeded when it reappears.
+      if (cur && this.fp) {
+        this.drainRotated(cur);
+      }
+      this.cursor = undefined;
       return;
     }
-    const cur = this.cursor;
-    const rotated = cur !== undefined && this.inode !== 0 && stat.ino !== this.inode;
-    if (rotated) {
-      this.drainRotated(cur);
+    let reseed = !cur || !this.fp;
+    if (cur && this.fp) {
+      const prefix = readPrefixSync(this.opts.file);
+      if (!sameFile(this.fp, stat, prefix)) {
+        // A different file now lives at the path: renamed away (rotation /
+        // prune rewrite), or deleted and recreated, possibly reusing the inode.
+        this.drainRotated(cur);
+        reseed = true;
+      } else {
+        if (prefix && prefix.length > this.fp.prefix.length) {
+          this.fp.prefix = prefix; // extend the fingerprint as the file grows
+        }
+        reseed = stat.size < cur.offset || stat.size - cur.offset > this.reseedBytes;
+      }
     }
-    const reseed =
-      !cur ||
-      rotated ||
-      stat.size < cur.offset ||
-      stat.size - cur.offset > this.reseedBytes;
     if (reseed) {
+      this.flushSkip(); // held lines from an unsettled window are new: emit them
       this.position(stat, this.reseedBytes);
-      this.skipBuf = [];
       this.skipping = this.lastLine !== undefined;
       this.skipEnd = stat.size;
     }
-    this.inode = stat.ino;
     this.cursor!.drain(this.opts.file, stat.size, this.opts, (lines) => this.accept(lines));
     this.settleSkip();
   }
 
-  // The live file was renamed away (rotation). If the rotated path still holds
-  // the inode we were reading, finish it from our offset (bounded by the reseed
-  // budget), including a final line that never got its newline.
+  // The file we were reading was replaced. If the rotated path holds that same
+  // file (identity, not just inode), finish it from our offset (bounded by the
+  // reseed budget). Only newline-terminated lines are emitted.
   private drainRotated(cur: Cursor): void {
-    const rotatedFile = this.opts.rotatedFile ?? `${this.opts.file}.1`;
+    if (!this.fp) {
+      return;
+    }
     let rstat: fs.Stats;
     try {
-      rstat = fs.statSync(rotatedFile);
+      rstat = fs.statSync(this.rotatedFile);
     } catch {
       return;
     }
-    if (rstat.ino !== this.inode || rstat.size < cur.offset) {
+    if (rstat.size < cur.offset || !sameFile(this.fp, rstat, readPrefixSync(this.rotatedFile))) {
       return;
     }
     const end = Math.min(rstat.size, cur.offset + this.reseedBytes);
-    cur.drain(rotatedFile, end, this.opts, (lines) => this.accept(lines));
+    cur.drain(this.rotatedFile, end, this.opts, (lines) => this.accept(lines));
     if (cur.offset >= rstat.size) {
-      const tail = cur.splitter.carry;
-      cur.splitter.carry = "";
-      if (tail.trim().length > 0) {
-        this.accept([tail]);
-      }
+      cur.finish((lines) => this.accept(lines));
     }
+    this.fp = undefined; // done with that file; never drain it twice
     this.settleSkip();
   }
 
   private position(stat: fs.Stats, budget: number): void {
     const start = stat.size > budget ? stat.size - budget : 0;
     this.cursor = new Cursor(start, this.opts.maxLineChars ?? DEFAULT_MAX_LINE_CHARS);
-    this.inode = stat.ino;
+    this.fp = { dev: stat.dev, ino: stat.ino, prefix: readPrefixSync(this.opts.file) ?? Buffer.alloc(0) };
   }
 
   // Route a batch of complete lines through the post-reseed dedup.
@@ -335,7 +416,14 @@ export class LineTail {
   // Once the whole reseed window has been read without finding the last-seen
   // line, the held lines are all new (e.g. a fresh file after rotation).
   private settleSkip(): void {
-    if (!this.skipping || !this.cursor || this.cursor.offset < this.skipEnd) {
+    if (this.skipping && this.cursor && this.cursor.offset >= this.skipEnd) {
+      this.flushSkip();
+    }
+  }
+
+  // Stop skipping and emit whatever is held.
+  private flushSkip(): void {
+    if (!this.skipping) {
       return;
     }
     this.skipping = false;

@@ -4,6 +4,7 @@ import {
   StreamState,
   buildStreamPanelState,
   slimStreamState,
+  StreamController,
   shortId,
   MAX_EVENTS,
   MAX_SESSIONS,
@@ -562,6 +563,26 @@ describe("stream enrichment badges (via parseStreamLine)", () => {
     expect(subStart?.subagentBadge).toBe("Explore start");
     const tools = parseStreamLine(sampleEnrichmentLines[4]);
     expect(tools?.toolsSummary).toBe("3 tools · 1 failed");
+  });
+});
+
+describe("StreamController lazy render", () => {
+  it("builds no state while inactive and builds exactly once on flush", () => {
+    let active = false;
+    const pushed: StreamPanelState[] = [];
+    const c = new StreamController((s) => pushed.push(s), () => active);
+    c.showAll();
+    c.drillIn("x");
+    c.showAll();
+    expect(pushed).toHaveLength(0);
+    expect(c.flush()).toBe(false); // still inactive
+    active = true;
+    expect(c.flush()).toBe(true);
+    expect(pushed).toHaveLength(1);
+    expect(c.flush()).toBe(false); // nothing new
+    c.showAll(); // active → renders immediately
+    expect(pushed).toHaveLength(2);
+    c.dispose();
   });
 });
 

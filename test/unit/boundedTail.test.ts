@@ -6,7 +6,7 @@ import { LineTail, LineSplitter, readTailLines } from "../../src/boundedTail";
 import { TailReader } from "../../src/visualizer/tailReader";
 import { RawEventTail } from "../../src/tail";
 import { readHistory } from "../../src/visualizer/eventLog";
-import { MonthSpendScanner, accumulateMonthSpend, fileIdentity } from "../../src/monthSpend";
+import { MonthSpendScanner, accumulateMonthSpend } from "../../src/monthSpend";
 
 let dir: string;
 let file: string;
@@ -180,12 +180,83 @@ describe("LineTail", () => {
     const { tail, got } = makeTail({ seedBytes: 1 << 20 });
     tail.readInitial();
     // Appended after our last poll, then rotated before the next one; the last
-    // line never got its newline.
+    // line never got its newline (possibly a write in progress) so it is
+    // dropped rather than emitted as a complete line.
     fs.appendFileSync(file, lines(10, 12) + ln(12));
     fs.renameSync(file, `${file}.1`);
     fs.writeFileSync(file, lines(13, 15));
     tail.readNew();
-    expect(ids(got)).toEqual([10, 11, 12, 13, 14]);
+    expect(ids(got)).toEqual([10, 11, 13, 14]);
+  });
+
+  it("drains a rotated remainder with multi-byte text split across slices", () => {
+    fs.writeFileSync(file, lines(0, 2));
+    const { tail, got } = makeTail({ seedBytes: 1 << 20, sliceBytes: 7 });
+    tail.readInitial();
+    const wide = JSON.stringify({ i: 2, s: "日本語 🚀 é".repeat(5) });
+    fs.appendFileSync(file, wide + "\n");
+    fs.renameSync(file, `${file}.1`);
+    fs.writeFileSync(file, lines(3, 4));
+    tail.readNew();
+    expect(got).toEqual([wide, ln(3)]);
+  });
+
+  it("treats a same-inode file with different first bytes as a new file", () => {
+    // Stand-in for delete + recreate reusing the inode: rewritten in place
+    // (same inode), larger than our offset, different content.
+    fs.writeFileSync(file, lines(0, 10));
+    const { tail, got } = makeTail({ seedBytes: 1 << 20 });
+    tail.readInitial();
+    const ino = fs.statSync(file).ino;
+    fs.writeFileSync(file, lines(100, 130));
+    expect(fs.statSync(file).ino).toBe(ino);
+    tail.readNew();
+    expect(ids(got)).toEqual(Array.from({ length: 30 }, (_, k) => 100 + k));
+  });
+
+  it("does not treat a growing file as replaced (fingerprint extends as it grows)", () => {
+    fs.writeFileSync(file, '{"i":0}\n'); // shorter than the fingerprint
+    const { tail, got } = makeTail({ seedBytes: 1 << 20 });
+    tail.readInitial();
+    for (let k = 1; k < 40; k++) {
+      fs.appendFileSync(file, ln(k) + "\n");
+      tail.readNew();
+    }
+    expect(ids(got)).toEqual(Array.from({ length: 39 }, (_, k) => k + 1));
+  });
+
+  it("emits lines held by an unsettled skip window when a new reseed starts", () => {
+    fs.writeFileSync(file, lines(0, 10));
+    let reads = 0;
+    let failAt = -1;
+    const { tail, got } = makeTail({
+      seedBytes: 1 << 20,
+      reseedBytes: 1 << 20,
+      sliceBytes: 40,
+      readSync: (fd, buf, off, len, pos) => {
+        reads += 1;
+        if (reads === failAt) throw new Error("EIO");
+        return fs.readSync(fd, buf, off, len, pos);
+      },
+    });
+    tail.readInitial();
+    // Rewrite #1 (fresh content, new inode); its reseed read fails part-way,
+    // so some new lines are held, waiting for the window to be read.
+    const tmp = path.join(dir, "rw.tmp");
+    fs.writeFileSync(tmp, lines(10, 20));
+    fs.renameSync(tmp, file);
+    failAt = reads + 4;
+    tail.readNew();
+    expect(got).toEqual([]);
+    // Rewrite #2 before the next poll; nothing at events.jsonl.1 to drain.
+    fs.writeFileSync(tmp, lines(20, 22));
+    fs.renameSync(tmp, file);
+    tail.readNew();
+    const out = ids(got);
+    expect(out.slice(-2)).toEqual([20, 21]);
+    const held = out.slice(0, -2);
+    expect(held.length).toBeGreaterThan(0); // previously dropped
+    held.forEach((v, k) => expect(v).toBe(10 + k));
   });
 
   it("drains the rotated file even when the poll lands while events.jsonl is missing", () => {
@@ -425,28 +496,42 @@ describe("MonthSpendScanner", () => {
     expect(await scanner.scan(NOW + 2 * 3_600_000)).toEqual({ usd: 5, sessions: 1 });
   });
 
-  it("resets progress when an inode is reused by a different file", async () => {
-    let generation = 1;
-    const scanner = new MonthSpendScanner(() => [file], {
-      // Same dev+inode both times, different birth time: an inode reused
-      // after a delete.
-      identify: () => `1:42:${generation}`,
-    });
+  it("resets progress when the same inode holds a different file", async () => {
+    const scanner = new MonthSpendScanner(() => [file]);
     fs.writeFileSync(file, cost("a", "s1", 1) + "\n");
     expect(await scanner.scan(NOW)).toEqual({ usd: 1, sessions: 1 });
-    // A new, larger file whose first bytes are requests we have never seen.
-    generation = 2;
+    const ino = fs.statSync(file).ino;
+    // Rewritten in place (same inode; stand-in for inode reuse after a delete):
+    // larger, and its first bytes are requests we have never seen.
     fs.writeFileSync(file, cost("b", "s2", 2) + "\n" + cost("c", "s3", 4) + "\n");
+    expect(fs.statSync(file).ino).toBe(ino);
     expect(await scanner.scan(NOW)).toEqual({ usd: 7, sessions: 3 });
   });
 
-  it("fileIdentity distinguishes a reused inode by birth time", () => {
-    expect(fileIdentity({ dev: 1, ino: 42, birthtimeMs: 100 })).not.toBe(
-      fileIdentity({ dev: 1, ino: 42, birthtimeMs: 200 }),
-    );
-    expect(fileIdentity({ dev: 1, ino: 42, birthtimeMs: 100 })).not.toBe(
-      fileIdentity({ dev: 2, ino: 42, birthtimeMs: 100 }),
-    );
+  it("does not re-read a file that only grew (identity is stable across appends)", async () => {
+    const first = cost("a", "s1", 1); // > FINGERPRINT_BYTES, so the fingerprint sits in it
+    expect(first.length).toBeGreaterThan(256);
+    fs.writeFileSync(file, first + "\n" + cost("x", "s2", 2) + "\n");
+    const scanner = new MonthSpendScanner(() => [file]);
+    expect(await scanner.scan(NOW)).toEqual({ usd: 3, sessions: 2 });
+    // Overwrite the already-scanned 2nd line in place (same length, beyond the
+    // fingerprint). Only a full re-read could see it.
+    const fd = fs.openSync(file, "r+");
+    fs.writeSync(fd, cost("y", "s9", 2), first.length + 1);
+    fs.closeSync(fd);
+    fs.appendFileSync(file, cost("b", "s3", 4) + "\n");
+    expect(await scanner.scan(NOW)).toEqual({ usd: 7, sessions: 3 }); // y not counted
+  });
+
+  it("prefers the correctly dated copy over a future-dated duplicate", async () => {
+    const skewed = cost("dup", "s1", 5, -1 / 24); // 1h ahead
+    const correct = cost("dup", "s1", 5, 1);
+    expect(accumulateMonthSpend([skewed, correct], NOW)).toEqual({ usd: 5, sessions: 1 });
+    // Way-future copies (> 1 day ahead) are ignored at ingest entirely.
+    expect(accumulateMonthSpend([cost("far", "s2", 9, -3)], NOW)).toEqual({
+      usd: 0,
+      sessions: 0,
+    });
   });
 
   it("matches accumulateMonthSpend over the same lines", async () => {

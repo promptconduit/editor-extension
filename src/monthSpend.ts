@@ -4,12 +4,19 @@
 // The log can be hundreds of MB, so it is never loaded whole. The first scan
 // streams each file in bounded slices; later scans read only the bytes appended
 // since (offsets are tracked per inode, so the live file being renamed to .1
-// keeps its progress). A rewritten file (new inode, e.g. a prune) is streamed
-// again from the top; request_id dedup keeps the total exact.
+// keeps its progress). A rewritten file (new inode, e.g. a prune) or a
+// different file reusing an inode (caught by a first-bytes fingerprint) is
+// streamed again from the top; request_id dedup keeps the total exact.
 
 import * as fs from "fs";
 import { StringDecoder } from "string_decoder";
-import { LineSplitter, DEFAULT_SLICE_BYTES } from "./boundedTail";
+import {
+  LineSplitter,
+  DEFAULT_SLICE_BYTES,
+  FINGERPRINT_BYTES,
+  sameFile,
+  type FileFingerprint,
+} from "./boundedTail";
 import { costEventsFrom, parseEnvelopeV2 } from "./envelope";
 import { eventsJsonlPath, rotatedEventsPath } from "./visualizer/paths";
 
@@ -31,11 +38,16 @@ interface PricedRequest {
   session: string;
 }
 
+/** Requests stamped further ahead than this (clock skew) are ignored. */
+export const MAX_FUTURE_SKEW_MS = 24 * 60 * 60 * 1000;
+
 /**
- * Running 30-day accumulator: one entry per priced request_id (first
- * occurrence wins). Requests already older than the window are not kept;
- * future-dated ones are kept (the scan offset has moved past them) and only
- * counted once `now` reaches them. Entries that age out are pruned.
+ * Running 30-day accumulator: one entry per priced request_id. When a
+ * request_id appears more than once, the copy with the earliest timestamp
+ * wins, so a skewed future-dated copy can't shadow a correct one. Requests
+ * already older than the window, or more than a day in the future, are not
+ * kept. Slightly-future ones are kept (the scan offset has moved past them)
+ * and counted once `now` reaches them. Entries that age out are pruned.
  */
 export class MonthSpendAccumulator {
   private readonly reqs = new Map<string, PricedRequest>();
@@ -57,10 +69,11 @@ export class MonthSpendAccumulator {
         continue;
       }
       const ts = Date.parse(ev.ts);
-      if (Number.isNaN(ts) || ts < cutoff) {
+      if (Number.isNaN(ts) || ts < cutoff || ts > now + MAX_FUTURE_SKEW_MS) {
         continue;
       }
-      if (this.reqs.has(ev.request_id)) {
+      const prev = this.reqs.get(ev.request_id);
+      if (prev && prev.ts <= ts) {
         continue;
       }
       this.reqs.set(ev.request_id, { ts, usd: ev.cost.total, session: ev.session_id ?? "" });
@@ -101,18 +114,9 @@ export function accumulateMonthSpend(
   return acc.total(now);
 }
 
-/**
- * Identity of a file across renames: device + inode + birth time. An inode
- * number alone can be reused by a new file after a delete; the birth time
- * (preserved by rename) tells them apart. Where the filesystem reports no
- * birth time (0), dev + inode is the best available.
- */
-export function fileIdentity(stat: Pick<fs.Stats, "dev" | "ino" | "birthtimeMs">): string {
-  return `${stat.dev}:${stat.ino}:${stat.birthtimeMs}`;
-}
-
 interface FileProgress {
-  identity: string;
+  /** Identity (dev + inode + first-bytes fingerprint; see boundedTail.sameFile). */
+  fp: FileFingerprint;
   offset: number;
   decoder: StringDecoder;
   splitter: LineSplitter;
@@ -121,8 +125,6 @@ interface FileProgress {
 export interface MonthSpendScannerOptions {
   sliceBytes?: number;
   windowMs?: number;
-  /** File identity function (tests inject one to simulate inode reuse). */
-  identify?: (stat: fs.Stats) => string;
 }
 
 /**
@@ -131,9 +133,9 @@ export interface MonthSpendScannerOptions {
  */
 export class MonthSpendScanner {
   private readonly acc: MonthSpendAccumulator;
-  private progress = new Map<string, FileProgress>(); // keyed by fileIdentity()
+  // Keyed by dev:inode; the fingerprint inside guards against inode reuse.
+  private progress = new Map<string, FileProgress>();
   private readonly sliceBytes: number;
-  private readonly identify: (stat: fs.Stats) => string;
 
   constructor(
     private readonly files: () => string[],
@@ -141,7 +143,6 @@ export class MonthSpendScanner {
   ) {
     this.acc = new MonthSpendAccumulator(opts.windowMs);
     this.sliceBytes = Math.max(1, opts.sliceBytes ?? DEFAULT_SLICE_BYTES);
-    this.identify = opts.identify ?? fileIdentity;
   }
 
   async scan(now: number): Promise<MonthSpend> {
@@ -162,12 +163,22 @@ export class MonthSpendScanner {
     }
     try {
       const stat = await fh.stat();
-      const identity = this.identify(stat);
-      let prog = this.progress.get(identity);
-      if (!prog || prog.identity !== identity || stat.size < prog.offset) {
-        prog = { identity, offset: 0, decoder: new StringDecoder("utf8"), splitter: new LineSplitter(false) };
+      const key = `${stat.dev}:${stat.ino}`;
+      const head = Buffer.alloc(FINGERPRINT_BYTES);
+      const prefix = head.subarray(0, (await fh.read(head, 0, FINGERPRINT_BYTES, 0)).bytesRead);
+      let prog = this.progress.get(key);
+      if (!prog || !sameFile(prog.fp, stat, prefix) || stat.size < prog.offset) {
+        // New file, or a different file reusing the inode: start over.
+        prog = {
+          fp: { dev: stat.dev, ino: stat.ino, prefix: Buffer.from(prefix) },
+          offset: 0,
+          decoder: new StringDecoder("utf8"),
+          splitter: new LineSplitter(false),
+        };
+      } else if (prefix.length > prog.fp.prefix.length) {
+        prog.fp.prefix = Buffer.from(prefix); // extend the fingerprint as the file grows
       }
-      next.set(identity, prog);
+      next.set(key, prog);
       if (stat.size <= prog.offset) {
         return;
       }

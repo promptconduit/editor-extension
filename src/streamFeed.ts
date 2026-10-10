@@ -481,7 +481,17 @@ export class StreamController {
   private throttle: NodeJS.Timeout | undefined;
   private revision = 0;
 
-  constructor(private readonly push: (state: StreamPanelState) => void) {
+  // A render was skipped because the sink was inactive (hidden panel).
+  private dirty = false;
+
+  /**
+   * `isActive` gates rendering: while it returns false (e.g. the panel is
+   * hidden) renders only mark the state dirty, and flush() builds it later.
+   */
+  constructor(
+    private readonly push: (state: StreamPanelState) => void,
+    private readonly isActive: () => boolean = () => true,
+  ) {
     this.tail = new TailReader<StreamEvent>(eventsJsonlPath(), parseStreamLine, (events) =>
       this.ingest(events),
     );
@@ -548,10 +558,27 @@ export class StreamController {
     }, RENDER_THROTTLE_MS);
   }
 
+  /**
+   * Build and push the state if a render was skipped while inactive. Returns
+   * whether it pushed.
+   */
+  flush(): boolean {
+    if (!this.dirty || this.disposed || !this.isActive()) {
+      return false;
+    }
+    this.render();
+    return true;
+  }
+
   private render(): void {
     if (this.disposed) {
       return;
     }
+    if (!this.isActive()) {
+      this.dirty = true;
+      return;
+    }
+    this.dirty = false;
     this.revision += 1;
     this.push(buildStreamPanelState(this.state, this.revision, logDisabled()));
   }
@@ -611,10 +638,14 @@ export class StreamPanel {
     this.panel.webview.onDidReceiveMessage((msg: WebviewMessage) => {
       void this.onMessage(msg);
     });
-    this.controller = new StreamController((state) => this.push(state));
-    // Hidden panels get no pushes; catch up with the latest state on reveal.
+    // While hidden (or before the webview is ready) the controller doesn't
+    // even build state; it is built once on reveal / ready.
+    this.controller = new StreamController(
+      (state) => this.push(state),
+      () => this.ready && this.panel.visible,
+    );
     this.panel.onDidChangeViewState(() => {
-      if (this.panel.visible && this.stale) {
+      if (this.panel.visible && !this.controller.flush() && this.stale) {
         this.deliver();
       }
     });
@@ -694,7 +725,9 @@ export class StreamPanel {
     switch (msg.type) {
       case "ready":
         this.ready = true;
-        this.deliver();
+        if (!this.controller.flush()) {
+          this.deliver();
+        }
         break;
       case "raw_request": {
         const items = msg.ids
