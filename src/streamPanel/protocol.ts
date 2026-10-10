@@ -34,10 +34,15 @@ export interface StreamPanelState {
   events: StreamEvent[];
 }
 
-export type HostMessage = { type: "state"; state: StreamPanelState };
+export type HostMessage =
+  | { type: "state"; state: StreamPanelState }
+  /** Raw JSON for rows the webview asked for (state pushes omit it). */
+  | { type: "raw"; items: { eventId: string; rawJson: string }[] };
 
 export type WebviewMessage =
   | { type: "ready" }
   | { type: "open_external"; url: string }
   | { type: "drill"; key: string }
+  /** Expanded rows whose rawJson was withheld from the state push. */
+  | { type: "raw_request"; ids: string[] }
   | { type: "command"; id: "drillIn" | "showAll" | "refresh" };

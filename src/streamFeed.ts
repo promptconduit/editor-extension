@@ -52,6 +52,11 @@ export interface StreamEvent {
    */
   rawJson?: string;
   rawTruncated: boolean;
+  /**
+   * Set on pushes to the webview when rawJson was withheld to keep the message
+   * small; the webview requests it when the row is expanded.
+   */
+  rawAvailable?: boolean;
   /** True when the session key came from raw.conversation_id (a Cursor tab). */
   keyIsConversationId: boolean;
   /**
@@ -442,6 +447,27 @@ export function buildStreamPanelState(
 }
 
 /**
+ * Strip rawJson from a state push (it can total megabytes across a few hundred
+ * rows) and return it separately, keyed by eventId, so the host can answer the
+ * webview's on-expand requests. Rows that had raw JSON carry rawAvailable.
+ */
+export function slimStreamState(state: StreamPanelState): {
+  state: StreamPanelState;
+  raw: Map<string, string>;
+} {
+  const raw = new Map<string, string>();
+  const events = state.events.map((e) => {
+    if (e.rawJson === undefined) {
+      return e;
+    }
+    raw.set(e.eventId, e.rawJson);
+    const { rawJson: _omit, ...rest } = e;
+    return { ...rest, rawAvailable: true };
+  });
+  return { state: { ...state, events }, raw };
+}
+
+/**
  * StreamController wires the pure StreamState to the live tail of events.jsonl
  * and a throttled state push. Host-agnostic: it pushes StreamPanelState to a
  * sink callback (the panel posts it to the webview; the preview writes it into
@@ -549,6 +575,10 @@ export class StreamPanel {
   // Bumped on every shell (re)render so a refresh cache-busts the bundle URI.
   private htmlRev = 0;
   private lastState: StreamPanelState | undefined;
+  // rawJson of the rows in lastState, served on request (see slimStreamState).
+  private lastRaw = new Map<string, string>();
+  // lastState has not been delivered (the panel was hidden or not ready).
+  private stale = false;
 
   static show(extensionUri: vscode.Uri): void {
     if (StreamPanel.current && !StreamPanel.current.disposed) {
@@ -582,6 +612,12 @@ export class StreamPanel {
       void this.onMessage(msg);
     });
     this.controller = new StreamController((state) => this.push(state));
+    // Hidden panels get no pushes; catch up with the latest state on reveal.
+    this.panel.onDidChangeViewState(() => {
+      if (this.panel.visible && this.stale) {
+        this.deliver();
+      }
+    });
     this.panel.onDidDispose(() => {
       this.disposed = true;
       this.controller.dispose();
@@ -635,21 +671,38 @@ export class StreamPanel {
   }
 
   private push(state: StreamPanelState): void {
-    this.lastState = state;
-    if (!this.ready) {
-      return; // delivered on "ready"
+    const slim = slimStreamState(state);
+    this.lastState = slim.state;
+    this.lastRaw = slim.raw;
+    this.stale = true;
+    if (this.ready && this.panel.visible) {
+      this.deliver();
+    } // else delivered on "ready" / reveal
+  }
+
+  private deliver(): void {
+    if (!this.lastState) {
+      return;
     }
-    void this.panel.webview.postMessage({ type: "state", state });
+    this.stale = false;
+    void this.panel.webview.postMessage({ type: "state", state: this.lastState });
   }
 
   private async onMessage(msg: WebviewMessage): Promise<void> {
     switch (msg.type) {
       case "ready":
         this.ready = true;
-        if (this.lastState) {
-          void this.panel.webview.postMessage({ type: "state", state: this.lastState });
+        this.deliver();
+        break;
+      case "raw_request": {
+        const items = msg.ids
+          .filter((id) => this.lastRaw.has(id))
+          .map((id) => ({ eventId: id, rawJson: this.lastRaw.get(id)! }));
+        if (items.length > 0) {
+          void this.panel.webview.postMessage({ type: "raw", items });
         }
         break;
+      }
       case "open_external":
         if (isSafeHttpUrl(msg.url)) {
           await vscode.env.openExternal(vscode.Uri.parse(msg.url));

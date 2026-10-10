@@ -116,7 +116,9 @@ function rowHtml(e: StreamEvent, mode: "all" | "session"): string {
   const body = e.rawJson
     ? `<pre class="tape"><code>${highlightJson(e.rawJson)}</code></pre>
        <button type="button" class="copy" data-copy-label="Copy JSON">Copy JSON</button>`
-    : `<p class="muted small">Raw JSON evicted from memory — the full record is in <code>~/.promptconduit/events.jsonl</code>.</p>`;
+    : e.rawAvailable
+      ? `<p class="muted small">Loading raw JSON…</p>`
+      : `<p class="muted small">Raw JSON evicted from memory — the full record is in <code>~/.promptconduit/events.jsonl</code>.</p>`;
   const trunc = e.rawTruncated
     ? `<p class="muted small">Truncated at 32&nbsp;KB — full record in <code>~/.promptconduit/events.jsonl</code>.</p>`
     : "";
