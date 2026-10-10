@@ -9,6 +9,9 @@ import { CostPanelState, WebviewMessage } from "./protocol";
 import type { CostScope } from "../costScope";
 
 const VIEW_TYPE = "promptconduitCostBreakdown";
+// Live refreshes (driven by status-bar renders, up to 4/s) are coalesced to at
+// most one per second, and skipped entirely while the panel is hidden.
+const REFRESH_MIN_MS = 1000;
 
 /** Commands a webview button may invoke, mapped to real extension commands. */
 const COMMAND_MAP: Record<string, string> = {
@@ -32,6 +35,11 @@ export class CostDetailPanel {
   private pendingState: CostPanelState | undefined;
   // Bumped on every shell (re)render so a refresh cache-busts the bundle URI.
   private htmlRev = 0;
+  // A live refresh arrived while hidden; push fresh state on reveal.
+  private dirty = false;
+  private disposed = false;
+  private lastRefreshAt = 0;
+  private refreshTimer: NodeJS.Timeout | undefined;
   private readonly getState: (mode: "session" | "all", scope: CostScope) => CostPanelState;
 
   private constructor(
@@ -58,7 +66,17 @@ export class CostDetailPanel {
     this.panel.webview.onDidReceiveMessage((msg: WebviewMessage) => {
       void this.onMessage(msg);
     });
+    this.panel.onDidChangeViewState(() => {
+      if (this.panel.visible && this.dirty) {
+        this.pushFresh();
+      }
+    });
     this.panel.onDidDispose(() => {
+      this.disposed = true;
+      if (this.refreshTimer) {
+        clearTimeout(this.refreshTimer);
+        this.refreshTimer = undefined;
+      }
       if (CostDetailPanel.current === this) {
         CostDetailPanel.current = undefined;
       }
@@ -141,21 +159,64 @@ export class CostDetailPanel {
     mode: "session" | "all",
     getState: (mode: "session" | "all", scope: CostScope) => CostPanelState,
   ): void {
-    if (CostDetailPanel.current) {
-      CostDetailPanel.current.mode = mode;
-      CostDetailPanel.current.panel.reveal(vscode.ViewColumn.Active, false);
-      CostDetailPanel.current.push(getState(mode, CostDetailPanel.current.scope));
+    const p = CostDetailPanel.current;
+    if (p) {
+      p.mode = mode;
+      // Push once, before revealing: pushFresh clears `dirty` and cancels any
+      // pending throttled refresh, so the reveal's view-state change doesn't
+      // push the same state a second time.
+      p.pushFresh();
+      p.panel.reveal(vscode.ViewColumn.Active, false);
       return;
     }
     CostDetailPanel.current = new CostDetailPanel(extensionUri, mode, getState);
   }
 
-  /** Push fresh state into an open panel; no-op when the panel is closed. */
+  /**
+   * Live refresh of an open panel; no-op when closed. Deferred while hidden
+   * and throttled to one push per REFRESH_MIN_MS (trailing edge kept).
+   */
   static refresh(): void {
-    const p = CostDetailPanel.current;
-    if (p) {
-      p.push(p.getState(p.mode, p.scope));
+    CostDetailPanel.current?.requestRefresh();
+  }
+
+  private requestRefresh(): void {
+    if (this.disposed) {
+      return;
     }
+    if (!this.panel.visible) {
+      this.dirty = true;
+      return;
+    }
+    if (this.refreshTimer) {
+      return; // a trailing refresh is already scheduled
+    }
+    const wait = this.lastRefreshAt + REFRESH_MIN_MS - Date.now();
+    if (wait <= 0) {
+      this.pushFresh();
+      return;
+    }
+    this.refreshTimer = setTimeout(() => {
+      this.refreshTimer = undefined;
+      if (this.disposed) {
+        return;
+      }
+      if (this.panel.visible) {
+        this.pushFresh();
+      } else {
+        this.dirty = true;
+      }
+    }, wait);
+  }
+
+  private pushFresh(): void {
+    if (this.refreshTimer) {
+      clearTimeout(this.refreshTimer);
+      this.refreshTimer = undefined;
+    }
+    this.dirty = false;
+    this.lastRefreshAt = Date.now();
+    this.push(this.getState(this.mode, this.scope));
   }
 
   /**

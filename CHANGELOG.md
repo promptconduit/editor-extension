@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.23.0
+
+- **Large event logs no longer stall the editor.** Every reader of `~/.promptconduit/events.jsonl` now works in bounded slices. The Stream panel opens from the newest 8MB instead of reading the whole file. After a rotation or prune rewrite, the cost, graph, and coaching tails re-read only the newest bytes and skip events they already saw, instead of starting over from the top. Before this, a log larger than about 512MB could fail to read and then be re-read every second. The 30-day spend check now streams the log once and reads only new bytes after that. Orchestration Theater history reads at most the newest 16MB.
+- **Hidden panels stay idle.** Stream, AI Cost Breakdown, and Agent Coaching stop updating while hidden and catch up when shown again. The Stream panel loads a row's raw JSON when you expand it, not on every update. Cost panel updates are capped at one per second and the published rate card is read again only when the file changes. Coaching updates at most every 5 seconds.
+- **Lighter background work.** Orchestration Theater draws at up to ~30fps and stops when its tab is hidden. Cursor agent-tab tracking stops polling while the window is out of focus and checks right away when you return.
+
 ## 0.22.0
 
 - **September 2026 model rates.** Adds Claude Fable 5.1, Mythos 5.1, and Opus 5.5 (cache reads at the published 0.025× and 0.05× rates), Cursor Grok 4.7 including fast and 500k context, Gemini 3.8 Flash, Muse Spark 1.3, GPT-6 Sol and Luna, GPT-5.3 Codex, and Grok Build 0.1. Gemini 3.6 and 3.7 Flash now use Google's current standard API rates ($0.75 / $3.75 per million through December 31, 2026).

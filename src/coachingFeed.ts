@@ -13,7 +13,10 @@ import { renderCoachingHtml } from "./coaching/render";
 // machine's local history within the log's rotation window, and trimming the
 // front keeps the newest (the log is append-only / time-ordered).
 const MAX_EVENTS = 60_000;
-const RENDER_THROTTLE_MS = 300;
+// Trends are recomputed over up to MAX_EVENTS and the (script-less) webview
+// reloads on every html assignment, so live updates are coalesced to one per
+// 5s, skipped while the panel is hidden, and skipped when nothing changed.
+export const RENDER_THROTTLE_MS = 5000;
 
 /**
  * CoachingController owns the bounded full-history read + live tail of
@@ -29,8 +32,13 @@ export class CoachingController {
   private pending = false;
   private throttle: NodeJS.Timeout | undefined;
   private gotInitial = false;
+  private dirty = false; // a render was skipped while hidden
+  private lastHtml: string | undefined;
 
-  constructor(private readonly setHtml: (html: string) => void) {
+  constructor(
+    private readonly setHtml: (html: string) => void,
+    private readonly isVisible: () => boolean = () => true,
+  ) {
     this.tail = new RawEventTail({ onLines: (lines, initial) => this.ingest(lines, initial) });
   }
 
@@ -83,11 +91,27 @@ export class CoachingController {
     }, RENDER_THROTTLE_MS);
   }
 
+  /** The host panel became visible: catch up on anything skipped while hidden. */
+  revealed(): void {
+    if (this.dirty) {
+      this.render();
+    }
+  }
+
   private render(): void {
     if (this.disposed) {
       return;
     }
-    this.setHtml(this.buildHtml());
+    if (!this.isVisible()) {
+      this.dirty = true;
+      return;
+    }
+    this.dirty = false;
+    const html = this.buildHtml();
+    if (html !== this.lastHtml) {
+      this.lastHtml = html;
+      this.setHtml(html);
+    }
   }
 
   // Pure assembly: live snapshot + all-local-history trends → HTML. Insights come
@@ -136,8 +160,16 @@ export class CoachingPanel {
       vscode.ViewColumn.Active,
       { enableScripts: false, retainContextWhenHidden: true },
     );
-    this.controller = new CoachingController((html) => {
-      this.panel.webview.html = html;
+    this.controller = new CoachingController(
+      (html) => {
+        this.panel.webview.html = html;
+      },
+      () => this.panel.visible,
+    );
+    this.panel.onDidChangeViewState(() => {
+      if (this.panel.visible) {
+        this.controller.revealed();
+      }
     });
     this.panel.onDidDispose(() => {
       this.disposed = true;

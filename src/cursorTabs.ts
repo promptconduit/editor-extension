@@ -91,7 +91,9 @@ export interface CursorTabsDeps {
  * Polls the workspace state database and reports focused-tab changes.
  * Lifecycle mirrors the other controllers: start() begins polling, dispose()
  * stops it. After MAX_CONSECUTIVE_FAILURES straight failures the tracker
- * stops polling for the rest of the session.
+ * stops polling for the rest of the session. setFocused(false) pauses polling
+ * (no sqlite3 spawns while the window is in the background); setFocused(true)
+ * polls immediately and resumes the interval.
  */
 export class CursorTabTracker {
   private timer: ReturnType<typeof setInterval> | undefined;
@@ -99,10 +101,44 @@ export class CursorTabTracker {
   private failures = 0;
   private stopped = false;
   private inFlight = false;
+  private started = false;
+  private paused = false;
 
   constructor(private readonly deps: CursorTabsDeps) {}
 
   start(): void {
+    if (this.started || this.stopped) {
+      return;
+    }
+    this.started = true;
+    if (!this.paused) {
+      this.resume();
+    }
+  }
+
+  /** Window focus changed: pause polling while unfocused, catch up on focus. */
+  setFocused(focused: boolean): void {
+    if (this.stopped) {
+      return;
+    }
+    if (!focused) {
+      this.paused = true;
+      this.clearTimer();
+      return;
+    }
+    if (this.paused) {
+      this.paused = false;
+      if (this.started) {
+        this.resume();
+      }
+    }
+  }
+
+  get isPaused(): boolean {
+    return this.paused;
+  }
+
+  private resume(): void {
     if (this.timer || this.stopped) {
       return;
     }

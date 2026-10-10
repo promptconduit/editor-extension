@@ -226,4 +226,32 @@ describe("CursorTabTracker", () => {
     resolveQuery(composerJson(["abc"]));
     await third;
   });
+
+  it("pauses polling while the window is unfocused and polls immediately on refocus", async () => {
+    vi.useFakeTimers();
+    const { tracker, query } = makeTracker({ intervalMs: 10 });
+    tracker.start();
+    expect(query).toHaveBeenCalledTimes(1);
+    tracker.setFocused(false);
+    expect(tracker.isPaused).toBe(true);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(query).toHaveBeenCalledTimes(1); // no polls while unfocused
+    tracker.setFocused(true);
+    expect(query).toHaveBeenCalledTimes(2); // immediate catch-up poll
+    await vi.advanceTimersByTimeAsync(25);
+    expect(query.mock.calls.length).toBeGreaterThanOrEqual(4);
+    tracker.dispose();
+  });
+
+  it("does not poll at start when the window starts unfocused", async () => {
+    vi.useFakeTimers();
+    const { tracker, query } = makeTracker({ intervalMs: 10 });
+    tracker.setFocused(false);
+    tracker.start();
+    await vi.advanceTimersByTimeAsync(50);
+    expect(query).not.toHaveBeenCalled();
+    tracker.setFocused(true);
+    expect(query).toHaveBeenCalledTimes(1);
+    tracker.dispose();
+  });
 });

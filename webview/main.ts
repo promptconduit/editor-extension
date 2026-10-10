@@ -231,11 +231,38 @@ function buildHud(graphNodes: GraphNode[], isDemo: boolean): void {
 }
 
 // ---- render loop ---------------------------------------------------------------
-function animate(): void {
-  requestAnimationFrame(animate);
-  const dt = frameClock.getDelta(); // consume every frame to avoid jumps after pause
+// Capped at ~30fps (the scene is ambient; 60fps doubles GPU work for no gain)
+// and fully stopped (no rAF scheduled at all) while the tab is hidden, either
+// via the host's "visibility" message or the document's own visibilitychange.
+const FRAME_MIN_MS = 1000 / 30 - 2; // small slack so a 60Hz display hits every other frame
+let lastFrameAt = 0;
+let rafId = 0;
+
+function loopActive(): boolean {
+  return running && !document.hidden;
+}
+
+function scheduleFrame(): void {
+  if (rafId === 0 && loopActive()) rafId = requestAnimationFrame(animate);
+}
+
+function resumeLoop(): void {
+  if (!loopActive()) return;
+  frameClock.getDelta(); // discard the paused interval so playback doesn't jump
+  scheduleFrame();
+}
+
+document.addEventListener("visibilitychange", resumeLoop);
+
+function animate(now: number): void {
+  rafId = 0;
+  if (!loopActive()) return; // resumeLoop() restarts the loop
+  scheduleFrame();
+  if (now - lastFrameAt < FRAME_MIN_MS) return;
+  lastFrameAt = now;
+  const dt = frameClock.getDelta();
   const t = frameClock.getElapsedTime();
-  if (!running || !glReady) return;
+  if (!glReady) return;
 
   controls?.update();
 
@@ -288,6 +315,7 @@ window.addEventListener("message", (e: MessageEvent<HostMessage>) => {
       break;
     case "visibility":
       running = msg.visible;
+      resumeLoop();
       break;
   }
 });
@@ -318,5 +346,5 @@ function el(tag: string, cls: string, text: string): HTMLElement {
   return node;
 }
 
-animate();
+scheduleFrame();
 post({ type: "ready" });

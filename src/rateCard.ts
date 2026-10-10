@@ -61,16 +61,28 @@ export function rateCardFromDocument(
   return Object.keys(out).length > 0 ? out : undefined;
 }
 
-export function readPublishedRateCard(): Record<string, ModelPrice> | undefined {
-  let text: string;
+// The cost panel asks for the card on every refresh; re-parse only when the
+// file changes (path + mtime + size), so the steady state is one stat.
+let cardCache: { key: string; card: Record<string, ModelPrice> | undefined } | undefined;
+
+export function readPublishedRateCard(file = publishedCardPath()): Record<string, ModelPrice> | undefined {
+  let stat: fs.Stats;
   try {
-    text = fs.readFileSync(publishedCardPath(), "utf8");
+    stat = fs.statSync(file);
   } catch {
+    cardCache = undefined;
     return undefined;
   }
-  try {
-    return rateCardFromDocument(JSON.parse(text));
-  } catch {
-    return undefined;
+  const key = `${file}\0${stat.mtimeMs}\0${stat.size}`;
+  if (cardCache?.key === key) {
+    return cardCache.card;
   }
+  let card: Record<string, ModelPrice> | undefined;
+  try {
+    card = rateCardFromDocument(JSON.parse(fs.readFileSync(file, "utf8")));
+  } catch {
+    card = undefined;
+  }
+  cardCache = { key, card };
+  return card;
 }

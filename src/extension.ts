@@ -240,8 +240,14 @@ function activateInner(context: vscode.ExtensionContext): void {
         console.warn(`PromptConduit: Cursor agent-tab tracking disabled (${reason})`);
       },
     });
+    // No sqlite3 polling while this window is in the background (many windows
+    // open = many pollers); a focused window polls immediately on return.
+    tracker.setFocused(vscode.window.state.focused);
     tracker.start();
-    context.subscriptions.push(tracker);
+    context.subscriptions.push(
+      tracker,
+      vscode.window.onDidChangeWindowState((s) => tracker.setFocused(s.focused)),
+    );
   }
 
   const restore = new SessionRestoreController(

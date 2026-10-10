@@ -3,6 +3,8 @@ import {
   parseStreamLine,
   StreamState,
   buildStreamPanelState,
+  slimStreamState,
+  StreamController,
   shortId,
   MAX_EVENTS,
   MAX_SESSIONS,
@@ -561,5 +563,50 @@ describe("stream enrichment badges (via parseStreamLine)", () => {
     expect(subStart?.subagentBadge).toBe("Explore start");
     const tools = parseStreamLine(sampleEnrichmentLines[4]);
     expect(tools?.toolsSummary).toBe("3 tools · 1 failed");
+  });
+});
+
+describe("StreamController lazy render", () => {
+  it("builds no state while inactive and builds exactly once on flush", () => {
+    let active = false;
+    const pushed: StreamPanelState[] = [];
+    const c = new StreamController((s) => pushed.push(s), () => active);
+    c.showAll();
+    c.drillIn("x");
+    c.showAll();
+    expect(pushed).toHaveLength(0);
+    expect(c.flush()).toBe(false); // still inactive
+    active = true;
+    expect(c.flush()).toBe(true);
+    expect(pushed).toHaveLength(1);
+    expect(c.flush()).toBe(false); // nothing new
+    c.showAll(); // active → renders immediately
+    expect(pushed).toHaveLength(2);
+    c.dispose();
+  });
+});
+
+describe("slimStreamState (raw JSON on demand)", () => {
+  it("withholds rawJson from the push, keeps it by eventId, and flags the row", () => {
+    const withRaw = mk({ eventId: "r1", rawJson: '{"big": true}' });
+    const evicted = mk({ eventId: "r2", rawJson: undefined });
+    const full = sessionState({ key: "s", tool: "x", events: [withRaw, evicted] });
+    const { state, raw } = slimStreamState(full);
+    expect(state.events.every((e) => e.rawJson === undefined)).toBe(true);
+    expect(state.events[0].rawAvailable).toBe(true);
+    expect(state.events[1].rawAvailable).toBeUndefined();
+    expect(raw.get("r1")).toBe('{"big": true}');
+    expect(raw.has("r2")).toBe(false);
+    expect(full.events[0].rawJson).toBe('{"big": true}'); // input untouched
+    expect(JSON.stringify(state).length).toBeLessThan(JSON.stringify(full).length);
+  });
+
+  it("renders a loading placeholder (not the eviction note) for withheld raw JSON", () => {
+    const { state } = slimStreamState(
+      sessionState({ key: "s", tool: "x", events: [mk({ eventId: "r1", rawJson: "{}" })] }),
+    );
+    const html = renderStreamBody(state);
+    expect(html).toContain("Loading raw JSON");
+    expect(html).not.toContain("Raw JSON evicted from memory");
   });
 });
