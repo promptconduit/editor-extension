@@ -1,5 +1,9 @@
 # PromptConduit
 
+[![Open VSX version](https://img.shields.io/open-vsx/v/promptconduit/promptconduit?label=Open%20VSX)](https://open-vsx.org/extension/promptconduit/promptconduit)
+[![Open VSX downloads](https://img.shields.io/open-vsx/dt/promptconduit/promptconduit)](https://open-vsx.org/extension/promptconduit/promptconduit)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/promptconduit/editor-extension/blob/main/LICENSE)
+
 **See what each AI prompt costs** — computed entirely on your machine. One click
 from the status bar opens a per-prompt cost ledger with coaching tips and
 optional branch/PR scopes. Everything reads your local event log
@@ -104,11 +108,19 @@ folder where you run Claude Code or Cursor agent, and watch the status bar updat
 
 Targets: **Open VSX** (for Cursor) and the **VS Code Marketplace**.
 
-Release: bump `version` in `package.json`, commit, then tag — the `Publish`
-workflow publishes to Open VSX automatically:
+Release: bump `version` in `package.json`, commit, then tag. The `Publish`
+workflow packages one `.vsix` and publishes it to every registry whose secret is
+set (`OVSX_TOKEN` for Open VSX, `VSCE_PAT` for the VS Code Marketplace):
 
 ```bash
 git tag v0.21.0 && git push origin v0.21.0
+```
+
+Both publishes use `--skip-duplicate`, so re-publishing an existing tag only
+fills in the registry that is missing that version:
+
+```bash
+gh workflow run publish.yml -R promptconduit/editor-extension --ref main -f tag=v0.23.0
 ```
 
 Or publish locally:
