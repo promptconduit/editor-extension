@@ -235,6 +235,22 @@ button.scope-chip.disabled { opacity: 0.45; cursor: default; }
 }
 .sync-offer h2 { margin: 0 0 0.35rem; }
 .sync-offer p { margin: 0.35rem 0; }
+.agent-hint {
+  margin-top: 1.2rem;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid var(--hairline);
+  border-radius: 4px;
+}
+.agent-hint h2 { margin: 0 0 0.35rem; }
+.agent-hint p { margin: 0.35rem 0; }
+.agent-questions { margin: 0.35rem 0; padding-left: 1.1rem; }
+.agent-questions li { margin: 0.2rem 0; }
+button.copy-q {
+  font-size: 0.75rem; padding: 0 0.4rem; margin-left: 0.3rem; cursor: pointer;
+  border: 1px solid var(--hairline); border-radius: 3px; background: transparent;
+  color: var(--vscode-descriptionForeground);
+}
+button.copy-q.done { color: var(--accent); border-color: var(--accent); }
 .sync-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.6rem; }
 details.advanced-drawer { margin-top: 1.6rem; border: 1px solid var(--hairline); border-radius: 4px; padding: 0.5rem 0.8rem; }
 details.advanced-drawer > summary { cursor: pointer; list-style: none; }

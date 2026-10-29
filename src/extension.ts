@@ -18,6 +18,7 @@ import { TerminalFocusController, makeTerminalFocusDeps } from "./terminalFocus"
 import { CursorTabTracker, runComposerQuery } from "./cursorTabs";
 import { SyncOfferController, shellQuote } from "./syncOffer";
 import { readPublishedRateCard } from "./rateCard";
+import { AgentHintController, agentTooltipLine } from "./agentHint";
 
 let statusBar: CostStatusBar | undefined;
 let costFeed: CostFeedController | undefined;
@@ -52,6 +53,13 @@ function activateInner(context: vscode.ExtensionContext): void {
   syncOffers.setOnChange(() => statusBar?.setSyncOffer(syncOffers.current()));
   syncOffers.start();
 
+  const agentHints = new AgentHintController(context, resolveCli);
+  context.subscriptions.push({ dispose: () => agentHints.dispose() });
+  agentHints.setOnChange(() => {
+    statusBar?.setAgentLine(agentTooltipLine(agentHints.current()));
+    CostDetailPanel.refresh();
+  });
+
   const panelState = (mode: "session" | "all", scope?: CostScope) => {
     const state = buildCostPanelState(
       statusBar!.storeRef,
@@ -62,6 +70,10 @@ function activateInner(context: vscode.ExtensionContext): void {
     const card = readPublishedRateCard();
     if (card) {
       state.rateCard = card;
+    }
+    const hint = agentHints.current();
+    if (hint) {
+      state.agentHint = hint;
     }
     return state;
   };
@@ -117,6 +129,33 @@ function activateInner(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("promptconduit.account.dismissLogin", () => {
       syncOffers.dismiss();
     }),
+    vscode.commands.registerCommand("promptconduit.agent.registerMcp", () => {
+      void agentHints.register();
+    }),
+    vscode.commands.registerCommand("promptconduit.agent.dismissHint", () => {
+      agentHints.dismiss();
+    }),
+    vscode.commands.registerCommand("promptconduit.team.invite", async () => {
+      const bin = resolveCli();
+      if (!bin) {
+        void vscode.window.showErrorMessage(
+          "PromptConduit CLI was not found. Install it, then run promptconduit team invite.",
+        );
+        return;
+      }
+      const email = await vscode.window.showInputBox({
+        title: "Invite a teammate to your PromptConduit team",
+        prompt: "They get a link to join and see the team's AI spend. Needs promptconduit login.",
+        placeHolder: "teammate@company.com",
+        validateInput: (v) => (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim()) ? undefined : "Enter an email address"),
+      });
+      if (!email) {
+        return;
+      }
+      const term = vscode.window.createTerminal({ name: "PromptConduit invite" });
+      term.show();
+      term.sendText(`${shellQuote(bin)} team invite ${shellQuote(email.trim())}`);
+    }),
     vscode.commands.registerCommand("promptconduit.coaching.showTab", () => {
       CoachingPanel.show();
     }),
@@ -162,6 +201,8 @@ function activateInner(context: vscode.ExtensionContext): void {
       }
     }),
   );
+
+  agentHints.start();
 
   const updates = new UpdatePromptController(
     context.extension.packageJSON.version as string,

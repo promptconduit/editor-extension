@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 0.24.0
+
+- **Ask your agent.** The cost panel shows whether PromptConduit's MCP server is registered with this editor's agent (Cursor's agent in Cursor, Claude Code in VS Code). If it isn't, **Register** runs `promptconduit mcp install` for you. Once it is, the card lists questions to ask in chat, such as "What has this session cost so far?", with a Copy button for each. The status-bar tooltip carries one example question. Hide the card with **Not now** / **Hide**. Command palette: *PromptConduit: Register MCP Server for Your Agent*. Needs CLI v0.30.0 or newer; with an older CLI the card stays hidden.
+- **Invite a teammate.** When you're signed in, the card offers **Invite a teammate**, which asks for an email and runs `promptconduit team invite` in a terminal so you see the invite link. Also available as *PromptConduit: Invite a Teammate*.
+
 ## 0.23.0
 
 - **Large event logs no longer stall the editor.** Every reader of `~/.promptconduit/events.jsonl` now works in bounded slices. The Stream panel opens from the newest 8MB instead of reading the whole file. After a rotation or prune rewrite, the cost, graph, and coaching tails re-read only the newest bytes and skip events they already saw, instead of starting over from the top. Before this, a log larger than about 512MB could fail to read and then be re-read every second. The 30-day spend check now streams the log once and reads only new bytes after that. Orchestration Theater history reads at most the newest 16MB.

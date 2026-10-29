@@ -198,6 +198,28 @@ const pages: Record<string, string> = {
   "breakdown-detail.html": costPanelPage(buildCostPanelState(storyStore, "session")),
   "breakdown-all.html": costPanelPage(buildCostPanelState(multiStore, "all")),
   "breakdown-zero.html": costPanelPage(buildCostPanelState(new ConversationStore(), "session")),
+  "breakdown-agent.html": costPanelPage({
+    ...buildCostPanelState(storyStore, "session"),
+    agentHint: {
+      tool: "cursor",
+      label: "Cursor",
+      registered: false,
+      otherRegistered: ["Claude Code"],
+      signedIn: false,
+      questions: ["What has this session cost so far?", "What did I spend on AI each day this week?"],
+    },
+  }),
+  "breakdown-agent-registered.html": costPanelPage({
+    ...buildCostPanelState(storyStore, "session"),
+    agentHint: {
+      tool: "cursor",
+      label: "Cursor",
+      registered: true,
+      otherRegistered: [],
+      signedIn: true,
+      questions: ["What has this session cost so far?", "How is my team tracking against this month's AI budget?"],
+    },
+  }),
   "coaching-rich.html": themed(renderCoachingHtml(coachingSnapshot, coachingTrends), true),
   "coaching-empty.html": themed(renderCoachingHtml(undefined), true),
   "stream.html": streamPanelPage(streamPanelStateFromFixtures()),

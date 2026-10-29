@@ -78,6 +78,7 @@ export class CostStatusBar {
   private throttle: NodeJS.Timeout | undefined;
   private onChange: (() => void) | undefined;
   private syncLine: string | undefined;
+  private agentLine: string | undefined;
 
   constructor() {
     this.item = vscode.window.createStatusBarItem(
@@ -107,6 +108,15 @@ export class CostStatusBar {
       return;
     }
     this.syncLine = line;
+    this.scheduleRender();
+  }
+
+  /** One tooltip line for the "Ask your agent" hint (see agentHint.ts). */
+  setAgentLine(line: string | undefined): void {
+    if (line === this.agentLine) {
+      return;
+    }
+    this.agentLine = line;
     this.scheduleRender();
   }
 
@@ -285,6 +295,9 @@ export class CostStatusBar {
     }
     if (this.syncLine) {
       tip.appendMarkdown(`\n${this.syncLine}\n`);
+    }
+    if (this.agentLine) {
+      tip.appendMarkdown(`\n${this.agentLine}\n`);
     }
     tip.appendMarkdown(
       `\n_Follows your last gesture — a prompt, a focused terminal, or a selected Cursor agent tab (best effort). Pin to lock it._\n`,

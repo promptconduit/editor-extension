@@ -206,7 +206,10 @@ document.addEventListener("click", (e) => {
       cmd === "openGraph" ||
       cmd === "openAllSessions" ||
       cmd === "login" ||
-      cmd === "dismissLogin"
+      cmd === "dismissLogin" ||
+      cmd === "registerMcp" ||
+      cmd === "dismissAgentHint" ||
+      cmd === "inviteTeammate"
     ) {
       vscode.postMessage({ type: "command", id: cmd });
     }
@@ -219,6 +222,19 @@ document.addEventListener("click", (e) => {
     if (scope === "session" || scope === "branch" || scope === "pr") {
       vscode.postMessage({ type: "command", id: "setScope", scope });
     }
+    return;
+  }
+
+  const copyQ = target.closest<HTMLButtonElement>("button.copy-q");
+  if (copyQ) {
+    void navigator.clipboard.writeText(copyQ.dataset.text ?? "").then(() => {
+      copyQ.classList.add("done");
+      copyQ.textContent = "Copied";
+      setTimeout(() => {
+        copyQ.classList.remove("done");
+        copyQ.textContent = "Copy";
+      }, 1200);
+    });
     return;
   }
 

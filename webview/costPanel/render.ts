@@ -537,6 +537,48 @@ export function syncOfferHtml(state: CostPanelState): string {
   </section>`;
 }
 
+/**
+ * "Ask your agent": PromptConduit's MCP server lets the agent in this editor
+ * answer cost questions. Not registered: one-click register. Registered:
+ * example questions to copy. Dismissible either way.
+ */
+export function agentHintHtml(state: CostPanelState): string {
+  const h = state.agentHint;
+  if (!h) {
+    return "";
+  }
+  const label = escapeHtml(h.label);
+  const questions = h.registered
+    ? `<ul class="agent-questions">${h.questions
+        .map(
+          (q) =>
+            `<li><q>${escapeHtml(q)}</q> <button type="button" class="copy-q" data-text="${escapeHtml(q)}">Copy</button></li>`,
+        )
+        .join("")}</ul>`
+    : "";
+  const body = h.registered
+    ? `<p>PromptConduit's MCP server is registered with ${label}, so you can skip this panel and ask in chat:</p>${questions}`
+    : `<p>Register PromptConduit's MCP server with ${label} and your agent can answer <q>${escapeHtml(h.questions[0])}</q> or <q>${escapeHtml(h.questions[1])}</q> itself. It reads the same local data as this panel.${
+        h.otherRegistered.length > 0
+          ? ` Already registered with ${escapeHtml(h.otherRegistered.join(", "))}.`
+          : ""
+      }</p>`;
+  const actions = [
+    h.registered
+      ? ""
+      : `<button type="button" class="tb" data-cmd="registerMcp">Register with ${label}</button>`,
+    h.signedIn
+      ? `<button type="button" class="tb" data-cmd="inviteTeammate">Invite a teammate</button>`
+      : "",
+    `<button type="button" class="tb" data-cmd="dismissAgentHint">${h.registered ? "Hide" : "Not now"}</button>`,
+  ].join("");
+  return `<section class="agent-hint">
+    <h2>Ask your agent</h2>
+    ${body}
+    <p class="sync-actions">${actions}</p>
+  </section>`;
+}
+
 function heroHtml(state: CostPanelState, s: SessionView): string {
   const scoped = state.scopeTotals;
   const cost =
@@ -632,7 +674,7 @@ function linksHtml(state: CostPanelState): string {
 }
 
 function sessionTail(s: SessionView, state: CostPanelState): string {
-  return `${advancedDrawerHtml(s, state)}${panelFooterHtml()}`;
+  return `${agentHintHtml(state)}${advancedDrawerHtml(s, state)}${panelFooterHtml()}`;
 }
 
 function sessionCard(s: SessionView, state: CostPanelState): string {
@@ -703,7 +745,7 @@ export function renderZones(state: CostPanelState): RenderZones {
   if (state.sessions.length === 0) {
     return {
       top: `${toolbarHtml(state)}${syncOfferHtml(state)}${shortLandingHtml()}`,
-      rest: panelFooterHtml(),
+      rest: `${agentHintHtml(state)}${panelFooterHtml()}`,
     };
   }
   if (state.mode === "session") {
@@ -732,7 +774,7 @@ export function renderZones(state: CostPanelState): RenderZones {
       <h2>By session</h2>
       ${state.sessions.map((s) => sessionCard(s, state)).join("")}
     </section>`,
-    rest: `${advancedDrawerHtml(state.sessions[0], state)}${panelFooterHtml()}`,
+    rest: `${agentHintHtml(state)}${advancedDrawerHtml(state.sessions[0], state)}${panelFooterHtml()}`,
   };
 }
 
