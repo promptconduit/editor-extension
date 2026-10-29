@@ -2,7 +2,7 @@
   "name": "promptconduit",
   "displayName": "PromptConduit",
   "description": "See what each AI prompt costs — live in your status bar, with a per-prompt ledger, coaching tips, and branch/PR spend scopes. 100% local. Also: Session Graph, Stream, Orchestration Theater, and Agent Coaching.",
-  "version": "0.23.0",
+  "version": "0.24.0",
   "publisher": "promptconduit",
   "license": "MIT",
   "icon": "resources/icon.png",
@@ -69,6 +69,18 @@
       {
         "command": "promptconduit.account.dismissLogin",
         "title": "PromptConduit: Dismiss Sign-In Prompt"
+      },
+      {
+        "command": "promptconduit.agent.registerMcp",
+        "title": "PromptConduit: Register MCP Server for Your Agent"
+      },
+      {
+        "command": "promptconduit.agent.dismissHint",
+        "title": "PromptConduit: Hide \"Ask Your Agent\" Hint"
+      },
+      {
+        "command": "promptconduit.team.invite",
+        "title": "PromptConduit: Invite a Teammate"
       },
       {
         "command": "promptconduit.coaching.showTab",

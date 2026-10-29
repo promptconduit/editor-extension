@@ -54,6 +54,22 @@ rates** — useful whether you're on a subscription or paying per token.
 
 Works for **Claude Code** and **Cursor**.
 
+## Ask your agent
+
+The `promptconduit` CLI includes an MCP server, so the agent in your editor can
+answer *"what has this session cost so far?"* or *"how is my team tracking
+against this month's budget?"* itself. The cost panel shows whether it's
+registered with this editor's agent (Cursor in Cursor, Claude Code in VS Code)
+and offers a one-click **Register** that runs `promptconduit mcp install`.
+Once it's registered, the panel lists example questions to copy. Signed-in
+users also get **Invite a teammate**, which runs `promptconduit team invite`.
+Dismiss the card with **Not now** / **Hide**. Command palette:
+*PromptConduit: Register MCP Server for Your Agent*. See
+[promptconduit.dev/docs/agents](https://promptconduit.dev/docs/agents).
+
+Needs CLI v0.30.0 or newer (`promptconduit mcp status --json`). With an older
+CLI the card stays hidden.
+
 ## More surfaces
 
 All available from the command palette (`⇧⌘P`):
