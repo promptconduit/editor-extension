@@ -22,6 +22,9 @@ const COMMAND_MAP: Record<string, string> = {
   openAllSessions: "promptconduit.cost.showAllSessions",
   login: "promptconduit.account.login",
   dismissLogin: "promptconduit.account.dismissLogin",
+  registerMcp: "promptconduit.agent.registerMcp",
+  dismissAgentHint: "promptconduit.agent.dismissHint",
+  inviteTeammate: "promptconduit.team.invite",
 };
 
 export class CostDetailPanel {

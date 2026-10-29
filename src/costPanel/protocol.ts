@@ -60,6 +60,24 @@ export interface CostPanelState {
    * rates bundled in this extension. Absent means the bundled table is used.
    */
   rateCard?: Record<string, ModelPrice>;
+  /**
+   * "Ask your agent": whether PromptConduit's MCP server is registered with
+   * this editor's agent. Absent when the CLI can't tell us or it was dismissed.
+   */
+  agentHint?: AgentHint;
+}
+
+/** MCP registration for this editor's agent, plus example questions to ask it. */
+export interface AgentHint {
+  /** MCP install name: cursor, claude-code. */
+  tool: string;
+  label: string;
+  registered: boolean;
+  /** Other agents that already have the server (labels). */
+  otherRegistered: string[];
+  /** Signed in to the platform: team questions and invites work. */
+  signedIn: boolean;
+  questions: string[];
 }
 
 /** Local 30-day API-equivalent spend, shown as the reason to sign in. */
@@ -84,7 +102,10 @@ export type WebviewCommand =
   | "openAllSessions"
   | "setScope"
   | "login"
-  | "dismissLogin";
+  | "dismissLogin"
+  | "registerMcp"
+  | "dismissAgentHint"
+  | "inviteTeammate";
 
 export type WebviewMessage =
   | { type: "ready" }
