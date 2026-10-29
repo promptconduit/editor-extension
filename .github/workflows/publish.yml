@@ -2,15 +2,20 @@ name: Publish
 
 # Publishes the extension to Open VSX (Cursor) and the VS Code Marketplace.
 # Triggers on a version tag push (e.g. `git tag v0.5.0 && git push origin v0.5.0`)
-# or a manual run (Actions → Publish → "Run workflow", selecting the tag as the
-# ref) so an existing tag can be (re)published without re-tagging.
+# or a manual run (Actions → Publish → "Run workflow" from main, with the `tag`
+# input set) so an existing tag can be (re)published without re-tagging.
 #
 # Requires two repo secrets:
 #   OVSX_TOKEN  — Open VSX access token (for Cursor)            https://open-vsx.org
 #   VSCE_PAT    — VS Code Marketplace Personal Access Token     https://marketplace.visualstudio.com/manage
 # Each publish step runs only when its secret is set, so you can ship to one
-# registry before the other. The VS Code step is best-effort (continue-on-error)
-# so an Open VSX release still succeeds if the Marketplace token is missing.
+# registry before the other. Both registries get the SAME .vsix (packaged once),
+# and both publish with --skip-duplicate, so re-running an existing tag skips the
+# registry that already has that version and publishes to the other. That is how
+# the current version reaches the Marketplace the first time: set VSCE_PAT, then
+# run this workflow from main with `tag` set to the latest tag. Open VSX publishes first, so a
+# Marketplace failure (expired PAT, etc.) turns the run red without blocking the
+# Cursor release.
 #
 # Optional third secret:
 #   CLI_DISPATCH_TOKEN — a PAT that can trigger workflows in promptconduit/cli.
@@ -22,6 +27,14 @@ on:
   push:
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      tag:
+        description: >-
+          Tag to publish (e.g. v0.23.0). Leave empty to publish the ref the run
+          was started from. Run from main to use this workflow's current logic
+          against an older tag.
+        required: false
+        default: ''
 
 jobs:
   publish:
@@ -37,27 +50,48 @@ jobs:
       CLI_DISPATCH_TOKEN: ${{ secrets.CLI_DISPATCH_TOKEN }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag || github.ref }}
       - uses: actions/setup-node@v6
         with:
           node-version: '20'
           cache: npm
       - run: npm ci
-      - run: npm run compile
+      # `vsce package` runs the `vscode:prepublish` script (npm run compile).
+      - name: Package .vsix
+        run: npx vsce package -o promptconduit.vsix
 
       - name: Publish to Open VSX (Cursor)
+        id: ovsx
         if: ${{ env.OVSX_TOKEN != '' }}
-        run: npx ovsx publish --pat "$OVSX_TOKEN"
+        run: npx ovsx publish promptconduit.vsix --pat "$OVSX_TOKEN" --skip-duplicate
 
       - name: Publish to VS Code Marketplace
         if: ${{ env.VSCE_PAT != '' }}
-        continue-on-error: true
-        run: npx @vscode/vsce publish --pat "$VSCE_PAT"
+        run: npx vsce publish --packagePath promptconduit.vsix --pat "$VSCE_PAT" --skip-duplicate
+
+      - name: Warn about skipped registries
+        if: ${{ !cancelled() }}
+        run: |
+          if [ -z "$OVSX_TOKEN" ]; then
+            echo "::warning::OVSX_TOKEN is not set, so Open VSX was skipped."
+          fi
+          if [ -z "$VSCE_PAT" ]; then
+            echo "::warning::VSCE_PAT is not set, so the VS Code Marketplace was skipped (see #38)."
+          fi
+
+      - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
+        with:
+          name: promptconduit-vsix
+          path: promptconduit.vsix
+          if-no-files-found: ignore
 
       # Tell the CLI to refresh its embedded copy of this extension. The CLI's
       # "Refresh bundled extension" workflow keys on the package.json version, so
       # a bump merged before this tag will produce a refresh PR there.
       - name: Refresh the CLI's bundled extension
-        if: ${{ env.CLI_DISPATCH_TOKEN != '' }}
+        if: ${{ !cancelled() && env.CLI_DISPATCH_TOKEN != '' && steps.ovsx.outcome == 'success' }}
         env:
           GH_TOKEN: ${{ env.CLI_DISPATCH_TOKEN }}
         run: gh api -X POST repos/promptconduit/cli/dispatches -f event_type=extension-released
