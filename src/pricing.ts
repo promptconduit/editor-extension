@@ -16,6 +16,10 @@ export interface ModelPrice {
   cacheRead?: number;
   cacheWrite5m?: number;
   cacheWrite1h?: number;
+  /** Prompt size (input + cache read + cache write) above which longContext applies. */
+  longContextThreshold?: number;
+  /** Second rate card for long prompts (Claude Haiku 5.5 bills above 100K tokens at 5x). */
+  longContext?: ModelPrice;
 }
 
 // Field mapping from cli/internal/cost/pricing_data.json:
@@ -24,8 +28,16 @@ export interface ModelPrice {
 //   cacheRead    ← cache_read_input_token_cost
 //   cacheWrite5m ← cache_creation_input_token_cost      (5-minute TTL, 1.25x input)
 //   cacheWrite1h ← cache_creation_input_token_cost_1h   (1-hour TTL, 2x input)
+//   longContextThreshold ← long_context_threshold_tokens
+//   longContext          ← long_context (same field mapping, one level down)
+//
+// The CLI prices each request, so it applies longContext per request and the
+// "@fast" rows per usage.speed. The comparison below reprices session TOTALS,
+// where neither the per-request prompt size nor the speed is known, so it uses
+// the base rates. Likewise a fast-mode or long-context actual session is
+// compared against alternatives at their base rates.
 /** Date stamped on the embedded snapshot. A published card older than this is ignored. */
-export const BUNDLED_CARD_UPDATED = "2026-09-25";
+export const BUNDLED_CARD_UPDATED = "2026-11-02";
 
 let rateCardOverlay: Record<string, ModelPrice> | undefined;
 
@@ -74,6 +86,87 @@ export const PRICING: Record<string, ModelPrice> = {
     cacheWrite5m: 0.0000125,
     cacheWrite1h: 0.00002,
   },
+  "claude-sonnet-5": {
+    input: 0.000002,
+    output: 0.00001,
+    cacheRead: 0.0000002,
+    cacheWrite5m: 0.0000025,
+    cacheWrite1h: 0.000004,
+  },
+  "claude-sonnet-5-5": {
+    input: 0.000002,
+    output: 0.00001,
+    cacheRead: 0.0000001,
+    cacheWrite5m: 0.0000025,
+    cacheWrite1h: 0.000004,
+  },
+  "claude-haiku-5-5": {
+    input: 0.0000001,
+    output: 0.0000005,
+    cacheRead: 0.00000001,
+    cacheWrite5m: 0.000000125,
+    cacheWrite1h: 0.0000002,
+    longContextThreshold: 100000,
+    longContext: {
+      input: 0.0000005,
+      output: 0.0000025,
+      cacheRead: 0.00000005,
+      cacheWrite5m: 0.000000625,
+      cacheWrite1h: 0.000001,
+    },
+  },
+  "claude-opus-5": {
+    input: 0.000005,
+    output: 0.000025,
+    cacheRead: 0.0000005,
+    cacheWrite5m: 0.00000625,
+    cacheWrite1h: 0.00001,
+  },
+  "claude-opus-5-5": {
+    input: 0.000004,
+    output: 0.00002,
+    cacheRead: 0.0000002,
+    cacheWrite5m: 0.000005,
+    cacheWrite1h: 0.000008,
+  },
+  // "@fast" rows hold Anthropic fast-mode rates (usage.speed == "fast" in a
+  // Claude Code transcript). "@" is not a dash segment, so suffix-trim never
+  // lands on them and Cursor's own "-fast" ids keep their separate rows.
+  "claude-opus-5-5@fast": {
+    input: 0.000008,
+    output: 0.00004,
+    cacheRead: 0.0000004,
+    cacheWrite5m: 0.00001,
+    cacheWrite1h: 0.000016,
+  },
+  "claude-opus-5@fast": {
+    input: 0.00001,
+    output: 0.00005,
+    cacheRead: 0.000001,
+    cacheWrite5m: 0.0000125,
+    cacheWrite1h: 0.00002,
+  },
+  "claude-opus-4-8@fast": {
+    input: 0.00001,
+    output: 0.00005,
+    cacheRead: 0.000001,
+    cacheWrite5m: 0.0000125,
+    cacheWrite1h: 0.00002,
+  },
+  "claude-opus-5-fast": {
+    input: 0.00001,
+    output: 0.00005,
+    cacheRead: 0.000001,
+    cacheWrite5m: 0.0000125,
+    cacheWrite1h: 0.00002,
+  },
+  "claude-opus-4-8-fast": {
+    input: 0.00001,
+    output: 0.00005,
+    cacheRead: 0.000001,
+    cacheWrite5m: 0.0000125,
+    cacheWrite1h: 0.00002,
+  },
   "claude-opus-4-8": {
     input: 0.000005,
     output: 0.000025,
@@ -115,41 +208,6 @@ export const PRICING: Record<string, ModelPrice> = {
     cacheRead: 0.0000015,
     cacheWrite5m: 0.00001875,
     cacheWrite1h: 0.00003,
-  },
-  "claude-sonnet-5": {
-    input: 0.000002,
-    output: 0.00001,
-    cacheRead: 0.0000002,
-    cacheWrite5m: 0.0000025,
-    cacheWrite1h: 0.000004,
-  },
-  "claude-opus-5": {
-    input: 0.000005,
-    output: 0.000025,
-    cacheRead: 0.0000005,
-    cacheWrite5m: 0.00000625,
-    cacheWrite1h: 0.00001,
-  },
-  "claude-opus-5-5": {
-    input: 0.000004,
-    output: 0.00002,
-    cacheRead: 0.0000002,
-    cacheWrite5m: 0.000005,
-    cacheWrite1h: 0.000008,
-  },
-  "claude-opus-5-fast": {
-    input: 0.00001,
-    output: 0.00005,
-    cacheRead: 0.000001,
-    cacheWrite5m: 0.0000125,
-    cacheWrite1h: 0.00002,
-  },
-  "claude-opus-4-8-fast": {
-    input: 0.00001,
-    output: 0.00005,
-    cacheRead: 0.000001,
-    cacheWrite5m: 0.0000125,
-    cacheWrite1h: 0.00002,
   },
   "claude-sonnet-4-6": {
     input: 0.000003,
@@ -256,6 +314,94 @@ export const PRICING: Record<string, ModelPrice> = {
     output: 0.000015,
     cacheRead: 0.00000025,
   },
+  // Third-party models Cursor offers, at the API list prices on Cursor's models
+  // page. Each smaller variant needs its own row: suffix-trim would otherwise
+  // price gpt-5.4-mini at the gpt-5.4 rate.
+  "gpt-5.4-mini": {
+    input: 0.00000075,
+    output: 0.0000045,
+    cacheRead: 0.000000075,
+  },
+  "gpt-5.4-nano": {
+    input: 0.0000002,
+    output: 0.00000125,
+    cacheRead: 0.00000002,
+  },
+  "gpt-5.2": {
+    input: 0.00000175,
+    output: 0.000014,
+    cacheRead: 0.000000175,
+  },
+  "gpt-5.2-codex": {
+    input: 0.00000175,
+    output: 0.000014,
+    cacheRead: 0.000000175,
+  },
+  "gpt-5.1-codex": {
+    input: 0.00000125,
+    output: 0.00001,
+    cacheRead: 0.000000125,
+  },
+  "gpt-5.1-codex-max": {
+    input: 0.00000125,
+    output: 0.00001,
+    cacheRead: 0.000000125,
+  },
+  "gpt-5.1-codex-mini": {
+    input: 0.00000025,
+    output: 0.000002,
+    cacheRead: 0.000000025,
+  },
+  "gpt-5": {
+    input: 0.00000125,
+    output: 0.00001,
+    cacheRead: 0.000000125,
+  },
+  "gpt-5-codex": {
+    input: 0.00000125,
+    output: 0.00001,
+    cacheRead: 0.000000125,
+  },
+  "gpt-5-mini": {
+    input: 0.00000025,
+    output: 0.000002,
+    cacheRead: 0.000000025,
+  },
+  "gemini-3.5-flash-lite": {
+    input: 0.0000003,
+    output: 0.0000025,
+    cacheRead: 0.00000003,
+  },
+  "gemini-3-pro-image-preview": {
+    input: 0.000002,
+    output: 0.000012,
+    cacheRead: 0.0000002,
+  },
+  "gemini-4-argon": {
+    input: 0.000002,
+    output: 0.00001,
+    cacheRead: 0.0000001,
+  },
+  "glm-5.3": {
+    input: 0.0000014,
+    output: 0.0000044,
+    cacheRead: 0.00000026,
+  },
+  "glm-5.3-flash": {
+    input: 0.00000015,
+    output: 0.0000005,
+    cacheRead: 0.000000029,
+  },
+  "deepseek-v4.1-flash": {
+    input: 0.0000003,
+    output: 0.0000012,
+    cacheRead: 0.000000006,
+  },
+  "muse-wonder": {
+    input: 0.000004,
+    output: 0.00002,
+    cacheRead: 0.0000002,
+  },
   "gemini-2.5-flash": {
     input: 0.0000003,
     output: 0.0000025,
@@ -296,7 +442,7 @@ export const PRICING: Record<string, ModelPrice> = {
     output: 0.000002,
     cacheRead: 0.0000002,
   },
-  // Cursor first-party rates from cursor.com/docs/models-and-pricing (2026-09-25).
+  // Cursor first-party rates from cursor.com/docs/models-and-pricing (2026-11-02).
   // Composer/Grok publish cache-read only. The exact "-fast" key must exist so
   // suffix-trim doesn't land on the cheaper standard rate; Grok fast slugs are
   // aliased below. Short hook slugs (grok-4.6) retry as cursor-grok-4.6 in
@@ -440,19 +586,27 @@ function lookupPrice(
 }
 
 // Models offered in the "what would this have cost on…" comparison, per tool.
+// The comparison reprices session totals at base rates, so a model whose real
+// price depends on per-request prompt size (claude-haiku-5-5's long-context
+// card) is left out: most Claude Code requests cross its 100K threshold, and a
+// base-rate estimate would show it up to 5x too cheap.
 export const COMPARISON_MODELS: { claudeCode: string[]; cursor: string[] } = {
   claudeCode: [
     "claude-fable-5",
+    "claude-opus-5-5",
     "claude-opus-5",
     "claude-opus-4-8",
+    "claude-sonnet-5-5",
     "claude-sonnet-5",
     "claude-sonnet-4-6",
     "claude-haiku-4-5",
   ],
   cursor: [
     "claude-fable-5",
+    "claude-opus-5-5",
     "claude-opus-4-8",
     "claude-opus-5",
+    "claude-sonnet-5-5",
     "claude-sonnet-4-6",
     "claude-sonnet-5",
     "claude-haiku-4-5",

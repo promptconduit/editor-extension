@@ -13,6 +13,7 @@ tsconfig.webview.json
 # dev / test / docs tooling
 .vscode/**
 .vscode-test/
+.cli-pricing/
 .github/**
 test/**
 dev/**

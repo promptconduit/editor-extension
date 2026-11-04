@@ -40,7 +40,9 @@ describe("compareModels known-rate math (claude-code)", () => {
       [
         "claude-fable-5",
         "claude-haiku-4-5",
+        "claude-opus-5-5",
         "claude-opus-5",
+        "claude-sonnet-5-5",
         "claude-sonnet-4-6",
         "claude-sonnet-5",
       ].sort(),
@@ -76,11 +78,25 @@ describe("compareModels known-rate math (claude-code)", () => {
     const list = result as ModelComparison[];
     expect(list.map((m) => m.model)).toEqual([
       "claude-haiku-4-5",
+      "claude-sonnet-5-5",
       "claude-sonnet-5",
       "claude-sonnet-4-6",
+      "claude-opus-5-5",
       "claude-opus-5",
       "claude-fable-5",
     ]);
+  });
+
+  it("5.5 models hand-computed at base rates", () => {
+    // sonnet-5-5: 1000×0.000002 + 500×0.00001 + 10000×0.0000001 + 2000×0.0000025
+    //   = 0.002 + 0.005 + 0.001 + 0.005 = 0.013
+    expect(byModel(result, "claude-sonnet-5-5").altUsd).toBeCloseTo(0.013, 10);
+    // opus-5-5: 0.004 + 0.01 + 0.002 + 0.01 = 0.026
+    expect(byModel(result, "claude-opus-5-5").altUsd).toBeCloseTo(0.026, 10);
+  });
+
+  it("leaves out claude-haiku-5-5, whose long-context card base rates can't represent", () => {
+    expect((result as ModelComparison[]).map((c) => c.model)).not.toContain("claude-haiku-5-5");
   });
 });
 
@@ -97,7 +113,7 @@ describe("compareModels tool-aware sets", () => {
   it("unknown tools fall back to the claude-code set", () => {
     const other = compareModels(opusActual(), "gemini-cli") as ModelComparison[];
     expect(other.map((c) => c.model)).not.toContain("composer-2.5");
-    expect(other).toHaveLength(5);
+    expect(other).toHaveLength(7);
   });
 
   it("composer cache-read is priced from Cursor docs; cache-write stays 0", () => {
@@ -112,7 +128,7 @@ describe("compareModels tool-aware sets", () => {
     const dated = opusActual({ model: "claude-opus-4-8-20260101" });
     const list = compareModels(dated, "claude-code") as ModelComparison[];
     expect(list.map((c) => c.model)).not.toContain("claude-opus-4-8");
-    expect(list).toHaveLength(5);
+    expect(list).toHaveLength(7);
   });
 });
 
@@ -146,7 +162,7 @@ describe("cacheRatesFor derivation", () => {
 
 describe("compareModels unpriced handling", () => {
   it("returns {unpriced:true} for a model missing from the table", () => {
-    const result = compareModels(opusActual({ model: "gpt-5-turbo" }), "claude-code");
+    const result = compareModels(opusActual({ model: "llama-9-turbo" }), "claude-code");
     expect(result).toEqual({ unpriced: true });
   });
 
