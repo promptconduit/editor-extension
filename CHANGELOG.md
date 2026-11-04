@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.24.1
+
+- **November 2026 model rates.** The bundled rate card now matches the CLI's 2026-11-02 card: Claude Sonnet 5.5 (cache reads at $0.10 per million), Claude Haiku 5.5 with its long-prompt rate card, Claude Code fast-mode rates, and the third-party models Cursor offers (GPT-5.4 Mini and Nano, the GPT-5.x Codex models, Gemini 4 Argon, Gemini 3.5 Flash Lite, GLM 5.3, DeepSeek V4.1 Flash, Muse Wonder). Before this, the comparison could not price sessions on these models until the CLI had downloaded the published card.
+- **Compare against the 5.5 models.** "What would this have cost on…" now includes Claude Opus 5.5, Sonnet 5.5, and Haiku 5.5. The comparison reprices session totals, so it uses each model's standard rate, not the long-prompt or fast-mode rate.
+- **CI checks the rate card against the CLI.** The parity test now runs in CI against the CLI repo, so the two tables can't drift apart silently again.
+
 ## 0.24.0
 
 - **Ask your agent.** The cost panel shows whether PromptConduit's MCP server is registered with this editor's agent (Cursor's agent in Cursor, Claude Code in VS Code). If it isn't, **Register** runs `promptconduit mcp install` for you. Once it is, the card lists questions to ask in chat, such as "What has this session cost so far?", with a Copy button for each. The status-bar tooltip carries one example question. Hide the card with **Not now** / **Hide**. Command palette: *PromptConduit: Register MCP Server for Your Agent*. Needs CLI v0.30.0 or newer; with an older CLI the card stays hidden.
