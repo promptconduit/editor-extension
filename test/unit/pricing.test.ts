@@ -1,7 +1,15 @@
 import { describe, it, expect } from "vitest";
 import * as fs from "fs";
 import * as path from "path";
-import { PRICING, MODEL_ALIASES, resolvePrice, COMPARISON_MODELS, applyRateCard } from "../../src/pricing";
+import {
+  PRICING,
+  MODEL_ALIASES,
+  resolvePrice,
+  COMPARISON_MODELS,
+  applyRateCard,
+  BUNDLED_CARD_UPDATED,
+  type ModelPrice,
+} from "../../src/pricing";
 
 describe("resolvePrice exact lookups", () => {
   it("returns claude-fable-5 rates verbatim", () => {
@@ -86,6 +94,35 @@ describe("resolvePrice exact lookups", () => {
     expect(r!.price.output).toBe(0.000018);
   });
 
+  it("prices the 5.5 Claude models from the November card", () => {
+    expect(resolvePrice("claude-sonnet-5-5")!.price.cacheRead).toBe(0.0000001);
+    expect(resolvePrice("claude-opus-5.5")!.key).toBe("claude-opus-5-5");
+    const haiku = resolvePrice("claude-haiku-5-5")!.price;
+    expect(haiku.input).toBe(0.0000001);
+    expect(haiku.longContextThreshold).toBe(100000);
+    expect(haiku.longContext!.input).toBe(0.0000005);
+  });
+
+  it("keeps Claude Code fast-mode rows apart from Cursor -fast ids", () => {
+    expect(resolvePrice("claude-opus-5-5@fast")!.price.input).toBe(0.000008);
+    // "@" is not a dash segment, so a dated id never trims onto the fast row.
+    expect(resolvePrice("claude-opus-5-5-20261101")!.key).toBe("claude-opus-5-5");
+  });
+
+  it("gives Cursor's smaller third-party variants their own rows", () => {
+    for (const [model, input] of [
+      ["gpt-5.4-mini", 0.00000075],
+      ["gpt-5.4-nano", 0.0000002],
+      ["gpt-5.1-codex-mini", 0.00000025],
+      ["glm-5.3-flash", 0.00000015],
+      ["gemini-3.5-flash-lite", 0.0000003],
+    ] as const) {
+      const r = resolvePrice(model);
+      expect(r!.key).toBe(model);
+      expect(r!.price.input).toBe(input);
+    }
+  });
+
   it("resolves gemini-3.7-flash-high via suffix trim", () => {
     const r = resolvePrice("gemini-3.7-flash-high");
     expect(r!.key).toBe("gemini-3.7-flash");
@@ -136,7 +173,7 @@ describe("resolvePrice progressive suffix trim", () => {
   });
 
   it("returns undefined for unknown models and empty string", () => {
-    expect(resolvePrice("gpt-5-turbo")).toBeUndefined();
+    expect(resolvePrice("llama-9-turbo")).toBeUndefined();
     expect(resolvePrice("totally-unknown-model")).toBeUndefined();
     expect(resolvePrice("")).toBeUndefined();
   });
@@ -150,18 +187,24 @@ describe("COMPARISON_MODELS", () => {
   it("cursor is the claude-code set plus the composer models", () => {
     expect(COMPARISON_MODELS.claudeCode).toEqual([
       "claude-fable-5",
+      "claude-opus-5-5",
       "claude-opus-5",
       "claude-opus-4-8",
+      "claude-sonnet-5-5",
       "claude-sonnet-5",
       "claude-sonnet-4-6",
+      "claude-haiku-5-5",
       "claude-haiku-4-5",
     ]);
     expect(COMPARISON_MODELS.cursor).toEqual([
       "claude-fable-5",
+      "claude-opus-5-5",
       "claude-opus-4-8",
       "claude-opus-5",
+      "claude-sonnet-5-5",
       "claude-sonnet-4-6",
       "claude-sonnet-5",
+      "claude-haiku-5-5",
       "claude-haiku-4-5",
       "composer-2.5",
       "composer-2.5-fast",
@@ -182,6 +225,14 @@ describe("COMPARISON_MODELS", () => {
 const CLI_JSON_REL = ["cli", "internal", "cost", "pricing_data.json"];
 
 function findCliPricingJson(): string | undefined {
+  // CI checks out promptconduit/cli and points here (see .github/workflows/ci.yml).
+  const fromEnv = process.env.PROMPTCONDUIT_CLI_PRICING_JSON;
+  if (fromEnv) {
+    if (!fs.existsSync(fromEnv)) {
+      throw new Error(`PROMPTCONDUIT_CLI_PRICING_JSON points at a missing file: ${fromEnv}`);
+    }
+    return fromEnv;
+  }
   const roots = [
     path.resolve(__dirname, "..", ".."), // repo root from test/unit/
     process.cwd(), // vitest usually runs from the repo root
@@ -203,30 +254,40 @@ const cliJsonPath = findCliPricingJson();
 
 describe("parity with cli/internal/cost/pricing_data.json", () => {
   it.skipIf(!cliJsonPath)("PRICING mirrors the CLI table exactly", () => {
-    const raw = JSON.parse(fs.readFileSync(cliJsonPath!, "utf8")) as Record<
-      string,
-      Record<string, number>
-    >;
-    const expected: Record<string, unknown> = {};
+    const raw = JSON.parse(fs.readFileSync(cliJsonPath!, "utf8")) as Record<string, unknown>;
+    type Row = Record<string, number | Row | undefined>;
+    const toPrice = (val: Row): ModelPrice => ({
+      input: val.input_cost_per_token as number,
+      output: val.output_cost_per_token as number,
+      ...(val.cache_read_input_token_cost !== undefined && {
+        cacheRead: val.cache_read_input_token_cost as number,
+      }),
+      ...(val.cache_creation_input_token_cost !== undefined && {
+        cacheWrite5m: val.cache_creation_input_token_cost as number,
+      }),
+      ...(val.cache_creation_input_token_cost_1h !== undefined && {
+        cacheWrite1h: val.cache_creation_input_token_cost_1h as number,
+      }),
+      ...(val.long_context_threshold_tokens !== undefined && {
+        longContextThreshold: val.long_context_threshold_tokens as number,
+      }),
+      ...(val.long_context !== undefined && {
+        longContext: toPrice(val.long_context as Row),
+      }),
+    });
+    const expected: Record<string, ModelPrice> = {};
     for (const [key, val] of Object.entries(raw)) {
       if (key.startsWith("_")) continue; // metadata keys ("_comment", …)
-      expected[key] = {
-        input: val.input_cost_per_token,
-        output: val.output_cost_per_token,
-        ...(val.cache_read_input_token_cost !== undefined && {
-          cacheRead: val.cache_read_input_token_cost,
-        }),
-        ...(val.cache_creation_input_token_cost !== undefined && {
-          cacheWrite5m: val.cache_creation_input_token_cost,
-        }),
-        ...(val.cache_creation_input_token_cost_1h !== undefined && {
-          cacheWrite1h: val.cache_creation_input_token_cost_1h,
-        }),
-      };
+      expected[key] = toPrice(val as Row);
     }
     // toEqual is symmetric on plain objects: this asserts every CLI model +
     // rate is present and identical, AND that PRICING has no extra models.
     expect(PRICING).toEqual(expected);
+  });
+
+  it.skipIf(!cliJsonPath)("BUNDLED_CARD_UPDATED matches the CLI card date", () => {
+    const raw = JSON.parse(fs.readFileSync(cliJsonPath!, "utf8")) as { _updated: string };
+    expect(BUNDLED_CARD_UPDATED).toBe(raw._updated);
   });
 });
 

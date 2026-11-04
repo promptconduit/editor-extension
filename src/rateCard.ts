@@ -12,6 +12,39 @@ interface RawPrice {
   cache_read_input_token_cost?: number;
   cache_creation_input_token_cost?: number;
   cache_creation_input_token_cost_1h?: number;
+  long_context_threshold_tokens?: number;
+  long_context?: RawPrice;
+}
+
+function priceFromRow(row: RawPrice): ModelPrice | undefined {
+  const input = row.input_cost_per_token ?? 0;
+  const output = row.output_cost_per_token ?? 0;
+  if (input === 0 && output === 0) {
+    return undefined;
+  }
+  const price: ModelPrice = { input, output };
+  if (typeof row.cache_read_input_token_cost === "number") {
+    price.cacheRead = row.cache_read_input_token_cost;
+  }
+  if (typeof row.cache_creation_input_token_cost === "number") {
+    price.cacheWrite5m = row.cache_creation_input_token_cost;
+  }
+  if (typeof row.cache_creation_input_token_cost_1h === "number") {
+    price.cacheWrite1h = row.cache_creation_input_token_cost_1h;
+  }
+  if (
+    typeof row.long_context_threshold_tokens === "number" &&
+    row.long_context_threshold_tokens > 0 &&
+    row.long_context &&
+    typeof row.long_context === "object"
+  ) {
+    const long = priceFromRow(row.long_context);
+    if (long) {
+      price.longContextThreshold = row.long_context_threshold_tokens;
+      price.longContext = long;
+    }
+  }
+  return price;
 }
 
 export function publishedCardPath(): string {
@@ -40,23 +73,10 @@ export function rateCardFromDocument(
     if (key.startsWith("_") || !value || typeof value !== "object") {
       continue;
     }
-    const row = value as RawPrice;
-    const input = row.input_cost_per_token ?? 0;
-    const output = row.output_cost_per_token ?? 0;
-    if (input === 0 && output === 0) {
-      continue;
+    const price = priceFromRow(value as RawPrice);
+    if (price) {
+      out[key] = price;
     }
-    const price: ModelPrice = { input, output };
-    if (typeof row.cache_read_input_token_cost === "number") {
-      price.cacheRead = row.cache_read_input_token_cost;
-    }
-    if (typeof row.cache_creation_input_token_cost === "number") {
-      price.cacheWrite5m = row.cache_creation_input_token_cost;
-    }
-    if (typeof row.cache_creation_input_token_cost_1h === "number") {
-      price.cacheWrite1h = row.cache_creation_input_token_cost_1h;
-    }
-    out[key] = price;
   }
   return Object.keys(out).length > 0 ? out : undefined;
 }

@@ -8,7 +8,7 @@ describe("rateCardFromDocument", () => {
   it("accepts a same-day PromptConduit card and skips zero rows", () => {
     const card = rateCardFromDocument({
       _source: "promptconduit",
-      _updated: "2026-09-25",
+      _updated: "2026-11-02",
       "cursor-grok-4.7": {
         input_cost_per_token: 0.000002,
         output_cost_per_token: 0.000006,
@@ -22,6 +22,31 @@ describe("rateCardFromDocument", () => {
       cacheRead: 0.0000005,
     });
     expect(card?.["text-embedding-x"]).toBeUndefined();
+  });
+
+  it("carries a long-context rate card and drops a malformed one", () => {
+    const card = rateCardFromDocument({
+      _source: "promptconduit",
+      _updated: "2099-01-01",
+      "claude-haiku-5-5": {
+        input_cost_per_token: 0.0000001,
+        output_cost_per_token: 0.0000005,
+        long_context_threshold_tokens: 100000,
+        long_context: { input_cost_per_token: 0.0000005, output_cost_per_token: 0.0000025 },
+      },
+      "no-threshold": {
+        input_cost_per_token: 1,
+        output_cost_per_token: 1,
+        long_context: { input_cost_per_token: 5, output_cost_per_token: 5 },
+      },
+    });
+    expect(card?.["claude-haiku-5-5"]).toEqual({
+      input: 0.0000001,
+      output: 0.0000005,
+      longContextThreshold: 100000,
+      longContext: { input: 0.0000005, output: 0.0000025 },
+    });
+    expect(card?.["no-threshold"]).toEqual({ input: 1, output: 1 });
   });
 
   it("rejects an older card and a card that is not ours", () => {
