@@ -34,7 +34,8 @@ export interface ModelPrice {
 // The CLI prices each request, so it applies longContext per request and the
 // "@fast" rows per usage.speed. The comparison below reprices session TOTALS,
 // where neither the per-request prompt size nor the speed is known, so it uses
-// the base rates.
+// the base rates. Likewise a fast-mode or long-context actual session is
+// compared against alternatives at their base rates.
 /** Date stamped on the embedded snapshot. A published card older than this is ignored. */
 export const BUNDLED_CARD_UPDATED = "2026-11-02";
 
@@ -585,6 +586,10 @@ function lookupPrice(
 }
 
 // Models offered in the "what would this have cost on…" comparison, per tool.
+// The comparison reprices session totals at base rates, so a model whose real
+// price depends on per-request prompt size (claude-haiku-5-5's long-context
+// card) is left out: most Claude Code requests cross its 100K threshold, and a
+// base-rate estimate would show it up to 5x too cheap.
 export const COMPARISON_MODELS: { claudeCode: string[]; cursor: string[] } = {
   claudeCode: [
     "claude-fable-5",
@@ -594,7 +599,6 @@ export const COMPARISON_MODELS: { claudeCode: string[]; cursor: string[] } = {
     "claude-sonnet-5-5",
     "claude-sonnet-5",
     "claude-sonnet-4-6",
-    "claude-haiku-5-5",
     "claude-haiku-4-5",
   ],
   cursor: [
@@ -605,7 +609,6 @@ export const COMPARISON_MODELS: { claudeCode: string[]; cursor: string[] } = {
     "claude-sonnet-5-5",
     "claude-sonnet-4-6",
     "claude-sonnet-5",
-    "claude-haiku-5-5",
     "claude-haiku-4-5",
     "composer-2.5",
     "composer-2.5-fast",

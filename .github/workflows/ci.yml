@@ -14,21 +14,9 @@ jobs:
         with:
           node-version: '20'
           cache: npm
-      # src/pricing.ts mirrors the CLI's rate card. Check out the public cli repo
-      # so the parity test in test/unit/pricing.test.ts runs instead of skipping;
-      # a CLI rate change then fails here until the extension is resynced.
-      - name: Check out CLI rate card
-        uses: actions/checkout@v7
-        with:
-          repository: promptconduit/cli
-          path: .cli-pricing
-          sparse-checkout: internal/cost/pricing_data.json
-          sparse-checkout-cone-mode: false
       - run: npm ci
       - run: npm run compile
       - name: Unit tests
         run: npm test
-        env:
-          PROMPTCONDUIT_CLI_PRICING_JSON: ${{ github.workspace }}/.cli-pricing/internal/cost/pricing_data.json
       - name: Package (smoke-test vsce packaging)
         run: npx @vscode/vsce package --out /tmp/extension.vsix

@@ -1,0 +1,40 @@
+name: Pricing parity
+
+# src/pricing.ts mirrors the CLI's rate card (cli/internal/cost/pricing_data.json).
+# This runs the parity tests in test/unit/pricing.test.ts against cli main so the
+# two tables can't silently drift. It is a separate workflow, not a step in CI,
+# so a CLI rate change doesn't turn unrelated extension PRs red: it runs on PRs
+# that touch pricing, weekly, and on demand. A failure means "resync src/pricing.ts".
+
+on:
+  pull_request:
+    paths:
+      - src/pricing.ts
+      - src/rateCard.ts
+      - test/unit/pricing.test.ts
+      - .github/workflows/pricing-parity.yml
+  schedule:
+    - cron: '17 14 * * 1'
+  workflow_dispatch:
+
+jobs:
+  parity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Check out CLI rate card
+        uses: actions/checkout@v7
+        with:
+          repository: promptconduit/cli
+          path: .cli-pricing
+          sparse-checkout: internal/cost/pricing_data.json
+          sparse-checkout-cone-mode: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: npm
+      - run: npm ci
+      - name: Parity with the CLI rate card
+        run: npx vitest run test/unit/pricing.test.ts
+        env:
+          PROMPTCONDUIT_CLI_PRICING_JSON: ${{ github.workspace }}/.cli-pricing/internal/cost/pricing_data.json

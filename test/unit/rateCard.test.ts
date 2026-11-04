@@ -49,6 +49,23 @@ describe("rateCardFromDocument", () => {
     expect(card?.["no-threshold"]).toEqual({ input: 1, output: 1 });
   });
 
+  it("drops rows with non-numeric rates and ignores a fractional threshold", () => {
+    const card = rateCardFromDocument({
+      _source: "promptconduit",
+      _updated: "2099-01-01",
+      "string-rate": { input_cost_per_token: "0.000002", output_cost_per_token: 0.000006 },
+      "fractional-threshold": {
+        input_cost_per_token: 1,
+        output_cost_per_token: 1,
+        cache_read_input_token_cost: "x",
+        long_context_threshold_tokens: 100000.5,
+        long_context: { input_cost_per_token: 5, output_cost_per_token: 5 },
+      },
+    });
+    expect(card?.["string-rate"]).toBeUndefined();
+    expect(card?.["fractional-threshold"]).toEqual({ input: 1, output: 1 });
+  });
+
   it("rejects an older card and a card that is not ours", () => {
     expect(
       rateCardFromDocument({

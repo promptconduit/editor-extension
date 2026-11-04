@@ -39,7 +39,6 @@ describe("compareModels known-rate math (claude-code)", () => {
     expect(list.map((c) => c.model).sort()).toEqual(
       [
         "claude-fable-5",
-        "claude-haiku-5-5",
         "claude-haiku-4-5",
         "claude-opus-5-5",
         "claude-opus-5",
@@ -78,7 +77,6 @@ describe("compareModels known-rate math (claude-code)", () => {
     expect(c.altUsd).toBeCloseTo(0.007, 10);
     const list = result as ModelComparison[];
     expect(list.map((m) => m.model)).toEqual([
-      "claude-haiku-5-5",
       "claude-haiku-4-5",
       "claude-sonnet-5-5",
       "claude-sonnet-5",
@@ -95,9 +93,10 @@ describe("compareModels known-rate math (claude-code)", () => {
     expect(byModel(result, "claude-sonnet-5-5").altUsd).toBeCloseTo(0.013, 10);
     // opus-5-5: 0.004 + 0.01 + 0.002 + 0.01 = 0.026
     expect(byModel(result, "claude-opus-5-5").altUsd).toBeCloseTo(0.026, 10);
-    // haiku-5-5 uses its base card (session totals carry no per-request prompt size):
-    // 0.0001 + 0.00025 + 0.0001 + 0.00025 = 0.0007
-    expect(byModel(result, "claude-haiku-5-5").altUsd).toBeCloseTo(0.0007, 10);
+  });
+
+  it("leaves out claude-haiku-5-5, whose long-context card base rates can't represent", () => {
+    expect((result as ModelComparison[]).map((c) => c.model)).not.toContain("claude-haiku-5-5");
   });
 });
 
@@ -114,7 +113,7 @@ describe("compareModels tool-aware sets", () => {
   it("unknown tools fall back to the claude-code set", () => {
     const other = compareModels(opusActual(), "gemini-cli") as ModelComparison[];
     expect(other.map((c) => c.model)).not.toContain("composer-2.5");
-    expect(other).toHaveLength(8);
+    expect(other).toHaveLength(7);
   });
 
   it("composer cache-read is priced from Cursor docs; cache-write stays 0", () => {
@@ -129,7 +128,7 @@ describe("compareModels tool-aware sets", () => {
     const dated = opusActual({ model: "claude-opus-4-8-20260101" });
     const list = compareModels(dated, "claude-code") as ModelComparison[];
     expect(list.map((c) => c.model)).not.toContain("claude-opus-4-8");
-    expect(list).toHaveLength(8);
+    expect(list).toHaveLength(7);
   });
 });
 

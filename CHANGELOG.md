@@ -5,8 +5,9 @@
 ## 0.24.1
 
 - **November 2026 model rates.** The bundled rate card now matches the CLI's 2026-11-02 card: Claude Sonnet 5.5 (cache reads at $0.10 per million), Claude Haiku 5.5 with its long-prompt rate card, Claude Code fast-mode rates, and the third-party models Cursor offers (GPT-5.4 Mini and Nano, the GPT-5.x Codex models, Gemini 4 Argon, Gemini 3.5 Flash Lite, GLM 5.3, DeepSeek V4.1 Flash, Muse Wonder). Before this, the comparison could not price sessions on these models until the CLI had downloaded the published card.
-- **Compare against the 5.5 models.** "What would this have cost on…" now includes Claude Opus 5.5, Sonnet 5.5, and Haiku 5.5. The comparison reprices session totals, so it uses each model's standard rate, not the long-prompt or fast-mode rate.
-- **CI checks the rate card against the CLI.** The parity test now runs in CI against the CLI repo, so the two tables can't drift apart silently again.
+- **Compare against the 5.5 models.** "What would this have cost on…" now includes Claude Opus 5.5 and Sonnet 5.5. The comparison reprices session totals at standard rates, so Haiku 5.5 is left out: most Claude Code requests cross its 100K long-prompt threshold, where it costs 5x, and a standard-rate estimate would make it look far cheaper than it is.
+- **Stricter published-card parsing.** Rows with non-numeric or negative rates are ignored instead of overlaid on the bundled table, matching how the CLI reads the card.
+- **Rate card checked against the CLI.** A new Pricing parity workflow compares the bundled table with the CLI's card on pricing PRs and weekly, so the two can't drift apart silently again.
 
 ## 0.24.0
 

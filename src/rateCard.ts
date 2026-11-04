@@ -16,31 +16,37 @@ interface RawPrice {
   long_context?: RawPrice;
 }
 
+function isRate(v: unknown): v is number {
+  return typeof v === "number" && Number.isFinite(v) && v >= 0;
+}
+
+// Rates must be finite, non-negative numbers; a row with a malformed input or
+// output rate is dropped rather than overlaid on the bundled table.
 function priceFromRow(row: RawPrice): ModelPrice | undefined {
   const input = row.input_cost_per_token ?? 0;
   const output = row.output_cost_per_token ?? 0;
-  if (input === 0 && output === 0) {
+  if (!isRate(input) || !isRate(output) || (input === 0 && output === 0)) {
     return undefined;
   }
   const price: ModelPrice = { input, output };
-  if (typeof row.cache_read_input_token_cost === "number") {
+  if (isRate(row.cache_read_input_token_cost)) {
     price.cacheRead = row.cache_read_input_token_cost;
   }
-  if (typeof row.cache_creation_input_token_cost === "number") {
+  if (isRate(row.cache_creation_input_token_cost)) {
     price.cacheWrite5m = row.cache_creation_input_token_cost;
   }
-  if (typeof row.cache_creation_input_token_cost_1h === "number") {
+  if (isRate(row.cache_creation_input_token_cost_1h)) {
     price.cacheWrite1h = row.cache_creation_input_token_cost_1h;
   }
   if (
-    typeof row.long_context_threshold_tokens === "number" &&
-    row.long_context_threshold_tokens > 0 &&
+    Number.isSafeInteger(row.long_context_threshold_tokens) &&
+    (row.long_context_threshold_tokens as number) > 0 &&
     row.long_context &&
     typeof row.long_context === "object"
   ) {
     const long = priceFromRow(row.long_context);
     if (long) {
-      price.longContextThreshold = row.long_context_threshold_tokens;
+      price.longContextThreshold = row.long_context_threshold_tokens as number;
       price.longContext = long;
     }
   }
