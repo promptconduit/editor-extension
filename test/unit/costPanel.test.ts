@@ -106,6 +106,14 @@ describe("renderBody (session mode)", () => {
     expect(html).toContain('data-cmd="openAllSessions"');
   });
 
+  it("never leaks codicon $(icon) syntax into webview HTML", () => {
+    // Codicon shorthand only renders in native UI; in a webview it is literal text.
+    const codicon = /\$\([a-z0-9-]+\)/;
+    expect(html).not.toMatch(codicon);
+    expect(renderBody(buildCostPanelState(storyStore(), "all"))).not.toMatch(codicon);
+    expect(renderBody(buildCostPanelState(new ConversationStore(), "session"))).not.toMatch(codicon);
+  });
+
   it("uses data attributes for geometry (CSP forbids style attrs)", () => {
     expect(html).toContain("data-w=");
     expect(html).not.toMatch(/style="/);
