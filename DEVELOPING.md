@@ -42,7 +42,7 @@ panel** (bottom panel → "PromptConduit") and **cost status bar** show your rea
 ## 3. Webview preview in a browser — instant UI iteration
 
 Render the UI surfaces (the **AI Cost Breakdown** panel in its heavy / clean /
-unpriced / zero states, the telemetry feed, landing, and tooltip headline) with
+unpriced / zero states, the telemetry feed and tooltip headline) with
 sample data to static HTML and open them in your browser. Best for tweaking
 look/feel without booting the editor.
 

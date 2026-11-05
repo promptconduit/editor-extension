@@ -229,33 +229,6 @@ function activateInner(context: vscode.ExtensionContext): void {
   context.subscriptions.push(updates);
   updates.start();
 
-  const allSessionsButton = vscode.window.createStatusBarItem(
-    vscode.StatusBarAlignment.Right,
-    98,
-  );
-  allSessionsButton.text = "$(list-tree) All sessions";
-  allSessionsButton.tooltip = "Open the multi-session AI cost overview";
-  allSessionsButton.command = "promptconduit.cost.showAllSessions";
-  context.subscriptions.push(allSessionsButton);
-
-  const streamButton = vscode.window.createStatusBarItem(
-    vscode.StatusBarAlignment.Right,
-    99,
-  );
-  streamButton.text = "$(pulse) Stream";
-  streamButton.tooltip = "Open the live PromptConduit event stream";
-  streamButton.command = "promptconduit.stream.showFeed";
-  context.subscriptions.push(streamButton);
-
-  const graphButton = vscode.window.createStatusBarItem(
-    vscode.StatusBarAlignment.Right,
-    97,
-  );
-  graphButton.text = "$(type-hierarchy-sub) Graph";
-  graphButton.tooltip = "Open the live session graph — prompts, tools, subagents, worktrees";
-  graphButton.command = "promptconduit.graph.show";
-  context.subscriptions.push(graphButton);
-
   terminalFocus = new TerminalFocusController(
     makeTerminalFocusDeps(
       resolveCli,
