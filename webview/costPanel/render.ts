@@ -266,12 +266,30 @@ export function toolCallsHtml(g: PromptGroup): string {
 
 // ---------- subagents (mini gantt) ----------
 
+// Same "unpriced" chip the model table uses for main-turn models, with the
+// request count and model so the gap is visible, not folded in as $0.
+function subagentUnpricedChip(a: PromptSubagent): string {
+  const n = a.unpricedRequests ?? 0;
+  const label = `${n} unpriced req${a.unpricedModel ? ` (${a.unpricedModel})` : ""}`;
+  return `<span class="chip">${termHtml("model_unpriced", label)}</span>`;
+}
+
 export function subagentsHtml(g: PromptGroup): string {
   if (g.subagents.length === 0) {
     return "";
   }
   const totalUsd = g.subagents.reduce((s, a) => s + (a.usdTotal ?? 0), 0);
-  const usdNote = totalUsd > 0 ? ` · ${fmtUSD(totalUsd)}` : "";
+  const unpricedReqs = g.subagents.reduce((n, a) => n + (a.unpricedRequests ?? 0), 0);
+  // Unpriced subagent requests have unknown (not $0) cost: flag the total as
+  // a lower bound, or show "unpriced" instead of a misleading $0.00.
+  const usdNote =
+    unpricedReqs > 0
+      ? totalUsd > 0
+        ? ` · ${fmtUSD(totalUsd)}+ (${unpricedReqs} unpriced req)`
+        : " · unpriced"
+      : totalUsd > 0
+        ? ` · ${fmtUSD(totalUsd)}`
+        : "";
 
   // Timeline geometry: offsets from the earliest start across the group.
   const starts = g.subagents
@@ -299,7 +317,8 @@ export function subagentsHtml(g: PromptGroup): string {
         a.model ? escapeHtml(a.model) : "",
         a.requests ? `${a.requests} req` : "",
         fmtDuration(a.durationMs),
-        a.usdTotal ? fmtUSD(a.usdTotal) : "",
+        a.usdTotal ? `${fmtUSD(a.usdTotal)}${a.unpricedRequests ? "+" : ""}` : "",
+        a.unpricedRequests ? subagentUnpricedChip(a) : "",
         a.orphanStop ? "start not captured" : "",
       ]
         .filter(Boolean)

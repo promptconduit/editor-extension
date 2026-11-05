@@ -302,6 +302,33 @@ describe("ConversationStore enrichment slugs", () => {
       totalUsd: 0.31,
       dominantType: "Explore",
     });
+    expect(view?.subagents?.unpricedRequests).toBeUndefined();
+  });
+
+  it("tracks unpriced subagent requests instead of folding them in as $0", () => {
+    const store = new ConversationStore();
+    const stop = (id: string, sub: Record<string, unknown>) =>
+      parseEnvelopeV2(
+        v2Envelope("claude-code", "SubagentStop", "2026-07-06T17:05:00Z", {
+          sessionId: "cc-unpriced",
+          raw: { agent_id: id },
+          enrichments: { subagent: { agent_id: id, agent_type: "Explore", phase: "stop", ...sub } },
+        }),
+      );
+    for (const env of [
+      stop("a1", { usd: { total: 0.25 }, model_priced: true }),
+      stop("a2", { usd: { total: 0 }, model_priced: false, unpriced_requests: 3, unpriced_model: "claude-future-9" }),
+      stop("a3", { usd: { total: 0.05 }, model_priced: false, unpriced_requests: 1, unpriced_model: "other-x" }),
+    ]) {
+      if (env) store.recordEnvelope(env);
+    }
+    const view = store.viewForKey("cc-unpriced");
+    expect(view?.subagents).toMatchObject({
+      count: 3,
+      totalUsd: 0.3,
+      unpricedRequests: 4,
+      unpricedModels: ["claude-future-9", "other-x"],
+    });
   });
 });
 

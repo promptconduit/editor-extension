@@ -10,6 +10,7 @@ import {
   vcsLineHtml,
   comparisonHtml,
   groupModelTotal,
+  subagentsHtml,
 } from "../../webview/costPanel/render";
 import { highlightJson, escapeHtml } from "../../webview/costPanel/jsonHighlight";
 import { samplePromptStoryLines } from "../../dev/fixtures";
@@ -79,6 +80,7 @@ describe("renderBody (session mode)", () => {
   it("renders the subagent lane with per-agent cost", () => {
     expect(html).toContain("Subagents (1)");
     expect(html).toContain("claude-sonnet-4-6");
+    expect(html).not.toContain("unpriced req");
   });
 
   it("puts model comparison in the advanced drawer", () => {
@@ -233,5 +235,48 @@ describe("comparison rendering", () => {
       toolCalls: [], subagents: [], permissions: [], rawEvents: [], rev: 1,
     };
     expect(groupModelTotal(g)?.model).toBe("claude-opus-4-8");
+  });
+});
+
+describe("subagentsHtml unpriced models", () => {
+  const group = (subagents: PromptGroup["subagents"]): PromptGroup => ({
+    id: "g",
+    kind: "prompt",
+    requests: [],
+    toolCalls: [],
+    subagents,
+    permissions: [],
+    rawEvents: [],
+    rev: 1,
+  });
+
+  it("shows 'unpriced' instead of $0 when every subagent request was unpriced", () => {
+    const html = subagentsHtml(
+      group([
+        {
+          agentId: "a1",
+          agentType: "Explore",
+          model: "claude-future-9",
+          requests: 3,
+          usdTotal: 0,
+          unpricedRequests: 3,
+          unpricedModel: "claude-future-9",
+        },
+      ]),
+    );
+    expect(html).toContain("Subagents (1) · unpriced");
+    expect(html).toContain("3 unpriced req (claude-future-9)");
+    expect(html).not.toContain("$0.00");
+  });
+
+  it("marks a partly-unpriced total as a lower bound", () => {
+    const html = subagentsHtml(
+      group([
+        { agentId: "a1", agentType: "Explore", usdTotal: 0.25 },
+        { agentId: "a2", agentType: "Plan", usdTotal: 0.05, unpricedRequests: 1, unpricedModel: "other-x" },
+      ]),
+    );
+    expect(html).toContain("(1 unpriced req)");
+    expect(html).toContain("1 unpriced req (other-x)");
   });
 });
