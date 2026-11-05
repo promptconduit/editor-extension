@@ -10,6 +10,7 @@ import * as fs from "node:fs";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { landingHtml } from "../src/landing";
+import { setupState } from "../src/setup";
 import { ConversationStore } from "../src/state";
 import { parseEnvelopeV2, costEventsFrom } from "../src/envelope";
 import { buildCostPanelState } from "../src/costPanel/viewModel";
@@ -198,6 +199,14 @@ const pages: Record<string, string> = {
   "breakdown-detail.html": costPanelPage(buildCostPanelState(storyStore, "session")),
   "breakdown-all.html": costPanelPage(buildCostPanelState(multiStore, "all")),
   "breakdown-zero.html": costPanelPage(buildCostPanelState(new ConversationStore(), "session")),
+  "breakdown-setup.html": costPanelPage({
+    ...buildCostPanelState(new ConversationStore(), "session"),
+    setup: setupState("install-cli", "darwin"),
+  }),
+  "breakdown-setup-init.html": costPanelPage({
+    ...buildCostPanelState(new ConversationStore(), "session"),
+    setup: setupState("run-init", "darwin"),
+  }),
   "breakdown-agent.html": costPanelPage({
     ...buildCostPanelState(storyStore, "session"),
     agentHint: {

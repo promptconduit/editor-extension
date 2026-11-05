@@ -19,6 +19,7 @@ import { CursorTabTracker, runComposerQuery } from "./cursorTabs";
 import { SyncOfferController, shellQuote } from "./syncOffer";
 import { readPublishedRateCard } from "./rateCard";
 import { AgentHintController, agentTooltipLine } from "./agentHint";
+import { SetupController } from "./setupController";
 
 let statusBar: CostStatusBar | undefined;
 let costFeed: CostFeedController | undefined;
@@ -48,6 +49,17 @@ function activateInner(context: vscode.ExtensionContext): void {
   statusBar = new CostStatusBar();
   context.subscriptions.push(statusBar);
 
+  // First run: until the CLI is installed and has recorded something, the
+  // status bar and the empty Cost Breakdown say exactly what to run.
+  const setup = new SetupController(() => cfg().get<string>("binaryPath", ""));
+  context.subscriptions.push(setup);
+  statusBar.setSetupStep(setup.current());
+  setup.setOnChange(() => {
+    statusBar?.setSetupStep(setup.current());
+    CostDetailPanel.refresh();
+    void agentHints.refresh(); // `mcp status` works now that the CLI exists
+  });
+
   const syncOffers = new SyncOfferController(context);
   context.subscriptions.push({ dispose: () => syncOffers.dispose() });
   syncOffers.setOnChange(() => statusBar?.setSyncOffer(syncOffers.current()));
@@ -74,6 +86,10 @@ function activateInner(context: vscode.ExtensionContext): void {
     const hint = agentHints.current();
     if (hint) {
       state.agentHint = hint;
+    }
+    const setupCard = setup.state();
+    if (setupCard) {
+      state.setup = setupCard;
     }
     return state;
   };
@@ -114,12 +130,15 @@ function activateInner(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("promptconduit.cost.followActive", () => {
       statusBar?.followActive();
     }),
+    vscode.commands.registerCommand("promptconduit.setup.installCli", () => {
+      setup.installCli();
+    }),
+    vscode.commands.registerCommand("promptconduit.setup.runInit", () => {
+      setup.runInit();
+    }),
     vscode.commands.registerCommand("promptconduit.account.login", () => {
-      const bin = resolveCli();
+      const bin = setup.requireCli("then run promptconduit login");
       if (!bin) {
-        void vscode.window.showErrorMessage(
-          "PromptConduit CLI was not found. Install it, then run promptconduit login.",
-        );
         return;
       }
       const term = vscode.window.createTerminal({ name: "PromptConduit login" });
@@ -136,11 +155,8 @@ function activateInner(context: vscode.ExtensionContext): void {
       agentHints.dismiss();
     }),
     vscode.commands.registerCommand("promptconduit.team.invite", async () => {
-      const bin = resolveCli();
+      const bin = setup.requireCli("then run promptconduit login and invite again");
       if (!bin) {
-        void vscode.window.showErrorMessage(
-          "PromptConduit CLI was not found. Install it, then run promptconduit team invite.",
-        );
         return;
       }
       const email = await vscode.window.showInputBox({
@@ -203,6 +219,7 @@ function activateInner(context: vscode.ExtensionContext): void {
   );
 
   agentHints.start();
+  setup.start();
 
   const updates = new UpdatePromptController(
     context.extension.packageJSON.version as string,

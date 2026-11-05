@@ -114,6 +114,14 @@
         "title": "PromptConduit: Send Feedback"
       },
       {
+        "command": "promptconduit.setup.installCli",
+        "title": "PromptConduit: Install the CLI"
+      },
+      {
+        "command": "promptconduit.setup.runInit",
+        "title": "PromptConduit: Run Setup (promptconduit init)"
+      },
+      {
         "command": "promptconduit.restore.sessions",
         "title": "PromptConduit: Restore AI Sessions"
       },

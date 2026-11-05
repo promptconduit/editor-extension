@@ -235,6 +235,18 @@ button.scope-chip.disabled { opacity: 0.45; cursor: default; }
 }
 .sync-offer h2 { margin: 0 0 0.35rem; }
 .sync-offer p { margin: 0.35rem 0; }
+.setup-card {
+  margin-top: 1.6rem;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid var(--hairline);
+  border-left: 3px solid var(--accent);
+  border-radius: 4px;
+}
+.setup-card h2 { margin: 0 0 0.35rem; }
+.setup-card p { margin: 0.35rem 0; }
+.setup-steps { margin: 0.5rem 0; padding-left: 1.2rem; }
+.setup-steps li { margin: 0.6rem 0; }
+.setup-cmd code { user-select: all; word-break: break-all; }
 .agent-hint {
   margin-top: 1.2rem;
   padding: 0.75rem 0.9rem;

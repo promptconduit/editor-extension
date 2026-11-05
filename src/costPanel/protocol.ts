@@ -12,6 +12,7 @@ import type { EdgeCase } from "../edgeCases";
 import type { ResourceLink } from "../links";
 import type { CostScope, ScopeChip, ScopeTotals } from "../costScope";
 import type { ModelPrice } from "../pricing";
+import type { SetupState } from "../setup";
 
 /** One conversation, fully prepared for rendering. */
 export interface SessionView {
@@ -65,6 +66,11 @@ export interface CostPanelState {
    * this editor's agent. Absent when the CLI can't tell us or it was dismissed.
    */
   agentHint?: AgentHint;
+  /**
+   * First-run guidance: present until the CLI is installed and has recorded
+   * something. The zero state renders install/init steps from it.
+   */
+  setup?: SetupState;
 }
 
 /** MCP registration for this editor's agent, plus example questions to ask it. */
@@ -105,7 +111,9 @@ export type WebviewCommand =
   | "dismissLogin"
   | "registerMcp"
   | "dismissAgentHint"
-  | "inviteTeammate";
+  | "inviteTeammate"
+  | "installCli"
+  | "runInit";
 
 export type WebviewMessage =
   | { type: "ready" }

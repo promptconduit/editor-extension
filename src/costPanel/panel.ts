@@ -25,6 +25,8 @@ const COMMAND_MAP: Record<string, string> = {
   registerMcp: "promptconduit.agent.registerMcp",
   dismissAgentHint: "promptconduit.agent.dismissHint",
   inviteTeammate: "promptconduit.team.invite",
+  installCli: "promptconduit.setup.installCli",
+  runInit: "promptconduit.setup.runInit",
 };
 
 export class CostDetailPanel {

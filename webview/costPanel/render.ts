@@ -521,6 +521,43 @@ export function ledgerHtml(s: SessionView): string {
   </section>`;
 }
 
+/**
+ * First-run setup card for the zero state: the extension only reads what the
+ * CLI records, so with no CLI (or no hooks yet) say exactly what to run.
+ */
+export function setupCardHtml(state: CostPanelState): string {
+  const s = state.setup;
+  if (!s) {
+    return "";
+  }
+  const cmd = (text: string, runCmd: string, runLabel: string) =>
+    `<p class="setup-cmd"><code>${escapeHtml(text)}</code></p>
+      <p class="sync-actions">
+        <button type="button" class="tb" data-cmd="${runCmd}">${runLabel}</button>
+        <button type="button" class="tb copy-q" data-text="${escapeHtml(text)}">Copy</button>
+      </p>`;
+  const install = s.installCommand
+    ? `<li>Install the free, open-source CLI:${cmd(s.installCommand, "installCli", "Run in terminal")}</li>`
+    : `<li>Install the free, open-source CLI — see the <a href="${escapeHtml(s.docsUrl)}">installation guide</a>.</li>`;
+  const init = `<li>Connect Claude Code or Cursor${
+    s.step === "install-cli" && s.installCommand ? " (the installer starts this for you)" : ""
+  }:${cmd(s.initCommand, "runInit", "Run in terminal")}</li>`;
+  const intro =
+    s.step === "install-cli"
+      ? "This extension shows the cost data the PromptConduit CLI records on your machine. The CLI isn't installed yet."
+      : "The PromptConduit CLI is installed but hasn't recorded an AI session yet.";
+  return `<section class="setup-card">
+    <h2>Set up cost tracking</h2>
+    <p>${intro}</p>
+    <ol class="setup-steps">
+      ${s.step === "install-cli" ? install : ""}
+      ${init}
+      <li>Start an AI session. Its cost appears here and in the status bar as you work.</li>
+    </ol>
+    <p class="muted small">No account needed: everything stays on this machine. <a href="${escapeHtml(s.docsUrl)}">Setup guide →</a></p>
+  </section>`;
+}
+
 export function syncOfferHtml(state: CostPanelState): string {
   const offer = state.syncOffer;
   if (!offer || offer.sessions <= 0) {
@@ -744,7 +781,7 @@ export function renderZones(state: CostPanelState): RenderZones {
   applyRateCard(state.rateCard);
   if (state.sessions.length === 0) {
     return {
-      top: `${toolbarHtml(state)}${syncOfferHtml(state)}${shortLandingHtml()}`,
+      top: `${toolbarHtml(state)}${syncOfferHtml(state)}${state.setup ? setupCardHtml(state) : shortLandingHtml()}`,
       rest: `${agentHintHtml(state)}${panelFooterHtml()}`,
     };
   }
