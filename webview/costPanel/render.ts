@@ -633,11 +633,13 @@ function advancedDrawerHtml(s: SessionView, state: CostPanelState): string {
   </details>`;
 }
 
+// Plain labels: `$(icon)` codicon syntax only renders in native UI (status bar,
+// quick picks), never in webview HTML, where it shows up as literal text.
 function panelFooterHtml(): string {
   return `<footer class="panel-footer">
-    <button type="button" class="tb" data-cmd="openStream">$(pulse) Stream</button>
-    <button type="button" class="tb" data-cmd="openGraph">$(type-hierarchy-sub) Graph</button>
-    <button type="button" class="tb" data-cmd="openAllSessions">$(list-tree) All sessions</button>
+    <button type="button" class="tb" data-cmd="openStream">Stream</button>
+    <button type="button" class="tb" data-cmd="openGraph">Session graph</button>
+    <button type="button" class="tb" data-cmd="openAllSessions">All sessions</button>
   </footer>`;
 }
 
