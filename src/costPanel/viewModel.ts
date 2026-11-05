@@ -8,6 +8,10 @@ import { buildEdgeCases } from "../edgeCases";
 import { learnMoreLinks } from "../links";
 import { aggregateScope, scopeChips, type CostScope } from "../costScope";
 import { CostPanelState, SessionView, SyncOffer } from "./protocol";
+import { appMarketingUrl } from "../marketingUrl";
+
+/** Team dashboard on the web app, UTM-tagged as a cost-panel click. */
+export const TEAM_SPEND_URL = appMarketingUrl("/team", "cost_panel", "team_spend");
 
 let revision = 0;
 
@@ -38,6 +42,7 @@ export function buildCostPanelState(
   mode: "session" | "all",
   scope: CostScope = "session",
   syncOffer?: SyncOffer,
+  signedIn = false,
 ): CostPanelState {
   const displayKey = store.displayKey;
   const display = displayKey ? store.viewForKey(displayKey) : undefined;
@@ -64,5 +69,6 @@ export function buildCostPanelState(
     edgeCases: buildEdgeCases(display?.summary, display?.lastEvent),
     links: learnMoreLinks(display?.tool),
     ...(syncOffer ? { syncOffer } : {}),
+    ...(signedIn ? { teamUrl: TEAM_SPEND_URL } : {}),
   };
 }

@@ -18,6 +18,7 @@ import { TerminalFocusController, makeTerminalFocusDeps } from "./terminalFocus"
 import { CursorTabTracker, runComposerQuery } from "./cursorTabs";
 import { SyncOfferController, shellQuote } from "./syncOffer";
 import { readPublishedRateCard } from "./rateCard";
+import { readCloudSyncEnabled } from "./cloudAccount";
 import { AgentHintController, agentTooltipLine } from "./agentHint";
 
 let statusBar: CostStatusBar | undefined;
@@ -66,6 +67,7 @@ function activateInner(context: vscode.ExtensionContext): void {
       mode,
       scope ?? CostDetailPanel.current?.scope ?? "session",
       syncOffers.current(),
+      readCloudSyncEnabled(),
     );
     const card = readPublishedRateCard();
     if (card) {

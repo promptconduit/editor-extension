@@ -245,6 +245,7 @@ button.scope-chip.disabled { opacity: 0.45; cursor: default; }
 .agent-hint p { margin: 0.35rem 0; }
 .agent-questions { margin: 0.35rem 0; padding-left: 1.1rem; }
 .agent-questions li { margin: 0.2rem 0; }
+.team-link { margin-top: 0.75rem; }
 button.copy-q {
   font-size: 0.75rem; padding: 0 0.4rem; margin-left: 0.3rem; cursor: pointer;
   border: 1px solid var(--hairline); border-radius: 3px; background: transparent;

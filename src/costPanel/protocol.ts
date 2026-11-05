@@ -56,6 +56,11 @@ export interface CostPanelState {
    */
   syncOffer?: SyncOffer;
   /**
+   * Set when the CLI is signed in and syncing: a quiet link to the team
+   * dashboard (spend by member, repo, PR). Never shown to local-only users.
+   */
+  teamUrl?: string;
+  /**
    * Published PromptConduit rate card, per-token USD, when it is as new as the
    * rates bundled in this extension. Absent means the bundled table is used.
    */
