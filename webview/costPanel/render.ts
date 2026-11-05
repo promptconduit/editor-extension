@@ -566,7 +566,7 @@ export function syncOfferHtml(state: CostPanelState): string {
   const sessions = `${offer.sessions} session${offer.sessions === 1 ? "" : "s"}`;
   return `<section class="sync-offer">
     <h2>Keep this month</h2>
-    <p>The last ${offer.windowDays} days would cost <strong>${fmtUSDHero(offer.usd)}</strong> at public API rates, across ${sessions}. <code>promptconduit login</code> syncs that history so you can see it on another machine.</p>
+    <p>The last ${offer.windowDays} days would cost <strong>${fmtUSDHero(offer.usd)}</strong> at public API rates, across ${sessions}. <code>promptconduit login</code> syncs that history so you can see it on another machine, and with a team, see spend by member and repo.</p>
     <p class="sync-actions">
       <button type="button" class="tb" data-cmd="login">promptconduit login</button>
       <button type="button" class="tb" data-cmd="dismissLogin">Not now</button>
@@ -713,7 +713,18 @@ function linksHtml(state: CostPanelState): string {
 }
 
 function sessionTail(s: SessionView, state: CostPanelState): string {
-  return `${agentHintHtml(state)}${advancedDrawerHtml(s, state)}${panelFooterHtml()}`;
+  return `${agentHintHtml(state)}${advancedDrawerHtml(s, state)}${panelFooterHtml()}${teamLinkHtml(state)}`;
+}
+
+/**
+ * Signed-in users only: one quiet line linking this machine's numbers to the
+ * team view. Local-only users never see it (the sync offer covers them).
+ */
+export function teamLinkHtml(state: CostPanelState): string {
+  if (!state.teamUrl) {
+    return "";
+  }
+  return `<p class="team-link muted small">This panel shows this machine only. <a href="${escapeHtml(state.teamUrl)}">See your team's AI spend by member, repo, and PR →</a></p>`;
 }
 
 function sessionCard(s: SessionView, state: CostPanelState): string {
@@ -813,7 +824,7 @@ export function renderZones(state: CostPanelState): RenderZones {
       <h2>By session</h2>
       ${state.sessions.map((s) => sessionCard(s, state)).join("")}
     </section>`,
-    rest: `${agentHintHtml(state)}${advancedDrawerHtml(state.sessions[0], state)}${panelFooterHtml()}`,
+    rest: `${agentHintHtml(state)}${advancedDrawerHtml(state.sessions[0], state)}${panelFooterHtml()}${teamLinkHtml(state)}`,
   };
 }
 
