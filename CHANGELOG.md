@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.25.0
 
 - **First-run setup.** When the PromptConduit CLI isn't installed, the status bar and Cost Breakdown show the one-line installer and `promptconduit init`, with one-click "Run in terminal". (#115)
 - **See your team's spend.** Signed-in users get a "See your team's AI spend" link at the bottom of the Cost Breakdown. (#116)
