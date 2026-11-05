@@ -154,6 +154,37 @@ describe("resolvePrice alias resolution", () => {
     const r = resolvePrice("claude-3-5-haiku-20241022");
     expect(r!.key).toBe("claude-3-5-haiku");
   });
+
+  it("resolves dotted Sonnet/Haiku 5.5 ids (they used to go unpriced)", () => {
+    expect(resolvePrice("claude-sonnet-5.5")!.key).toBe("claude-sonnet-5-5");
+    expect(resolvePrice("claude-haiku-5.5")!.key).toBe("claude-haiku-5-5");
+  });
+
+  it("prices Cursor's GPT-5 Fast ids at the Fast rate, not gpt-5", () => {
+    for (const id of ["gpt-5-high-fast", "gpt-5-low-fast"]) {
+      const r = resolvePrice(id);
+      expect(r!.key).toBe("gpt-5-fast");
+      expect(r!.price.input).toBe(0.0000025);
+      expect(r!.price.output).toBe(0.00002);
+    }
+    expect(resolvePrice("gpt-5-high")!.key).toBe("gpt-5");
+  });
+});
+
+describe("Cursor fast-mode Opus ids", () => {
+  it("claude-opus-5-5-fast bills at Opus 5.5 fast-mode rates", () => {
+    const r = resolvePrice("claude-opus-5-5-fast");
+    expect(r!.key).toBe("claude-opus-5-5-fast");
+    expect(r!.price.input).toBe(0.000008);
+    expect(r!.price.output).toBe(0.00004);
+  });
+
+  it("claude-opus-4-7-fast bills at Cursor's Opus 4.7 fast-mode rates", () => {
+    const r = resolvePrice("claude-opus-4-7-fast");
+    expect(r!.key).toBe("claude-opus-4-7-fast");
+    expect(r!.price.input).toBe(0.00003);
+    expect(r!.price.output).toBe(0.00015);
+  });
 });
 
 describe("resolvePrice progressive suffix trim", () => {

@@ -37,7 +37,7 @@ export interface ModelPrice {
 // the base rates. Likewise a fast-mode or long-context actual session is
 // compared against alternatives at their base rates.
 /** Date stamped on the embedded snapshot. A published card older than this is ignored. */
-export const BUNDLED_CARD_UPDATED = "2026-11-02";
+export const BUNDLED_CARD_UPDATED = "2026-11-05";
 
 let rateCardOverlay: Record<string, ModelPrice> | undefined;
 
@@ -131,7 +131,8 @@ export const PRICING: Record<string, ModelPrice> = {
   },
   // "@fast" rows hold Anthropic fast-mode rates (usage.speed == "fast" in a
   // Claude Code transcript). "@" is not a dash segment, so suffix-trim never
-  // lands on them and Cursor's own "-fast" ids keep their separate rows.
+  // lands on them. Cursor's own "-fast" ids are separate exact rows at the
+  // same fast-mode rates (suffix-trim would land them on the standard rate).
   "claude-opus-5-5@fast": {
     input: 0.000008,
     output: 0.00004,
@@ -153,6 +154,13 @@ export const PRICING: Record<string, ModelPrice> = {
     cacheWrite5m: 0.0000125,
     cacheWrite1h: 0.00002,
   },
+  "claude-opus-5-5-fast": {
+    input: 0.000008,
+    output: 0.00004,
+    cacheRead: 0.0000004,
+    cacheWrite5m: 0.00001,
+    cacheWrite1h: 0.000016,
+  },
   "claude-opus-5-fast": {
     input: 0.00001,
     output: 0.00005,
@@ -166,6 +174,13 @@ export const PRICING: Record<string, ModelPrice> = {
     cacheRead: 0.000001,
     cacheWrite5m: 0.0000125,
     cacheWrite1h: 0.00002,
+  },
+  "claude-opus-4-7-fast": {
+    input: 0.00003,
+    output: 0.00015,
+    cacheRead: 0.000003,
+    cacheWrite5m: 0.0000375,
+    cacheWrite1h: 0.00006,
   },
   "claude-opus-4-8": {
     input: 0.000005,
@@ -357,6 +372,11 @@ export const PRICING: Record<string, ModelPrice> = {
     output: 0.00001,
     cacheRead: 0.000000125,
   },
+  "gpt-5-fast": {
+    input: 0.0000025,
+    output: 0.00002,
+    cacheRead: 0.00000025,
+  },
   "gpt-5-codex": {
     input: 0.00000125,
     output: 0.00001,
@@ -521,6 +541,11 @@ export const MODEL_ALIASES: Record<string, string> = {
   "claude-fable-5.1": "claude-fable-5-1",
   "claude-mythos-5.1": "claude-mythos-5-1",
   "claude-opus-5.5": "claude-opus-5-5",
+  "claude-sonnet-5.5": "claude-sonnet-5-5",
+  "claude-haiku-5.5": "claude-haiku-5-5",
+  "gpt-5-low-fast": "gpt-5-fast",
+  "gpt-5-medium-fast": "gpt-5-fast",
+  "gpt-5-high-fast": "gpt-5-fast",
   "cursor-grok-4.7-500k-high-fast": "cursor-grok-4.7-500k-fast",
   "cursor-grok-4.7-high-fast": "cursor-grok-4.7-fast",
   "cursor-grok-4.6-high-fast": "cursor-grok-4.6-fast",
