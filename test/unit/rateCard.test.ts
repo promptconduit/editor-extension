@@ -3,12 +3,13 @@ import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 import { rateCardFromDocument, readPublishedRateCard } from "../../src/rateCard";
+import { BUNDLED_CARD_UPDATED } from "../../src/pricing";
 
 describe("rateCardFromDocument", () => {
   it("accepts a same-day PromptConduit card and skips zero rows", () => {
     const card = rateCardFromDocument({
       _source: "promptconduit",
-      _updated: "2026-11-02",
+      _updated: BUNDLED_CARD_UPDATED,
       "cursor-grok-4.7": {
         input_cost_per_token: 0.000002,
         output_cost_per_token: 0.000006,
