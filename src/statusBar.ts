@@ -4,6 +4,7 @@ import { CostEvent, SessionSummary } from "./types";
 import { EnvelopeV2 } from "./envelope";
 import { scopeTooltipLines } from "./costScope";
 import { shortId } from "./streamFeed";
+import { SetupStep, setupStatusBar } from "./setup";
 
 const SHOW_DETAILS_COMMAND = "promptconduit.cost.showDetails";
 
@@ -79,6 +80,7 @@ export class CostStatusBar {
   private onChange: (() => void) | undefined;
   private syncLine: string | undefined;
   private agentLine: string | undefined;
+  private setupStep: SetupStep = "ready";
 
   constructor() {
     this.item = vscode.window.createStatusBarItem(
@@ -117,6 +119,15 @@ export class CostStatusBar {
       return;
     }
     this.agentLine = line;
+    this.scheduleRender();
+  }
+
+  /** First-run setup step; until it's "ready" an empty status bar says what to do. */
+  setSetupStep(step: SetupStep): void {
+    if (step === this.setupStep) {
+      return;
+    }
+    this.setupStep = step;
     this.scheduleRender();
   }
 
@@ -248,6 +259,16 @@ export class CostStatusBar {
   }
 
   private render(): void {
+    // Nothing tracked yet and setup incomplete: say what to do instead of "— · $0.00".
+    const setup = this.store.displayKey === undefined ? setupStatusBar(this.setupStep) : undefined;
+    if (setup) {
+      this.item.text = setup.text;
+      const setupTip = new vscode.MarkdownString(setup.tooltip);
+      setupTip.isTrusted = false;
+      this.item.tooltip = setupTip;
+      this.onChange?.();
+      return;
+    }
     const lastEvent = this.store.displayLastEvent;
     const reqStr = lastEvent ? lastRequestLabel(lastEvent) : "—";
 

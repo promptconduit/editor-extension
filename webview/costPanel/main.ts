@@ -209,7 +209,9 @@ document.addEventListener("click", (e) => {
       cmd === "dismissLogin" ||
       cmd === "registerMcp" ||
       cmd === "dismissAgentHint" ||
-      cmd === "inviteTeammate"
+      cmd === "inviteTeammate" ||
+      cmd === "installCli" ||
+      cmd === "runInit"
     ) {
       vscode.postMessage({ type: "command", id: cmd });
     }
