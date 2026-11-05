@@ -23,9 +23,14 @@ import { PromptGroup, PromptGroupStore } from "./promptGroup";
 export interface SessionSubagentSummary {
   count: number;
   totalDurationMs: number;
+  /** Priced subagent spend; a lower bound when unpricedRequests is set. */
   totalUsd: number;
   /** Most-used agent type across completed subagents. */
   dominantType: string;
+  /** Subagent requests on models the rate table doesn't know (absent when none). */
+  unpricedRequests?: number;
+  /** Those unpriced models, most-used first. */
+  unpricedModels?: string[];
 }
 
 /** Everything the panel needs to render one conversation. */
@@ -83,6 +88,7 @@ interface ConversationState {
   subagentDurationMs: number;
   subagentUsd: number;
   subagentByType: Map<string, number>;
+  subagentUnpricedByModel: Map<string, number>;
 }
 
 // Debounce rapid activity flips when concurrent Cursor agents run.
@@ -192,6 +198,7 @@ export class ConversationStore {
         subagentDurationMs: 0,
         subagentUsd: 0,
         subagentByType: new Map(),
+        subagentUnpricedByModel: new Map(),
       };
       this.byKey.set(key, state);
     }
@@ -406,6 +413,12 @@ export class ConversationStore {
       if (sub.usd?.total && sub.usd.total > 0) {
         state.subagentUsd += sub.usd.total;
       }
+      if (sub.model_priced === false) {
+        // Tokens counted, USD unknown — never fold it in as $0 silently.
+        const m = sub.unpriced_model || sub.model || "unknown";
+        const n = Math.max(1, sub.unpriced_requests ?? 0);
+        state.subagentUnpricedByModel.set(m, (state.subagentUnpricedByModel.get(m) ?? 0) + n);
+      }
       const t = sub.agent_type || "agent";
       state.subagentByType.set(t, (state.subagentByType.get(t) ?? 0) + 1);
     }
@@ -425,12 +438,18 @@ export class ConversationStore {
         dominantType = t;
       }
     }
-    return {
+    const summary: SessionSubagentSummary = {
       count: state.subagentCount,
       totalDurationMs: state.subagentDurationMs,
       totalUsd: state.subagentUsd,
       dominantType,
     };
+    if (state.subagentUnpricedByModel.size > 0) {
+      const unpriced = [...state.subagentUnpricedByModel].sort((a, b) => b[1] - a[1]);
+      summary.unpricedRequests = unpriced.reduce((n, [, c]) => n + c, 0);
+      summary.unpricedModels = unpriced.map(([m]) => m);
+    }
+    return summary;
   }
 
   private recordRecent(state: ConversationState, ev: CostEvent): void {

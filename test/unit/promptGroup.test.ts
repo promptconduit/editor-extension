@@ -379,6 +379,55 @@ describe("PromptGroupStore subagents", () => {
     expect(g.subagents[0].endedAt).toBe("2026-07-06T17:05:00Z");
     expect(g.subagents[0].durationMs).toBe(60000);
   });
+
+  it("carries the unpriced-model flag from the subagent slug", () => {
+    const store = new PromptGroupStore();
+    ingest(store, [
+      v2Envelope("claude-code", "UserPromptSubmit", "2026-07-06T17:00:00Z", {
+        sessionId: "cc-unpriced",
+        promptId: "p1",
+        raw: { prompt: "x" },
+      }),
+      v2Envelope("claude-code", "SubagentStop", "2026-07-06T17:05:00Z", {
+        sessionId: "cc-unpriced",
+        promptId: "p1",
+        raw: { agent_id: "a1" },
+        enrichments: {
+          subagent: {
+            agent_id: "a1",
+            agent_type: "Explore",
+            phase: "stop",
+            requests: 3,
+            model: "claude-future-9",
+            tokens: { input: 1000, output: 2000 },
+            usd: { total: 0 },
+            model_priced: false,
+            unpriced_requests: 3,
+            unpriced_model: "claude-future-9",
+          },
+        },
+      }),
+    ]);
+    const [g] = store.groupsFor("cc-unpriced");
+    expect(g.subagents[0].unpricedRequests).toBe(3);
+    expect(g.subagents[0].unpricedModel).toBe("claude-future-9");
+  });
+
+  it("leaves priced subagents unflagged", () => {
+    const store = new PromptGroupStore();
+    ingest(store, [
+      v2Envelope("claude-code", "SubagentStop", "2026-07-06T17:05:00Z", {
+        sessionId: "cc-priced",
+        promptId: "p1",
+        raw: { agent_id: "a1" },
+        enrichments: {
+          subagent: { agent_id: "a1", phase: "stop", usd: { total: 0.2 }, model_priced: true },
+        },
+      }),
+    ]);
+    const [g] = store.groupsFor("cc-priced");
+    expect(g.subagents[0].unpricedRequests).toBeUndefined();
+  });
 });
 
 describe("PromptGroupStore StopFailure", () => {

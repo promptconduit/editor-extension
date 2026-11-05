@@ -39,6 +39,13 @@ export interface PromptSubagent {
   model?: string;
   tokens?: Tokens;
   usdTotal?: number;
+  /**
+   * Requests on a model the rate table doesn't know (subagent model_priced
+   * false): tokens are exact, but their USD is unknown, so usdTotal is a lower
+   * bound (or meaningless when every request was unpriced).
+   */
+  unpricedRequests?: number;
+  unpricedModel?: string;
   /** Stop arrived with no matching start; startedAt is back-computed when possible. */
   orphanStop?: boolean;
   /** Worktree the subagent ran in (vcs.worktree), when it ran in one. */
@@ -460,6 +467,11 @@ export class PromptGroupStore {
       };
     }
     if (slug?.usd?.total !== undefined) rec.usdTotal = slug.usd.total;
+    if (slug?.model_priced === false) {
+      // Older CLIs may omit the count; the flag alone means at least one.
+      rec.unpricedRequests = Math.max(1, slug.unpriced_requests ?? 0);
+      rec.unpricedModel = slug.unpriced_model || slug.model || undefined;
+    }
     rec.endedAt = env.capturedAt;
     const wt = worktreeOf(env);
     if (wt) rec.worktreePath = wt;
