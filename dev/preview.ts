@@ -9,7 +9,6 @@
 import * as fs from "node:fs";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { landingHtml } from "../src/landing";
 import { setupState } from "../src/setup";
 import { ConversationStore } from "../src/state";
 import { parseEnvelopeV2, costEventsFrom } from "../src/envelope";
@@ -239,7 +238,6 @@ const pages: Record<string, string> = {
     graphPanelStateFromFixtures([...sampleGraphLines, ...samplePromptStoryLines]),
   ),
   "graph-empty.html": graphPanelPage(graphPanelStateFromFixtures([])),
-  "landing.html": themed(landingHtml(), false),
   "tooltip.html": themed(
     `<h3>Status-bar tooltip headline <code>signalsSummary()</code></h3>
      <p><strong>Heavy session:</strong> ${signalsSummary(heavySummary) || "—"}</p>
