@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **First-run setup.** When the PromptConduit CLI isn't installed, the status bar and Cost Breakdown show the one-line installer and `promptconduit init`, with one-click "Run in terminal". (#115)
+- **See your team's spend.** Signed-in users get a "See your team's AI spend" link at the bottom of the Cost Breakdown. (#116)
+- **Fast-mode pricing.** Cursor fast-mode model ids (Opus 5.5 / 4.7 fast, GPT-5 Fast) are now priced at their fast rates instead of the cheaper standard rows, and dotted `claude-sonnet-5.5` / `claude-haiku-5.5` ids are no longer unpriced. (#114)
+- **Fix:** the Cost Breakdown footer showed raw "$(pulse)" icon codes instead of clean button labels. (#113)
+
 ## 0.24.1
 
 - **November 2026 model rates.** The bundled rate card now matches the CLI's 2026-11-02 card: Claude Sonnet 5.5 (cache reads at $0.10 per million), Claude Haiku 5.5 with its long-prompt rate card, Claude Code fast-mode rates, and the third-party models Cursor offers (GPT-5.4 Mini and Nano, the GPT-5.x Codex models, Gemini 4 Argon, Gemini 3.5 Flash Lite, GLM 5.3, DeepSeek V4.1 Flash, Muse Wonder). Before this, the comparison could not price sessions on these models until the CLI had downloaded the published card.
