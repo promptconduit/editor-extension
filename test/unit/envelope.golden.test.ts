@@ -50,6 +50,11 @@ describe("v2 envelope contract (golden)", () => {
     expect(diffFrom(env!)?.files_changed).toBe(3);
     expect(toolsFrom(env!)?.total).toBe(3);
     expect(subagentFrom(env!)?.agent_type).toBe("Explore");
+    expect(subagentFrom(env!)).toMatchObject({
+      model_priced: false,
+      unpriced_requests: 1,
+      unpriced_model: "claude-future-9",
+    });
     expect(envFrom(env!)?.os).toBe("darwin");
   });
 });

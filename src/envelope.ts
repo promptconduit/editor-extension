@@ -70,6 +70,14 @@ export interface SubagentEnrichment {
   model?: string;
   tokens?: Partial<Tokens>;
   usd?: Partial<Cost>;
+  /**
+   * Stop only, set whenever requests > 0: false when at least one request used
+   * a model the CLI's rate table doesn't know — its tokens are counted but its
+   * USD is zero-because-unknown, not free. Mirrors cli enrich.SubagentEnrichment.
+   */
+  model_priced?: boolean;
+  unpriced_requests?: number;
+  unpriced_model?: string;
 }
 
 /** One normalized tool call inside the "tools" enrichment slug. */
@@ -274,6 +282,9 @@ function subagentSlug(src: Record<string, unknown>): SubagentEnrichment | undefi
             currency: str(usd.currency) || "USD",
           }
         : undefined,
+    model_priced: typeof src.model_priced === "boolean" ? src.model_priced : undefined,
+    unpriced_requests: num(src.unpriced_requests) || undefined,
+    unpriced_model: str(src.unpriced_model) || undefined,
   };
 }
 
