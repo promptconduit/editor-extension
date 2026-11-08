@@ -12,12 +12,10 @@ const root = path.join(fileURLToPath(import.meta.url), "..", "..");
 const previewDir = path.join(root, "dev", "preview-out");
 const outDir = path.join(root, "resources", "screenshots");
 
+// waitMs lets the replay animation finish so the shot shows the full loop.
 const shots = [
-  { html: "breakdown-detail.html", slug: "cost-breakdown", waitMs: 500 },
-  { html: "graph.html", slug: "graph", waitMs: 800 },
-  { html: "stream.html", slug: "stream", waitMs: 500 },
-  { html: "coaching-rich.html", slug: "agent-coaching", waitMs: 500 },
-  { html: "visualizer.html", slug: "orchestration-theater", waitMs: 3500 },
+  { html: "loop.html", slug: "the-loop", waitMs: 6500 },
+  { html: "loop-light.html", slug: "the-loop-light", waitMs: 6500 },
 ];
 
 if (!fs.existsSync(previewDir)) {

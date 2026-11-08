@@ -1,15 +1,15 @@
-// Builds the CLI graph viewer's page: bundles the PORTABLE graph core
-// (webview/graphPanel/cliClient.ts → mount + render + connectors + styles +
-// sessionTree) into ONE self-contained graph.html with the JS inlined and no
-// external requests. The `promptconduit graph` command embeds this file via
-// go:embed and serves it; the page polls the CLI's /api/events endpoint.
+// Builds the page the CLI serves for `promptconduit loop`: bundles The Loop's
+// webview client plus a browser shim (webview/loopPanel/cliClient.ts) into ONE
+// self-contained loop.html with the JS inlined and no external requests. The
+// CLI embeds this file via go:embed and serves it; the page polls the CLI's
+// local /api/events endpoint and builds everything in the browser with the
+// same store, view model and renderer as the editor panel.
 //
-//   node dev/build-cli-bundle.mjs --out <path>   # default: dist/graph.html
+//   node dev/build-cli-bundle.mjs --out <path>   # default: dev/preview-out/loop.html
 //
-// The CLI's `make refresh-graph` target runs this with --out pointed straight at
-// cli/internal/graph/ui/graph.html. Deterministic output (esbuild), so the CLI's
-// refresh workflow can byte-diff it. Not part of `npm run compile`; never ships
-// in the vsix.
+// The CLI's refresh target runs this with --out pointed at its embedded ui/
+// directory. Deterministic output (esbuild), so the CLI can byte-diff it. Not
+// part of `npm run compile`; never ships in the vsix.
 import esbuild from "esbuild";
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -21,10 +21,10 @@ const argOut = (() => {
 })();
 const outFile = argOut
   ? path.resolve(argOut)
-  : fileURLToPath(new URL("./preview-out/graph.html", import.meta.url));
+  : fileURLToPath(new URL("./preview-out/cli-loop.html", import.meta.url));
 
 const result = await esbuild.build({
-  entryPoints: [fileURLToPath(new URL("../webview/graphPanel/cliClient.ts", import.meta.url))],
+  entryPoints: [fileURLToPath(new URL("../webview/loopPanel/cliClient.ts", import.meta.url))],
   bundle: true,
   format: "iife",
   target: ["es2020"],
@@ -39,12 +39,10 @@ const html = `<!DOCTYPE html>
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>PromptConduit — Session Graph</title>
-<!-- Rendered by the portable graph core (shared with the editor extension).
-     No --vscode-* variables defined: the panel CSS falls back to literals. -->
-<style>body{margin:0;background:#1e1e1e;color:#ccc;font-family:-apple-system,"Segoe UI",sans-serif;padding:0 1.5rem;}</style>
+<title>The Loop · PromptConduit</title>
 </head>
 <body>
+<div id="app"></div>
 <script>${js}</script>
 </body>
 </html>`;

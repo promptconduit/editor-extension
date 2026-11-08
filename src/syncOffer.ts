@@ -9,7 +9,7 @@ import {
   MONTH_WINDOW_DAYS,
   readMonthSpend,
 } from "./monthSpend";
-import type { SyncOffer } from "./costPanel/protocol";
+import type { SyncOffer } from "./loopPanel/protocol";
 
 const DISMISS_KEY = "promptconduit.loginCta.dismissed";
 

@@ -1,23 +1,19 @@
 import * as fs from "fs";
 import * as path from "path";
 import * as vscode from "vscode";
-import { CoachingPanel } from "./coachingFeed";
-import { StreamPanel } from "./streamFeed";
-import { GraphPanel } from "./graphPanel/panel";
 import { sendFeedback } from "./feedback";
-import { CostDetailPanel } from "./costPanel/panel";
-import { buildCostPanelState } from "./costPanel/viewModel";
-import type { CostScope } from "./costScope";
+import { LoopPanel } from "./loopPanel/panel";
+import { buildLoopPanelState, type LoopSelection } from "./loopPanel/viewModel";
 import { CostStatusBar } from "./statusBar";
 import { CostFeedController } from "./costFeed";
 import { resolveBinary } from "./binary";
-import { VisualizerPanel } from "./visualizerPanel";
 import { UpdatePromptController } from "./updatePrompt";
 import { SessionRestoreController, makeRestoreDeps, recordDismissed } from "./sessionRestore";
 import { TerminalFocusController, makeTerminalFocusDeps } from "./terminalFocus";
 import { CursorTabTracker, runComposerQuery } from "./cursorTabs";
 import { SyncOfferController, shellQuote } from "./syncOffer";
 import { readPublishedRateCard } from "./rateCard";
+import { applyRateCard } from "./pricing";
 import { readCloudSyncEnabled } from "./cloudAccount";
 import { AgentHintController, agentTooltipLine } from "./agentHint";
 import { SetupController } from "./setupController";
@@ -51,13 +47,13 @@ function activateInner(context: vscode.ExtensionContext): void {
   context.subscriptions.push(statusBar);
 
   // First run: until the CLI is installed and has recorded something, the
-  // status bar and the empty Cost Breakdown say exactly what to run.
+  // status bar and the empty Loop panel say exactly what to run.
   const setup = new SetupController(() => cfg().get<string>("binaryPath", ""));
   context.subscriptions.push(setup);
   statusBar.setSetupStep(setup.current());
   setup.setOnChange(() => {
     statusBar?.setSetupStep(setup.current());
-    CostDetailPanel.refresh();
+    LoopPanel.refresh();
     void agentHints.refresh(); // `mcp status` works now that the CLI exists
   });
 
@@ -70,61 +66,39 @@ function activateInner(context: vscode.ExtensionContext): void {
   context.subscriptions.push({ dispose: () => agentHints.dispose() });
   agentHints.setOnChange(() => {
     statusBar?.setAgentLine(agentTooltipLine(agentHints.current()));
-    CostDetailPanel.refresh();
+    LoopPanel.refresh();
   });
 
-  const panelState = (mode: "session" | "all", scope?: CostScope) => {
-    const state = buildCostPanelState(
-      statusBar!.storeRef,
-      mode,
-      scope ?? CostDetailPanel.current?.scope ?? "session",
-      syncOffers.current(),
-      readCloudSyncEnabled(),
-    );
-    const card = readPublishedRateCard();
-    if (card) {
-      state.rateCard = card;
-    }
-    const hint = agentHints.current();
-    if (hint) {
-      state.agentHint = hint;
-    }
-    const setupCard = setup.state();
-    if (setupCard) {
-      state.setup = setupCard;
-    }
-    return state;
+  const panelState = (sel: LoopSelection) => {
+    // The published rate card (when newer than the bundled table) prices the
+    // what-if re-pricings; readPublishedRateCard only re-reads a changed file.
+    applyRateCard(readPublishedRateCard());
+    return buildLoopPanelState(statusBar!.storeRef, sel, syncOffers.current(), {
+      signedIn: readCloudSyncEnabled(),
+      agentHint: agentHints.current(),
+      setup: setup.state(),
+    });
   };
 
-  statusBar.setOnChange(() => CostDetailPanel.refresh());
-
-  // Selection gestures (a focused terminal, a selected Cursor agent tab) latch
-  // the status bar AND — when followSelection is on — drill an open Stream
-  // panel and Session Graph into that session. Event recency still never moves
-  // the stream. The last gesture is remembered so a panel opened AFTER the
-  // gesture starts on the selected session.
-  const followSelection = () =>
-    vscode.workspace
-      .getConfiguration("promptconduit.stream")
-      .get<boolean>("followSelection", true);
-  let lastSelection: { key: string; source: "terminal" | "cursor-tab" } | undefined;
-  const followSurfaces = (key: string, source: "terminal" | "cursor-tab") => {
-    lastSelection = { key, source };
-    if (followSelection()) {
-      StreamPanel.active?.selectSession(key, source);
-      GraphPanel.active?.followSession(key);
+  // The panel shows the status bar's displayed session. When that session
+  // changes (a focused terminal, a selected Cursor agent tab, a new prompt),
+  // the panel goes back to following its newest prompt.
+  let shownKey: string | undefined;
+  statusBar.setOnChange(() => {
+    const key = statusBar!.storeRef.displayKey;
+    if (key !== shownKey) {
+      shownKey = key;
+      LoopPanel.followLatest();
+    } else {
+      LoopPanel.refresh();
     }
-  };
-
+  });
   // Register every command BEFORE anything below that could throw, so a later
   // failure can't leave a status-bar item pointing at an unregistered command
   // (which is exactly what makes a click appear to do nothing).
   context.subscriptions.push(
     vscode.commands.registerCommand("promptconduit.cost.showDetails", () => {
-      CostDetailPanel.show(context.extensionUri, "session", panelState);
-    }),
-    vscode.commands.registerCommand("promptconduit.cost.showAllSessions", () => {
-      CostDetailPanel.show(context.extensionUri, "all", panelState);
+      LoopPanel.show(context.extensionUri, panelState);
     }),
     vscode.commands.registerCommand("promptconduit.cost.pinSession", () => {
       void statusBar?.pickAndPin();
@@ -174,48 +148,14 @@ function activateInner(context: vscode.ExtensionContext): void {
       term.show();
       term.sendText(`${shellQuote(bin)} team invite ${shellQuote(email.trim())}`);
     }),
-    vscode.commands.registerCommand("promptconduit.coaching.showTab", () => {
-      CoachingPanel.show();
-    }),
-    vscode.commands.registerCommand("promptconduit.stream.showFeed", () => {
-      StreamPanel.show(context.extensionUri);
-      // A panel opened after the gesture still lands on the selected session.
-      if (lastSelection && followSelection()) {
-        StreamPanel.active?.selectSession(lastSelection.key, lastSelection.source);
-      }
-    }),
-    vscode.commands.registerCommand("promptconduit.stream.drillIn", () => {
-      const panel = StreamPanel.active;
-      if (!panel) {
-        StreamPanel.show(context.extensionUri);
-        return;
-      }
-      void panel.drillIntoSession();
-    }),
-    vscode.commands.registerCommand("promptconduit.stream.showAll", () => {
-      StreamPanel.active?.showAll();
-    }),
-    vscode.commands.registerCommand("promptconduit.visualizer.show", () => {
-      VisualizerPanel.show(context.extensionUri);
-    }),
-    vscode.commands.registerCommand("promptconduit.graph.show", () => {
-      GraphPanel.show(context.extensionUri);
-      if (lastSelection && followSelection()) {
-        GraphPanel.active?.followSession(lastSelection.key);
-      }
-    }),
     vscode.commands.registerCommand("promptconduit.feedback.send", () => {
       void sendFeedback(context.extension.packageJSON.version as string);
     }),
     vscode.commands.registerCommand("promptconduit.refreshPanel", () => {
       // Reload the focused PromptConduit webview in place — picks up an extension
       // update's rebuilt panel bundle without a full window reload.
-      const refreshed =
-        CostDetailPanel.refreshActive() || StreamPanel.refreshActive() || GraphPanel.refreshActive();
-      if (!refreshed) {
-        void vscode.window.showInformationMessage(
-          "Focus a PromptConduit Stream, Session Graph, or Cost Breakdown panel, then run Refresh Panel.",
-        );
+      if (!LoopPanel.refreshActive()) {
+        void vscode.window.showInformationMessage("Focus The Loop panel, then run Refresh Panel.");
       }
     }),
   );
@@ -234,9 +174,6 @@ function activateInner(context: vscode.ExtensionContext): void {
       resolveCli,
       (sessionKey) => {
         statusBar?.setFocusedKey(sessionKey);
-        if (sessionKey) {
-          followSurfaces(sessionKey, "terminal");
-        }
       },
       // Deliberately closing a Claude terminal dismisses that session so a later
       // window reload won't auto-reopen it. Reload teardown is guarded in
@@ -265,9 +202,6 @@ function activateInner(context: vscode.ExtensionContext): void {
       query: runComposerQuery,
       onFocusedComposer: (composerId) => {
         statusBar?.setCursorTabKey(composerId);
-        if (composerId) {
-          followSurfaces(composerId, "cursor-tab");
-        }
       },
       onDisabled: (reason) => {
         console.warn(`PromptConduit: Cursor agent-tab tracking disabled (${reason})`);

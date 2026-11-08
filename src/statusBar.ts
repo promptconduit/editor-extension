@@ -3,7 +3,10 @@ import { ConversationStore, ConversationView, FocusSource } from "./state";
 import { CostEvent, SessionSummary } from "./types";
 import { EnvelopeV2 } from "./envelope";
 import { scopeTooltipLines } from "./costScope";
-import { shortId } from "./streamFeed";
+/** Short display form of a session key. */
+export function shortId(key: string): string {
+  return key.length > 12 ? `…${key.slice(-8)}` : key;
+}
 import { SetupStep, setupStatusBar } from "./setup";
 
 const SHOW_DETAILS_COMMAND = "promptconduit.cost.showDetails";

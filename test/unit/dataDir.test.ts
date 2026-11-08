@@ -3,7 +3,7 @@ import * as os from "os";
 import * as path from "path";
 import { dataDir, DATA_DIR_NAME } from "../../src/dataDir";
 import { eventsJsonlPath as tailEventsPath } from "../../src/tail";
-import { eventsDir, eventsJsonlPath } from "../../src/visualizer/paths";
+import { eventsDir, eventsJsonlPath } from "../../src/eventPaths";
 import { markerPath } from "../../src/updatePrompt";
 
 afterEach(() => {

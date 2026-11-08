@@ -1,295 +1,119 @@
-// Webview preview: render the extension's HTML surfaces with sample data to
-// static files and open them in a browser — instant UI iteration, no editor.
+// Webview preview: render The Loop with sample data to static files and open
+// them in a browser — instant UI iteration, no editor. The data is a real
+// "publish the blog post" prompt (test/fixtures/blogPrompt.ts) plus a handful
+// of past ship prompts so every section has something to show.
 //
 //   npm run preview            # render + open in the browser
-//   PREVIEW_NO_OPEN=1 ...       # render only (CI / scripted)
+//   PREVIEW_NO_OPEN=1 ...       # render only (CI / screenshots)
 //
 // Run via vite-node so the `vscode` import resolves to the test stub.
 
 import * as fs from "node:fs";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { setupState } from "../src/setup";
 import { ConversationStore } from "../src/state";
 import { parseEnvelopeV2, costEventsFrom } from "../src/envelope";
-import { buildCostPanelState } from "../src/costPanel/viewModel";
-import { COST_PANEL_CSS } from "../src/costPanel/styles";
-import type { CostPanelState } from "../src/costPanel/protocol";
-import { buildStreamPanelState, parseStreamLine, StreamState } from "../src/streamFeed";
-import { STREAM_PANEL_CSS } from "../src/streamPanel/styles";
-import type { StreamPanelState } from "../src/streamPanel/protocol";
-import { SessionTreeStore } from "../src/graphPanel/sessionTree";
-import { GRAPH_PANEL_CSS } from "../src/graphPanel/styles";
-import type { GraphPanelState } from "../src/graphPanel/protocol";
-import { signalsSummary } from "../src/statusBar";
-import { parseEnvelopeLine, reduceToSnapshot, reduceToTrends } from "../src/coaching/derive";
-import { buildCoachingInsights } from "../src/coaching/insights";
-import { renderCoachingHtml } from "../src/coaching/render";
-import { demoScene } from "../src/visualizer/demo";
-import { SCENE_CSS, SCENE_BODY } from "../src/visualizer/chrome";
-import {
-  sampleCoachingLines,
-  sampleStreamLines,
-  samplePromptStoryLines,
-  sampleEnrichmentLines,
-  sampleGraphLines,
-  GRAPH_FIXTURE_NOW,
-  heavySummary,
-  cleanSummary,
-} from "./fixtures";
+import { buildLoopPanelState } from "../src/loopPanel/viewModel";
+import { LOOP_PANEL_CSS } from "../src/loopPanel/styles";
+import type { LoopPanelState } from "../src/loopPanel/protocol";
+import { costEnvelope, v2Envelope } from "./fixtures";
+import { S, lines as blogLines, req } from "../test/fixtures/blogPrompt";
 
-// VS Code webview theme variables (dark-ish) so server-rendered HTML that styles
-// itself with var(--vscode-*) looks right in a plain browser.
-const THEME = `:root{
-  --vscode-font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
-  --vscode-editor-font-family:"SF Mono",Menlo,Consolas,monospace;
-  --vscode-editor-foreground:#cccccc;--vscode-editor-background:#1e1e1e;
-  --vscode-descriptionForeground:#8b8b8b;--vscode-panel-border:#333;
-  --vscode-badge-background:#4d4d4d;--vscode-badge-foreground:#fff;
-  --vscode-textLink-foreground:#4daafc;--vscode-textBlockQuote-background:#262626;
-  --vscode-textCodeBlock-background:#262626;
+// VS Code dark/light theme variables, so the panel looks as it does in the editor.
+const DARK = `:root{--vscode-font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+--vscode-editor-font-family:"SF Mono",Menlo,Consolas,monospace;--vscode-foreground:#cccccc;
+--vscode-editor-background:#1e1e1e;--vscode-editorWidget-background:#252526;--vscode-descriptionForeground:#9d9d9d;
+--vscode-widget-border:#3c3c3c;--vscode-badge-background:#4d4d4d;--vscode-badge-foreground:#fff;
+--vscode-textLink-foreground:#4daafc;--vscode-button-background:#0e7a70;--vscode-button-foreground:#fff}`;
+const LIGHT = `:root{--vscode-font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+--vscode-editor-font-family:"SF Mono",Menlo,Consolas,monospace;--vscode-foreground:#3b3b3b;
+--vscode-editor-background:#ffffff;--vscode-editorWidget-background:#f3f3f3;--vscode-descriptionForeground:#6b6b6b;
+--vscode-widget-border:#d4d4d4;--vscode-badge-background:#e4e4e4;--vscode-badge-foreground:#333;
+--vscode-textLink-foreground:#0060c0;--vscode-button-background:#0b8f84;--vscode-button-foreground:#fff}`;
+
+/** Past ship prompts in other sessions: [day, roundTrips, context]. */
+const PAST: [number, number, number][] = [
+  [10, 1, 333_000], [11, 5, 86_000], [12, 2, 177_000], [13, 5, 489_000], [17, 4, 190_000],
+  [21, 11, 103_000], [23, 4, 87_000], [29, 6, 124_000], [3, 6, 111_000], [6, 2, 151_000],
+];
+
+function pastLines(): string[] {
+  const out: string[] = [];
+  PAST.forEach(([day, calls, ctx], i) => {
+    const month = day > 7 ? "10" : "11";
+    const d = String(day).padStart(2, "0");
+    const sid = `past-${i}`;
+    const pid = `past-p${i}`;
+    out.push(
+      v2Envelope("claude-code", "UserPromptSubmit", `2026-${month}-${d}T15:00:00Z`, {
+        sessionId: sid,
+        promptId: pid,
+        raw: { prompt: i % 2 ? "merge it" : `merge #${40 + i} when CI is green` },
+      }),
+    );
+    const reqs = Array.from({ length: calls }, (_, j) =>
+      req(`${pid}-r${j}`, `2026-${month}-${d}T15:00:${String(10 + j * 4).padStart(2, "0")}.000Z`, [
+        2, 250, ctx + j * 400, 300,
+      ]),
+    );
+    out.push(costEnvelope("claude-code", `2026-${month}-${d}T15:02:00Z`, sid, reqs, { promptId: pid }));
+  });
+  return out;
 }
-html,body{background:var(--vscode-editor-background);}`;
 
-// Inject THEME into a full HTML document, or wrap a body fragment in a shell.
-function themed(html: string, fullDoc: boolean): string {
-  if (fullDoc) {
-    return html.replace("<head>", `<head><style>${THEME}</style>`);
+function store(): ConversationStore {
+  const s = new ConversationStore();
+  for (const l of [...pastLines(), ...blogLines()]) {
+    const env = parseEnvelopeV2(l);
+    if (!env) continue;
+    s.recordEnvelope(env);
+    for (const ev of costEventsFrom(env)) s.recordEvent(ev);
   }
-  return `<!DOCTYPE html><html><head><meta charset="utf-8"><style>${THEME}
-  body{font-family:var(--vscode-font-family);color:var(--vscode-editor-foreground);padding:1rem 1.25rem;}
-  code{font-family:var(--vscode-editor-font-family)}</style></head><body>${html}</body></html>`;
+  s.setPinnedKey(S);
+  return s;
+}
+
+function page(state: LoopPanelState, theme: "dark" | "light"): string {
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8" />
+<style>${theme === "dark" ? DARK : LIGHT}${LOOP_PANEL_CSS}</style></head>
+<body class="vscode-${theme}">
+<div id="app"></div>
+<script>
+  const STATE = { type: "state", state: ${JSON.stringify(state)} };
+  window.acquireVsCodeApi = function () {
+    return {
+      postMessage: function (msg) {
+        if (msg && msg.type === "ready") window.dispatchEvent(new MessageEvent("message", { data: STATE }));
+        if (msg && msg.type === "open_external" && msg.url) window.open(msg.url, "_blank");
+      },
+    };
+  };
+</script>
+<script src="../../media/loopPanel.js"></script>
+</body></html>`;
 }
 
 const outDir = fileURLToPath(new URL("./preview-out/", import.meta.url));
 fs.mkdirSync(outDir, { recursive: true });
 
-// Stream panel: run the sample lines through the REAL pipeline (parseStreamLine
-// → StreamState → buildStreamPanelState) and load the actual esbuild webview
-// bundle with the same vscode-api shim as the cost panel — expansion, raw JSON
-// highlighting, and copy all work.
-function streamPanelStateFromFixtures(drillKey?: string): StreamPanelState {
-  const s = new StreamState();
-  for (const line of sampleStreamLines) {
-    const ev = parseStreamLine(line);
-    if (ev) s.record(ev);
-  }
-  if (drillKey) s.drillIn(drillKey);
-  return buildStreamPanelState(s, 1, false);
-}
+const blog = buildLoopPanelState(store(), { followLatest: false, promptId: "p-blog" });
+const empty = buildLoopPanelState(new ConversationStore(), { followLatest: true }, {
+  usd: 412.37,
+  sessions: 38,
+  windowDays: 30,
+});
+const files: [string, string][] = [
+  ["loop.html", page(blog, "dark")],
+  ["loop-light.html", page(blog, "light")],
+  ["loop-empty.html", page(empty, "dark")],
+];
+for (const [name, html] of files) fs.writeFileSync(outDir + name, html);
+console.log(`wrote ${files.map(([n]) => n).join(", ")} → ${outDir}`);
 
-function streamPanelPage(state: StreamPanelState): string {
-  return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8" />
-<style>${THEME}${STREAM_PANEL_CSS}</style></head>
-<body>
-<div id="app"></div>
-<script>
-  const STATE = { type: "state", state: ${JSON.stringify(state)} };
-  window.acquireVsCodeApi = function () {
-    return {
-      postMessage: function (msg) {
-        if (msg && msg.type === "ready") {
-          window.dispatchEvent(new MessageEvent("message", { data: STATE }));
-        }
-        if (msg && msg.type === "open_external" && msg.url) {
-          window.open(msg.url, "_blank");
-        }
-      },
-      getState() {}, setState() {},
-    };
-  };
-</script>
-<script src="../../media/streamPanel.js"></script>
-</body></html>`;
-}
-
-// Session Graph: run the graph fixture through the REAL pipeline
-// (parseEnvelopeV2 → SessionTreeStore → snapshot) and load the actual esbuild
-// webview bundle with the same vscode-api shim — picker, wires, and the
-// breathing pulse all work.
-function graphPanelStateFromFixtures(lines: string[]): GraphPanelState {
-  const store = new SessionTreeStore();
-  for (const line of lines) {
-    const env = parseEnvelopeV2(line);
-    if (env) store.ingest(env);
-  }
-  return { revision: 1, logDisabled: false, ...store.snapshot(undefined, GRAPH_FIXTURE_NOW) };
-}
-
-function graphPanelPage(state: GraphPanelState): string {
-  return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8" />
-<style>${THEME}${GRAPH_PANEL_CSS}</style></head>
-<body>
-<div id="app"></div>
-<script>
-  const STATE = { type: "state", state: ${JSON.stringify(state)} };
-  window.acquireVsCodeApi = function () {
-    return {
-      postMessage: function (msg) {
-        if (msg && msg.type === "ready") {
-          window.dispatchEvent(new MessageEvent("message", { data: STATE }));
-        }
-      },
-      getState() {}, setState() {},
-    };
-  };
-</script>
-<script src="../../media/graphPanel.js"></script>
-</body></html>`;
-}
-
-// Cost Breakdown detail report: run the story fixture through the REAL
-// pipeline (ConversationStore -> buildCostPanelState) and load the actual
-// esbuild webview bundle with a tiny vscode-api shim, exactly like the
-// visualizer preview — expansion, tooltips, geometry, and copy all work.
-function storeFromLines(lines: string[]): ConversationStore {
-  const store = new ConversationStore();
-  for (const line of lines) {
-    const env = parseEnvelopeV2(line);
-    if (!env) continue;
-    store.recordEnvelope(env);
-    for (const ev of costEventsFrom(env)) {
-      store.recordEvent(ev);
-    }
-  }
-  return store;
-}
-
-function costPanelPage(state: CostPanelState): string {
-  return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8" />
-<style>${THEME}${COST_PANEL_CSS}</style></head>
-<body>
-<div id="app"></div>
-<script>
-  const STATE = { type: "state", state: ${JSON.stringify(state)} };
-  window.acquireVsCodeApi = function () {
-    return {
-      postMessage: function (msg) {
-        if (msg && msg.type === "ready") {
-          window.dispatchEvent(new MessageEvent("message", { data: STATE }));
-        }
-        if (msg && msg.type === "open_external" && msg.url) {
-          window.open(msg.url, "_blank");
-        }
-      },
-      getState() {}, setState() {},
-    };
-  };
-</script>
-<script src="../../media/costPanel.js"></script>
-</body></html>`;
-}
-
-const storyStore = storeFromLines(samplePromptStoryLines);
-const multiStore = storeFromLines([...samplePromptStoryLines, ...sampleEnrichmentLines]);
-
-// Coaching tab: derive the report from the rich sample envelopes, exactly as the
-// live tab does from events.jsonl.
-const coachingEvents = sampleCoachingLines
-  .map(parseEnvelopeLine)
-  .filter((e): e is NonNullable<typeof e> => e !== null);
-const coachingSnapshot = reduceToSnapshot(coachingEvents);
-if (coachingSnapshot) {
-  coachingSnapshot.insights = buildCoachingInsights(coachingSnapshot.metrics);
-}
-const coachingTrends = reduceToTrends(coachingEvents, 0);
-
-const pages: Record<string, string> = {
-  "breakdown-detail.html": costPanelPage(buildCostPanelState(storyStore, "session")),
-  "breakdown-all.html": costPanelPage(buildCostPanelState(multiStore, "all")),
-  "breakdown-zero.html": costPanelPage(buildCostPanelState(new ConversationStore(), "session")),
-  "breakdown-setup.html": costPanelPage({
-    ...buildCostPanelState(new ConversationStore(), "session"),
-    setup: setupState("install-cli", "darwin"),
-  }),
-  "breakdown-setup-init.html": costPanelPage({
-    ...buildCostPanelState(new ConversationStore(), "session"),
-    setup: setupState("run-init", "darwin"),
-  }),
-  "breakdown-agent.html": costPanelPage({
-    ...buildCostPanelState(storyStore, "session"),
-    agentHint: {
-      tool: "cursor",
-      label: "Cursor",
-      registered: false,
-      otherRegistered: ["Claude Code"],
-      signedIn: false,
-      questions: ["What has this session cost so far?", "What did I spend on AI each day this week?"],
-    },
-  }),
-  "breakdown-agent-registered.html": costPanelPage({
-    ...buildCostPanelState(storyStore, "session"),
-    agentHint: {
-      tool: "cursor",
-      label: "Cursor",
-      registered: true,
-      otherRegistered: [],
-      signedIn: true,
-      questions: ["What has this session cost so far?", "How is my team tracking against this month's AI budget?"],
-    },
-  }),
-  "coaching-rich.html": themed(renderCoachingHtml(coachingSnapshot, coachingTrends), true),
-  "coaching-empty.html": themed(renderCoachingHtml(undefined), true),
-  "stream.html": streamPanelPage(streamPanelStateFromFixtures()),
-  "stream-drilled.html": streamPanelPage(streamPanelStateFromFixtures("cc-1")),
-  "stream-empty.html": streamPanelPage(buildStreamPanelState(new StreamState(), 1, false)),
-  "graph.html": graphPanelPage(graphPanelStateFromFixtures(sampleGraphLines)),
-  "graph-multi.html": graphPanelPage(
-    graphPanelStateFromFixtures([...sampleGraphLines, ...samplePromptStoryLines]),
-  ),
-  "graph-empty.html": graphPanelPage(graphPanelStateFromFixtures([])),
-  "tooltip.html": themed(
-    `<h3>Status-bar tooltip headline <code>signalsSummary()</code></h3>
-     <p><strong>Heavy session:</strong> ${signalsSummary(heavySummary) || "—"}</p>
-     <p><strong>Clean session:</strong> ${signalsSummary(cleanSummary) || "—"}</p>
-     <p><strong>No signals:</strong> ${signalsSummary({ ...cleanSummary, signals: undefined }) || "<em>(empty — no headline)</em>"}</p>`,
-    false,
-  ),
-};
-
-// The 3D Orchestration Theater, loaded straight from the built esbuild bundle.
-// A tiny shim stands in for the VS Code webview API: when the bundle signals
-// "ready", we feed it the baked demo scene as a host "load" message.
-pages["visualizer.html"] = `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8" />
-<style>${THEME}${SCENE_CSS}</style></head>
-<body>
-${SCENE_BODY}
-<script>
-  const LOAD = { type: "load", scene: ${JSON.stringify(demoScene())}, mode: "playback", reducedMotion: false, isDemo: true };
-  window.acquireVsCodeApi = function () {
-    return {
-      postMessage: function (msg) {
-        if (msg && msg.type === "ready") {
-          window.dispatchEvent(new MessageEvent("message", { data: LOAD }));
-        }
-      },
-      getState() {}, setState() {},
-    };
-  };
-</script>
-<script src="../../media/visualizer.js"></script>
-</body></html>`;
-
-const links = Object.keys(pages)
-  .map((f) => `<li><a href="./${f}">${f.replace(".html", "")}</a></li>`)
-  .join("");
-pages["index.html"] = themed(
-  `<h2>PromptConduit — webview preview</h2>
-   <p class="muted">Sample-data renders of the extension's UI surfaces. Edit a builder, re-run <code>npm run preview</code>.</p>
-   <ul>${links}</ul>`,
-  false,
-);
-
-for (const [file, html] of Object.entries(pages)) {
-  fs.writeFileSync(outDir + file, html);
-}
-
-const index = outDir + "index.html";
-console.log(`Rendered ${Object.keys(pages).length} pages → ${outDir}`);
 if (!process.env.PREVIEW_NO_OPEN) {
   try {
-    execFileSync("open", [index]);
+    execFileSync("open", [outDir + "loop.html"]);
   } catch {
-    console.log(`Open it: ${index}`);
+    // not macOS — print the path above and open it manually
   }
 }

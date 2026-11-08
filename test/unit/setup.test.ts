@@ -7,8 +7,8 @@ import {
   setupStep,
 } from "../../src/setup";
 import { locateBinary } from "../../src/binary";
-import { buildCostPanelState } from "../../src/costPanel/viewModel";
-import { renderBody } from "../../webview/costPanel/render";
+import { buildLoopPanelState } from "../../src/loopPanel/viewModel";
+import { renderApp } from "../../webview/loopPanel/render";
 import { ConversationStore } from "../../src/state";
 
 describe("setupStep", () => {
@@ -89,12 +89,12 @@ describe("locateBinary", () => {
   });
 });
 
-describe("cost panel setup card", () => {
-  const empty = () => buildCostPanelState(new ConversationStore(), "session");
+describe("The Loop setup card", () => {
+  const empty = () => buildLoopPanelState(new ConversationStore(), { followLatest: true });
 
   it("shows install + init steps in the zero state when the CLI is missing", () => {
     const state = { ...empty(), setup: setupState("install-cli", "darwin") };
-    const html = renderBody(state);
+    const html = renderApp(state);
     expect(html).toContain("Set up cost tracking");
     expect(html).toContain("curl -fsSL https://promptconduit.dev/install | bash");
     expect(html).toContain('data-cmd="installCli"');
@@ -104,15 +104,15 @@ describe("cost panel setup card", () => {
   });
 
   it("shows only the init step when the CLI is installed", () => {
-    const html = renderBody({ ...empty(), setup: setupState("run-init", "darwin") });
+    const html = renderApp({ ...empty(), setup: setupState("run-init", "darwin") });
     expect(html).toContain('data-cmd="runInit"');
     expect(html).not.toContain('data-cmd="installCli"');
     expect(html).not.toContain("curl -fsSL");
   });
 
   it("keeps the generic zero state once setup is done", () => {
-    const html = renderBody(empty());
+    const html = renderApp(empty());
     expect(html).not.toContain("Set up cost tracking");
-    expect(html).toContain("AI Session Cost");
+    expect(html).toContain("Run a prompt in Claude Code or Cursor");
   });
 });

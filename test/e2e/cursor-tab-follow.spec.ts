@@ -8,7 +8,7 @@ import * as path from "path";
 // CursorTabTracker polls the WORKSPACE storage SQLite DB
 // (<userDataDir>/User/workspaceStorage/<hash>/state.vscdb, ItemTable key
 // 'composer.composerData' → {"lastFocusedComposerIds":["<focused first>",…]})
-// every 2s and switches the Stream panel to the focused composerId, which is
+// every 2s and switches The Loop (via the status bar) to the focused composerId, which is
 // the conversation_id our Cursor events are keyed by.
 //
 // Seeding mirrors stream-panel.spec.ts, EXCEPT the claude-code session gets
@@ -170,7 +170,7 @@ function seedFocusedComposer(dbPath: string, composerId: string): void {
   throw new Error(`sqlite3 seed of ${dbPath} failed after retries: ${lastErr}`);
 }
 
-test("Stream panel follows the focused Cursor agent tab (composerData), not activity", async () => {
+test("The Loop follows the focused Cursor agent tab (composerData), not activity", async () => {
   test.skip(!CURSOR_BIN, "CURSOR_BIN not set — run via the e2e-cursor workflow");
   // Boot + storage discovery + two 2s-poll flips need more than the default.
   test.setTimeout(300_000);
@@ -226,10 +226,10 @@ test("Stream panel follows the focused Cursor agent tab (composerData), not acti
   const dbPath = path.join(hashDir, "state.vscdb");
   seedFocusedComposer(dbPath, TAB_A);
 
-  // Open the Stream editor tab via the command palette.
+  // Open The Loop via the command palette.
   await win.keyboard.press(process.platform === "darwin" ? "Meta+Shift+P" : "F1");
   await win.locator(".quick-input-widget").waitFor({ timeout: 15_000 });
-  await win.keyboard.type("PromptConduit: Show Stream Panel");
+  await win.keyboard.type("PromptConduit: Show The Loop");
   await win.waitForTimeout(500);
   await win.keyboard.press("Enter");
   await win.waitForTimeout(3_000);
@@ -237,43 +237,30 @@ test("Stream panel follows the focused Cursor agent tab (composerData), not acti
 
   // The panel must land on tab-A because of the tab signal — the claude-code
   // session has the newest events, so activity-following alone would never
-  // show a Cursor conversation. Grab the frame by the cursor-tab follow note
-  // (unique to the agent-tab-following state); generous timeout covers the
-  // 2s poll cadence on a slow CI xvfb.
+  // show a Cursor conversation. Gate on the cursor-tab follow note (unique to
+  // that state); generous timeout covers the 2s poll cadence on slow CI xvfb.
   //
   // NOTE: expect() retries do NOT survive the nested webview contentFrame()
-  // chain here (an expect that misses on its first poll aborts with
-  // "element(s) not found" instead of retrying) — so every state transition is
-  // gated on the content-scanning webviewWithText loop, and the expects below
-  // each gate only assert content that renders atomically with the gate text.
-  const webview = await webviewWithText(win, "Following the selected Cursor agent tab.", 45_000);
-  const hookBadge = (hook: string) => webview.locator("details.evt .hook", { hasText: hook });
-  await expect(webview.locator(".pill", { hasText: "agent tab" })).toBeVisible();
-  await expect(webview.getByText("conversation_id (Cursor tab)")).toBeVisible();
-  await expect(webview.locator("code.skey", { hasText: TAB_A })).toBeVisible();
-  await expect(hookBadge("beforeShellExecution")).toBeVisible();
-  await expect(hookBadge("afterShellExecution")).toBeVisible();
-  // Other sessions' events must be absent — especially the newest (claude-code).
-  await expect(hookBadge("PreToolUse")).toHaveCount(0);
-  await expect(hookBadge("PostToolUse")).toHaveCount(0);
-  await expect(hookBadge("afterAgentResponse")).toHaveCount(0);
+  // chain here, so every state transition is gated on the content-scanning
+  // webviewWithText loop, and the expects below only assert content that
+  // renders atomically with the gate text.
+  const webview = await webviewWithText(win, "following the selected Cursor agent tab", 45_000);
+  await expect(webview.locator(`header[data-session="${TAB_A}"]`)).toHaveCount(1);
+  await expect(webview.getByText("cursor", { exact: false }).first()).toBeVisible();
   await win.screenshot({ path: "out/screenshots/cursor-tab-03-following-tab-a.png" });
 
   // Switch the focused tab to tab-B in the DB; the panel must flip within a
-  // couple of 2s poll cycles. Gate on "tab-B" appearing — the string exists
-  // nowhere in the tab-A view (different session, different events) — then
-  // assert the atomically-rendered tab-B state. Re-scan for the frame instead
-  // of reusing the handle: see the retry note above.
+  // couple of 2s poll cycles. Re-scan for the frame instead of reusing the
+  // handle (see the retry note above).
   seedFocusedComposer(dbPath, TAB_B);
-  const flipped = await webviewWithText(win, TAB_B, 45_000);
-  const hookBadgeB = (hook: string) => flipped.locator("details.evt .hook", { hasText: hook });
-  await expect(flipped.locator("code.skey", { hasText: TAB_B })).toBeVisible();
-  await expect(flipped.locator(".pill", { hasText: "agent tab" })).toBeVisible();
-  await expect(flipped.getByText("Following the selected Cursor agent tab.")).toBeVisible();
-  await expect(hookBadgeB("afterAgentResponse")).toBeVisible();
-  await expect(hookBadgeB("beforeMcpExecution")).toBeVisible();
-  await expect(hookBadgeB("beforeShellExecution")).toHaveCount(0);
-  await expect(hookBadgeB("PreToolUse")).toHaveCount(0);
+  const deadline = Date.now() + 45_000;
+  let flipped = await webviewWithText(win, "following the selected Cursor agent tab", 10_000);
+  while (Date.now() < deadline && (await flipped.locator(`header[data-session="${TAB_B}"]`).count()) === 0) {
+    await win.waitForTimeout(1_000);
+    flipped = await webviewWithText(win, "following the selected Cursor agent tab", 10_000);
+  }
+  await expect(flipped.locator(`header[data-session="${TAB_B}"]`)).toHaveCount(1);
+  await expect(flipped.locator(`header[data-session="${TAB_A}"]`)).toHaveCount(0);
   await win.screenshot({ path: "out/screenshots/cursor-tab-04-flipped-tab-b.png" });
 
   await flipped.locator("body").screenshot({ path: "out/screenshots/cursor-tab-05-webview-frame.png" });

@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.26.0
+
+- **The Loop replaces every other panel.** One view answers why a prompt cost what it did: each round-trip to the model as a column sized by the conversation it re-read, the tools run in between, and the cost of each step. It replays when you open a prompt and grows live while one runs.
+- **What would have made this cheaper.** The same steps re-priced under other approaches (fewer round-trips, a fresh session or subagent, switching models), with notes when a long wait outlived the prompt cache or a background task woke the agent after the prompt ended. Each links to a guide.
+- **How you've done this before.** Each prompt is compared with your past prompts of the same kind (ship, debug, build, …) by cost, round-trips and context size.
+- **Removed:** Stream, Session Graph, Orchestration Theater, Agent Coaching, and All Sessions. Their commands and settings (`promptconduit.stream.followSelection`, `promptconduit.visualizer.*`) are gone. Branch and PR spend remain in the status-bar tooltip.
+- **Fixed: tools counted twice.** Claude Code reports every tool call in both `PostToolUse` and `PostToolBatch`; each call now counts once.
+- **Fixed: calls credited to the wrong prompt.** A prompt's final reply was being counted on the next prompt, and background wake-ups after a prompt ended weren't shown at all. Calls are now attributed by when they ran.
+- **Kept from the Cost Breakdown:** first-run setup steps, the "Ask your agent" card, the sign-in offer and the team link all live in The Loop now. Hidden panels still stay idle.
+
 ## 0.25.0
 
 - **First-run setup.** When the PromptConduit CLI isn't installed, the status bar and Cost Breakdown show the one-line installer and `promptconduit init`, with one-click "Run in terminal". (#115)

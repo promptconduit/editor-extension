@@ -10,7 +10,7 @@ import { execFile } from "child_process";
 import * as vscode from "vscode";
 import { readCloudSyncEnabled } from "./cloudAccount";
 import { shellQuote } from "./syncOffer";
-import type { AgentHint } from "./costPanel/protocol";
+import type { AgentHint } from "./loopPanel/protocol";
 
 const DISMISS_KEY = "promptconduit.agentHint.dismissed";
 const REFRESH_MS = 5 * 60_000;
