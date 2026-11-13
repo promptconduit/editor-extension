@@ -16,9 +16,9 @@ Works with **Claude Code** and **Cursor**.
 **"PromptConduit"**, and click **Install**. Cursor installs from
 [Open VSX](https://open-vsx.org/extension/promptconduit/promptconduit).
 
-**VS Code**: a Marketplace listing is on the way. Until then, build the `.vsix`
-locally (see [Publishing](#publishing)) and install it with
-`code --install-extension promptconduit-<version>.vsix`.
+**VS Code**: install from the
+[VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=promptconduit.promptconduit),
+or run `code --install-extension promptconduit.promptconduit`.
 
 The extension reads what the `promptconduit` CLI captures, so install that too.
 See [Requirements](#requirements).
@@ -109,7 +109,8 @@ folder where you run Claude Code or a Cursor agent, and watch the status bar upd
 Targets: **Open VSX** (for Cursor) and the **VS Code Marketplace**.
 
 Release: bump `version` in `package.json`, commit, then tag. The `Publish`
-workflow publishes to Open VSX automatically:
+workflow publishes to Open VSX and the VS Code Marketplace (via trusted
+publishing, so no Marketplace token is stored):
 
 ```bash
 git tag v0.23.0 && git push origin v0.23.0
