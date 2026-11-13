@@ -1,97 +1,78 @@
 # PromptConduit
 
-[![Open VSX version](https://img.shields.io/open-vsx/v/promptconduit/promptconduit?label=Open%20VSX)](https://open-vsx.org/extension/promptconduit/promptconduit)
-[![Open VSX downloads](https://img.shields.io/open-vsx/dt/promptconduit/promptconduit)](https://open-vsx.org/extension/promptconduit/promptconduit)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/promptconduit/editor-extension/blob/main/LICENSE)
+**See where every AI prompt's money goes.** Most of what an AI coding agent
+costs isn't the work you asked for. It's the model re-reading the whole
+conversation on every round-trip. The Loop shows that for each prompt, round-trip
+by round-trip, tells you what would have been cheaper, and compares the run with
+how you've done the same kind of task before.
 
-**See what each AI prompt costs** — computed entirely on your machine. One click
-from the status bar opens a per-prompt cost ledger with coaching tips and
-optional branch/PR scopes. Everything reads your local event log
-(`~/.promptconduit/events.jsonl`); none of your code or prompts leave your device.
+Everything is computed on your machine from your local event log
+(`~/.promptconduit/events.jsonl`). None of your code or prompts leave your device.
+Works with **Claude Code** and **Cursor**.
 
 ## Install
 
-**Cursor** — open the Extensions pane (`⇧⌘X` / `Ctrl+Shift+X`), search
+**Cursor**: open the Extensions pane (`⇧⌘X` / `Ctrl+Shift+X`), search
 **"PromptConduit"**, and click **Install**. Cursor installs from
 [Open VSX](https://open-vsx.org/extension/promptconduit/promptconduit).
 
-**VS Code** — a Marketplace listing is on the way. Until then, build the `.vsix`
+**VS Code**: a Marketplace listing is on the way. Until then, build the `.vsix`
 locally (see [Publishing](#publishing)) and install it with
 `code --install-extension promptconduit-<version>.vsix`.
 
-The extension drives the `promptconduit` CLI, so install that too — see
-[Requirements](#requirements).
+The extension reads what the `promptconduit` CLI captures, so install that too.
+See [Requirements](#requirements).
 
-## Screenshots
+## The Loop
 
-**AI Cost Breakdown** — per-prompt ledger, one coaching tip up front, Session /
-This branch / This PR scope chips. Raw JSON and what-if comparisons live in an
-Advanced drawer.
+![The Loop: one prompt, round-trip by round-trip](./resources/screenshots/the-loop-window.png)
 
-![AI Cost Breakdown — per-prompt cost ledger with scope chips](./resources/screenshots/cost-breakdown-window.png)
+Click the cost in the status bar (or run **PromptConduit: Show The Loop**):
 
-**Session Graph** — a live tree of prompts, tools, subagents, and worktrees
-(command palette: *PromptConduit: Show Session Graph*).
+- **The headline.** What the prompt cost and how much of it was re-reading the
+  conversation. For example: *"$0.70 for this prompt. 89% of it was re-reading
+  the conversation."*
+- **The loop.** One column per round-trip to the model, as tall as the
+  conversation it read. The tools it ran sit between the columns, and each
+  column's cost sits underneath. It replays when you open a prompt and grows
+  live while a prompt runs.
+- **What would have made this cheaper.** The same steps re-priced under other
+  approaches: fewer round-trips, a fresh session or subagent, switching models
+  (often more expensive than it sounds). Each links to a short guide.
+- **Notes** on things that already happened: a long wait that outlived the
+  prompt cache, or a background task that woke the agent after the prompt ended.
+- **How you've done this before.** This run against your past prompts of the same
+  kind (ship, debug, build, …): cost, round-trips and context size, with your
+  cheapest run.
+- **How your team does it.** The same comparison across teammates, in the web
+  app (free for up to 3 people).
+- **How this session got here.** Context size across the whole session, so you
+  can see when it's worth starting fresh.
 
-![Session Graph — live turn tree with per-prompt cost](./resources/screenshots/graph-window.png)
+Pick any earlier prompt from the menu at the top. The panel follows the session
+in your focused terminal or selected Cursor agent tab.
 
-Stream, Orchestration Theater, and Agent Coaching are available from the command
-palette — see [More surfaces](#more-surfaces) below.
+## Status bar
 
-## Realtime token cost
-
-The bottom-right status bar shows `⚡ <request cost> · 🕘 <session cost>`. Click
-it for the **AI Cost Breakdown** panel.
-
-## The AI Cost Breakdown panel
-
-The breakdown estimates what your session would cost at **pay-as-you-go API
-rates** — useful whether you're on a subscription or paying per token.
-
-- **Cost per prompt** — every prompt as a row with a relative-cost bar. Expand
-  for model, tokens, and cache stats.
-- **Do better** — one actionable coaching tip for the session.
-- **Scope chips** — Session, **This branch** (your current feature branch), or
-  **This PR** (when `gh` has resolved an open PR on the branch).
-- **Advanced** (collapsed) — what-if model comparison, by-model table, raw event
-  JSON, and learn-more links.
-
-Works for **Claude Code** and **Cursor**.
+The bottom-right status bar shows `⚡ <last request> · 🕘 <session>` live. Its
+tooltip includes this branch's and this PR's spend.
 
 ## Ask your agent
 
 The `promptconduit` CLI includes an MCP server, so the agent in your editor can
-answer *"what has this session cost so far?"* or *"how is my team tracking
-against this month's budget?"* itself. The cost panel shows whether it's
-registered with this editor's agent (Cursor in Cursor, Claude Code in VS Code)
-and offers a one-click **Register** that runs `promptconduit mcp install`.
-Once it's registered, the panel lists example questions to copy. Signed-in
-users also get **Invite a teammate**, which runs `promptconduit team invite`.
-Dismiss the card with **Not now** / **Hide**. Command palette:
-*PromptConduit: Register MCP Server for Your Agent*. See
+answer *"what did my last prompt cost, and what would have been cheaper?"*
+itself. The Loop shows whether it's registered with this editor's agent (Cursor
+in Cursor, Claude Code in VS Code) and offers a one-click **Register** that runs
+`promptconduit mcp install`. Signed-in users also get **Invite a teammate**. See
 [promptconduit.dev/docs/agents](https://promptconduit.dev/docs/agents).
 
-Needs CLI v0.30.0 or newer (`promptconduit mcp status --json`). With an older
-CLI the card stays hidden.
+## Also in the terminal
 
-## More surfaces
+The CLI serves the same view in your browser, for any editor or none:
 
-All available from the command palette (`⇧⌘P`):
-
-| Command | What it does |
-|---------|----------------|
-| Show Cost Breakdown | Per-prompt ledger (also via status bar) |
-| Show Stream Panel | Live event feed |
-| Show Session Graph | 2D tree of turns, tools, subagents |
-| Show Orchestration Theater | 3D replay of agent orchestration |
-| Show Agent Coaching | Offline coaching report |
-| Show All Sessions Cost | Multi-session overview |
-
-## How it works
-
-The extension tails `~/.promptconduit/events.jsonl` (written by the
-`promptconduit` CLI hooks) and prices each turn against a bundled rate table.
-See `cli/internal/cost` for the pricing engine.
+```bash
+promptconduit loop
+```
 
 ## Requirements
 
@@ -107,36 +88,31 @@ If it isn't on your `PATH`, set `promptconduit.cost.binaryPath`.
 
 | Setting | Default | Description |
 |---|---|---|
-| `promptconduit.cost.enabled` | `true` | Show the realtime token-cost item in the status bar. |
+| `promptconduit.cost.enabled` | `true` | Show the live cost item in the status bar. |
 | `promptconduit.cost.binaryPath` | `""` | Override the CLI path (auto-detected otherwise). |
+| `promptconduit.restore.mode` | `auto` | Reopen Claude Code sessions interrupted by an editor restart. |
+| `promptconduit.cursorTabs.enabled` | `true` | Cursor only: follow the selected agent tab. |
 
 ## Develop
 
 ```bash
 npm install
 npm run compile        # or: npm run watch
+npm run preview        # render The Loop with sample data in a browser
 ```
 
 Press **F5** in VS Code / Cursor to launch an Extension Development Host, open a
-folder where you run Claude Code or Cursor agent, and watch the status bar update.
+folder where you run Claude Code or a Cursor agent, and watch the status bar update.
 
 ## Publishing
 
 Targets: **Open VSX** (for Cursor) and the **VS Code Marketplace**.
 
 Release: bump `version` in `package.json`, commit, then tag. The `Publish`
-workflow packages one `.vsix` and publishes it to every registry whose secret is
-set (`OVSX_TOKEN` for Open VSX, `VSCE_PAT` for the VS Code Marketplace):
+workflow publishes to Open VSX automatically:
 
 ```bash
-git tag v0.21.0 && git push origin v0.21.0
-```
-
-Both publishes use `--skip-duplicate`, so re-publishing an existing tag only
-fills in the registry that is missing that version:
-
-```bash
-gh workflow run publish.yml -R promptconduit/editor-extension --ref main -f tag=v0.23.0
+git tag v0.23.0 && git push origin v0.23.0
 ```
 
 Or publish locally:

@@ -18,7 +18,7 @@ import {
   type FileFingerprint,
 } from "./boundedTail";
 import { costEventsFrom, parseEnvelopeV2 } from "./envelope";
-import { eventsJsonlPath, rotatedEventsPath } from "./visualizer/paths";
+import { eventsJsonlPath, rotatedEventsPath } from "./eventPaths";
 
 export const MONTH_WINDOW_DAYS = 30;
 export const MONTH_WINDOW_MS = MONTH_WINDOW_DAYS * 24 * 60 * 60 * 1000;

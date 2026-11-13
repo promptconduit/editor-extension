@@ -16,6 +16,7 @@
 
 import { EnvelopeV2, subagentFrom, toolsFrom } from "./envelope";
 import { CostEvent, Tokens } from "./types";
+import { asTaskKind, classifyTask, type TaskKind } from "./loop/taskKind";
 
 /** One tool call attributed to a prompt (from the `tools` enrichment slug). */
 export interface PromptToolCall {
@@ -25,6 +26,8 @@ export interface PromptToolCall {
   mcpServer?: string;
   skill?: string;
   agentType?: string;
+  /** When the tool finished (capturedAt of its PostToolUse/Batch event). */
+  at?: string;
 }
 
 /** One subagent run attributed to a prompt (SubagentStart/Stop join). */
@@ -71,6 +74,13 @@ export interface PromptGroup {
    */
   kind: "prompt" | "uncaptured" | "preamble";
   promptText?: string;
+  /** What kind of work the prompt asked for (CLI `prompt.task_kind`, else classified locally). */
+  taskKind?: TaskKind;
+  /**
+   * Requests that ran after this prompt's Stop (a background task woke the
+   * agent). They arrive with a later prompt's Stop and are re-attributed here.
+   */
+  afterPromptRequestIds?: string[];
   permissionMode?: string;
   promptStats?: { chars?: number; words?: number; hasAttachments?: boolean };
   interrupted?: boolean;
@@ -108,6 +118,27 @@ const RAW_BUDGET = 8 * 1024 * 1024;
 const GROUPS_CAP = 300;
 
 // ---- safe accessors (everything off the wire is `unknown`) ----
+
+/**
+ * tool_use_id per normalized tool call: PostToolUse carries one on the raw
+ * payload; PostToolBatch carries one per entry of raw.tool_calls, in the same
+ * order as the `tools` slug's calls. Missing ids come back as "".
+ */
+function toolUseIdsOf(env: EnvelopeV2, n: number): string[] {
+  const out: string[] = new Array<string>(n).fill("");
+  const single = str(env.raw.tool_use_id);
+  if (single && n === 1) {
+    out[0] = single;
+    return out;
+  }
+  const batch = env.raw.tool_calls;
+  if (Array.isArray(batch)) {
+    for (let i = 0; i < n && i < batch.length; i++) {
+      out[i] = str(obj(batch[i]).tool_use_id);
+    }
+  }
+  return out;
+}
 
 function str(v: unknown): string {
   return typeof v === "string" ? v : "";
@@ -163,6 +194,8 @@ export class PromptGroupStore {
   /** Every group across all conversations, creation order (raw-budget eviction). */
   private groupOrder: PromptGroup[] = [];
   private rawBytes = 0;
+  /** Per-group tool_use_ids already recorded (PostToolUse + PostToolBatch report the same call). */
+  private readonly toolIds = new Map<string, Set<string>>();
   /** retainRaw:false skips raw-JSON storage entirely (metadata-only consumers). */
   constructor(private readonly opts: { retainRaw?: boolean } = {}) {}
 
@@ -349,6 +382,9 @@ export class PromptGroupStore {
 
     const promptText = str(env.raw.prompt);
     if (promptText) g.promptText = promptText.slice(0, PROMPT_TEXT_MAX);
+    g.taskKind =
+      asTaskKind(obj(env.enrichments.prompt).task_kind) ??
+      classifyTask(promptText, this.previousKind(conv, g.id));
     const mode = str(env.raw.permission_mode);
     if (mode) g.permissionMode = mode;
     const slug = obj(env.enrichments.prompt);
@@ -372,7 +408,19 @@ export class PromptGroupStore {
     const wt = worktreeOf(env);
     if (wt) g.worktreePath = wt;
     const calls = toolsFrom(env)?.calls ?? [];
-    for (const c of calls) {
+    const ids = toolUseIdsOf(env, calls.length);
+    let seen = this.toolIds.get(g.id);
+    if (!seen) {
+      seen = new Set();
+      this.toolIds.set(g.id, seen);
+    }
+    for (let i = 0; i < calls.length; i++) {
+      const c = calls[i];
+      const id = ids[i];
+      if (id) {
+        if (seen.has(id)) continue;
+        seen.add(id);
+      }
       if (g.toolCalls.length >= TOOL_CALLS_CAP) {
         g.droppedToolCalls = (g.droppedToolCalls ?? 0) + 1;
         continue;
@@ -384,10 +432,42 @@ export class PromptGroupStore {
         mcpServer: c.mcp_server,
         skill: c.skill,
         agentType: c.agent_type,
+        at: env.capturedAt,
       });
     }
     g.rev += 1;
     this.attachRaw(g, env);
+  }
+
+  /** Task kind of the most recent prompt group before `exceptId`. */
+  private previousKind(conv: Conversation, exceptId: string): TaskKind | undefined {
+    for (let i = conv.order.length - 1; i >= 0; i--) {
+      const id = conv.order[i];
+      if (id === exceptId) continue;
+      const k = conv.byId.get(id)?.taskKind;
+      if (k) return k;
+    }
+    return undefined;
+  }
+
+  /**
+   * The group a priced request belongs to. A Stop's requests can include calls
+   * from before this prompt was sent (the previous turn's final reply, flushed
+   * late) or a background wake-up after the previous prompt ended; both belong
+   * to the latest earlier prompt that started before the request ran.
+   */
+  private ownerOf(conv: Conversation, g: PromptGroup, ts: string): PromptGroup {
+    const at = parseTs(ts);
+    const start = parseTs(g.startedAt);
+    if (Number.isNaN(at) || Number.isNaN(start) || at >= start) return g;
+    const idx = conv.order.indexOf(g.id);
+    for (let i = idx - 1; i >= 0; i--) {
+      const cand = conv.byId.get(conv.order[i]);
+      if (!cand || cand.kind !== "prompt") continue;
+      const cs = parseTs(cand.startedAt);
+      if (!Number.isNaN(cs) && cs <= at) return cand;
+    }
+    return g;
   }
 
   // Rule 5: upsert the start record by agent_id into the target group.
@@ -489,8 +569,20 @@ export class PromptGroupStore {
     if (!g) g = this.addGroup(conv, this.newGroup("r:" + env.eventId, "uncaptured"));
 
     for (const ce of costEvents) {
-      if (ce.request_id && g.requests.some((r) => r.request_id === ce.request_id)) continue;
-      g.requests.push(ce);
+      const owner = this.ownerOf(conv, g, ce.ts);
+      if (ce.request_id && owner.requests.some((r) => r.request_id === ce.request_id)) continue;
+      owner.requests.push(ce);
+      if (owner !== g) {
+        owner.requests.sort((a, b) => (parseTs(a.ts) || 0) - (parseTs(b.ts) || 0));
+        const end = parseTs(owner.endedAt);
+        const at = parseTs(ce.ts);
+        // The turn's final reply lands within moments of its Stop; only a call
+        // well after the Stop is a background wake-up.
+        if (ce.request_id && !Number.isNaN(end) && !Number.isNaN(at) && at > end + TRAIL_MS) {
+          (owner.afterPromptRequestIds ??= []).push(ce.request_id);
+        }
+        owner.rev += 1;
+      }
     }
     const turnDur = numOpt(obj(env.enrichments.turn).duration_ms);
     if (turnDur !== undefined) g.turnDurationMs = turnDur;

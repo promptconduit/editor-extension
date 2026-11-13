@@ -5,8 +5,8 @@ import {
   hostMcpTool,
   parseMcpStatus,
 } from "../../src/agentHint";
-import { buildCostPanelState } from "../../src/costPanel/viewModel";
-import { renderBody, renderZones } from "../../webview/costPanel/render";
+import { buildLoopPanelState } from "../../src/loopPanel/viewModel";
+import { renderApp } from "../../webview/loopPanel/render";
 import { ConversationStore } from "../../src/state";
 
 // Shape printed by `promptconduit mcp status --json` (cli cmd/status.go).
@@ -79,28 +79,28 @@ describe("agent hint render", () => {
   const status = parseMcpStatus(CLI_OUTPUT);
 
   it("shows a register button when not registered", () => {
-    const state = buildCostPanelState(new ConversationStore(), "session");
+    const state = buildLoopPanelState(new ConversationStore(), { followLatest: true });
     state.agentHint = buildAgentHint(status, "cursor", false);
-    const html = renderBody(state);
+    const html = renderApp(state);
     expect(html).toContain("Ask your agent");
     expect(html).toContain('data-cmd="registerMcp"');
     expect(html).toContain('data-cmd="dismissAgentHint"');
     expect(html).not.toContain('data-cmd="inviteTeammate"');
-    // Lives below the fold, not next to the login offer.
-    expect(renderZones(state).rest).toContain("agent-hint");
+    // Comes after the sign-in offer, not before it.
+    expect(html.indexOf("Ask your agent")).toBeGreaterThan(html.indexOf("Run a prompt"));
   });
 
   it("lists copyable questions and the invite action when registered and signed in", () => {
-    const state = buildCostPanelState(new ConversationStore(), "all");
+    const state = buildLoopPanelState(new ConversationStore(), { followLatest: true });
     state.agentHint = buildAgentHint(status, "claude-code", true);
-    const html = renderBody(state);
+    const html = renderApp(state);
     expect(html).not.toContain('data-cmd="registerMcp"');
-    expect(html).toContain('class="copy-q"');
+    expect(html).toContain("data-copy=");
     expect(html).toContain('data-cmd="inviteTeammate"');
   });
 
   it("renders nothing without a hint", () => {
-    const html = renderBody(buildCostPanelState(new ConversationStore(), "session"));
+    const html = renderApp(buildLoopPanelState(new ConversationStore(), { followLatest: true }));
     expect(html).not.toContain("Ask your agent");
   });
 });

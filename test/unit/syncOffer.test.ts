@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import { isCloudSyncEnabled } from "../../src/cloudAccount";
 import { accumulateMonthSpend, LOGIN_CTA_MIN_SESSIONS } from "../../src/monthSpend";
 import { shellQuote } from "../../src/syncOffer";
-import { buildCostPanelState } from "../../src/costPanel/viewModel";
-import { renderBody } from "../../webview/costPanel/render";
+import { buildLoopPanelState } from "../../src/loopPanel/viewModel";
+import { renderApp } from "../../webview/loopPanel/render";
 import { ConversationStore } from "../../src/state";
 
 function line(opts: {
@@ -98,21 +98,21 @@ describe("shellQuote", () => {
 });
 
 describe("sync offer render", () => {
-  it("renders the login prompt when a sync offer is present", () => {
-    const state = buildCostPanelState(new ConversationStore(), "session", "session", {
+  it("renders the sign-in offer when present", () => {
+    const state = buildLoopPanelState(new ConversationStore(), { followLatest: true }, {
       usd: 12.5,
       sessions: 4,
       windowDays: 30,
     });
-    const html = renderBody(state);
-    expect(html).toContain("promptconduit login");
+    const html = renderApp(state);
+    expect(html).toContain('data-cmd="login"');
     expect(html).toContain("$12.50");
     expect(html).toContain("4 sessions");
     expect(html).toContain('data-cmd="dismissLogin"');
   });
 
-  it("omits the prompt when there is no offer", () => {
-    const html = renderBody(buildCostPanelState(new ConversationStore(), "session"));
-    expect(html).not.toContain("Keep this month");
+  it("omits the offer when there is none", () => {
+    const html = renderApp(buildLoopPanelState(new ConversationStore(), { followLatest: true }));
+    expect(html).not.toContain('data-cmd="login"');
   });
 });

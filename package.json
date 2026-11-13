@@ -1,8 +1,8 @@
 {
   "name": "promptconduit",
   "displayName": "PromptConduit",
-  "description": "See what each AI prompt costs — live in your status bar, with a per-prompt ledger, coaching tips, and branch/PR spend scopes. 100% local. Also: Session Graph, Stream, Orchestration Theater, and Agent Coaching.",
-  "version": "0.25.0",
+  "description": "See where every AI prompt's money goes. The Loop shows each round-trip to the model, what it re-read, which tools ran, what would have been cheaper, and how it compares with your past runs. Live cost in the status bar. 100% local. Claude Code and Cursor.",
+  "version": "0.26.0",
   "publisher": "promptconduit",
   "license": "MIT",
   "icon": "resources/icon.png",
@@ -23,13 +23,12 @@
     "claude code",
     "cursor",
     "agent",
-    "orchestration",
-    "visualization",
-    "observability",
-    "telemetry",
+    "ai cost",
     "token",
     "cost",
-    "usage"
+    "usage",
+    "prompt caching",
+    "observability"
   ],
   "repository": {
     "type": "git",
@@ -47,11 +46,7 @@
     "commands": [
       {
         "command": "promptconduit.cost.showDetails",
-        "title": "PromptConduit: Show Cost Breakdown"
-      },
-      {
-        "command": "promptconduit.cost.showAllSessions",
-        "title": "PromptConduit: Show All Sessions Cost"
+        "title": "PromptConduit: Show The Loop"
       },
       {
         "command": "promptconduit.cost.pinSession",
@@ -82,32 +77,6 @@
       {
         "command": "promptconduit.team.invite",
         "title": "PromptConduit: Invite a Teammate"
-      },
-      {
-        "command": "promptconduit.coaching.showTab",
-        "title": "PromptConduit: Show Agent Coaching"
-      },
-      {
-        "command": "promptconduit.stream.showFeed",
-        "title": "PromptConduit: Show Stream Panel"
-      },
-      {
-        "command": "promptconduit.stream.drillIn",
-        "title": "PromptConduit: Stream — Drill into Session",
-        "icon": "$(list-selection)"
-      },
-      {
-        "command": "promptconduit.stream.showAll",
-        "title": "PromptConduit: Stream — Show All Activity",
-        "icon": "$(list-flat)"
-      },
-      {
-        "command": "promptconduit.visualizer.show",
-        "title": "PromptConduit: Show Orchestration Theater"
-      },
-      {
-        "command": "promptconduit.graph.show",
-        "title": "PromptConduit: Show Session Graph"
       },
       {
         "command": "promptconduit.feedback.send",
@@ -144,26 +113,6 @@
           "default": "",
           "description": "Path to the promptconduit CLI (used by session restore). Leave blank to auto-detect on PATH and common install locations."
         },
-        "promptconduit.visualizer.githubEnrichment": {
-          "type": "string",
-          "enum": [
-            "fetch",
-            "inferOnly",
-            "off"
-          ],
-          "enumDescriptions": [
-            "Fetch issue/PR titles and status from github.com (sends only owner/repo/number for the current repo).",
-            "Infer issue/PR numbers from branch and commit messages, but make no network calls.",
-            "Show no GitHub links on Orchestration Theater hover cards."
-          ],
-          "default": "fetch",
-          "description": "How the Orchestration Theater resolves the GitHub issue/PR shown on hover cards."
-        },
-        "promptconduit.visualizer.githubToken": {
-          "type": "string",
-          "default": "",
-          "description": "Optional GitHub token for issue/PR enrichment (raises the API rate limit and reaches private repos). Falls back to the GITHUB_TOKEN/GH_TOKEN environment variable."
-        },
         "promptconduit.restore.mode": {
           "type": "string",
           "enum": [
@@ -187,12 +136,7 @@
         "promptconduit.cursorTabs.enabled": {
           "type": "boolean",
           "default": true,
-          "description": "Cursor only (best effort): follow the selected agent/chat tab by reading Cursor's local workspace state, so the Stream panel, Session Graph, and status-bar cost switch to that conversation. Self-disables if the state database is unreadable."
-        },
-        "promptconduit.stream.followSelection": {
-          "type": "boolean",
-          "default": true,
-          "description": "When you focus a terminal running Claude Code or select a Cursor agent tab, drill the open Stream panel and Session Graph into that session automatically. Event activity never moves the view either way."
+          "description": "Cursor only (best effort): follow the selected agent/chat tab by reading Cursor's local workspace state, so the status-bar cost and The Loop switch to that conversation. Self-disables if the state database is unreadable."
         }
       }
     }
@@ -213,18 +157,15 @@
     "capture": "bash scripts/capture-screenshots.sh",
     "refresh-screenshots": "npm run compile && PREVIEW_NO_OPEN=1 npm run preview && node scripts/refresh-screenshots-from-preview.mjs",
     "preview": "vite-node dev/preview.ts",
-    "demo:web": "node dev/build-standalone.mjs",
-    "build:cli-graph": "node dev/build-cli-bundle.mjs"
+    "build:cli-loop": "node dev/build-cli-bundle.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.61.1",
     "@types/node": "^20.11.0",
-    "@types/three": "^0.169.0",
     "@types/vscode": "^1.85.0",
     "@vscode/vsce": "^3.2.0",
     "esbuild": "^0.28.1",
     "ovsx": "^0.10.0",
-    "three": "^0.169.0",
     "typescript": "^5.9.0",
     "vitest": "^3.2.6"
   }

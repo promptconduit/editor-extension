@@ -8,7 +8,7 @@ import {
   bustCache,
 } from "../../src/webviewHost";
 import { isSafeHttpUrl as linksIsSafeHttpUrl } from "../../src/links";
-import { SCENE_CSS, SCENE_BODY } from "../../src/visualizer/chrome";
+import { LOOP_PANEL_CSS } from "../../src/loopPanel/styles";
 
 // webviewCsp only reads `cspSource`, so a one-field stand-in is a full fake.
 const fakeWebview = { cspSource: "vscode-webview://abc123" } as vscode.Webview;
@@ -107,25 +107,25 @@ describe("webviewShellHtml", () => {
   });
 });
 
-// VisualizerPanel.getHtml needs a live WebviewPanel (asWebviewUri), which the
-// unit-test vscode stub doesn't provide — so pin the visualizer's document by
-// composing the shell exactly as visualizerPanel.ts does.
-describe("visualizer document composition", () => {
-  it("keeps the nonce'd scene style, body chrome, and CSP intact", () => {
+// LoopPanel.renderShell needs a live WebviewPanel (asWebviewUri), which the
+// unit-test vscode stub doesn't provide — so pin The Loop's document by
+// composing the shell exactly as loopPanel/panel.ts does.
+describe("loop panel document composition", () => {
+  it("keeps the nonce'd style, app root, and CSP intact", () => {
     const nonce = makeNonce();
-    const scriptUri = "vscode-webview://abc123/media/visualizer.js";
+    const scriptUri = "vscode-webview://abc123/media/loopPanel.js";
     const html = webviewShellHtml({
       csp: webviewCsp(fakeWebview, nonce),
       nonce,
       scriptUri,
-      title: "AI Orchestration Theater",
-      headHtml: `<style nonce="${nonce}">${SCENE_CSS}</style>`,
-      bodyHtml: SCENE_BODY,
+      title: "The Loop",
+      headHtml: `<style nonce="${nonce}">${LOOP_PANEL_CSS}</style>`,
+      bodyHtml: `<div id="app"></div>`,
     });
     expect(html).toContain(`content="default-src 'none'; `);
     expect(html).toContain(`script-src 'nonce-${nonce}'`);
-    expect(html).toContain(`<style nonce="${nonce}">${SCENE_CSS}</style>`);
-    expect(html).toContain(SCENE_BODY);
+    expect(html).toContain(`<style nonce="${nonce}">${LOOP_PANEL_CSS}</style>`);
+    expect(html).toContain(`<div id="app"></div>`);
     expect(html).toContain(`<script nonce="${nonce}" src="${scriptUri}"></script>`);
   });
 });

@@ -3,9 +3,7 @@ import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 import { LineTail, LineSplitter, readTailLines, lineKey } from "../../src/boundedTail";
-import { TailReader } from "../../src/visualizer/tailReader";
 import { RawEventTail } from "../../src/tail";
-import { readHistory } from "../../src/visualizer/eventLog";
 import { MonthSpendScanner, accumulateMonthSpend } from "../../src/monthSpend";
 
 let dir: string;
@@ -337,59 +335,6 @@ describe("LineTail", () => {
   });
 });
 
-describe("TailReader (Stream panel)", () => {
-  it("seeds from the tail instead of reading the whole file", () => {
-    fs.writeFileSync(file, lines(0, 1000, 30));
-    const items: number[] = [];
-    const r = new TailReader<number>(
-      file,
-      (l) => (JSON.parse(l) as { i: number }).i,
-      (xs) => items.push(...xs),
-      { seedBytes: 2000, sliceBytes: 256 },
-    );
-    r.start();
-    r.dispose();
-    expect(items.length).toBeGreaterThan(0);
-    expect(items.length).toBeLessThan(100);
-    expect(items.at(-1)).toBe(999);
-  });
-});
-
-describe("large log", () => {
-  it("opening a multi-MB log reads only the seed budget, in slices", () => {
-    // ~6MB synthetic log; production logs can be hundreds of MB.
-    const chunk = lines(0, 5000, 100);
-    const fd = fs.openSync(file, "w");
-    for (let k = 0; k < 10; k++) fs.writeSync(fd, chunk);
-    fs.closeSync(fd);
-    let bytes = 0;
-    let maxLen = 0;
-    const items: number[] = [];
-    const r = new TailReader<number>(
-      file,
-      (l) => (JSON.parse(l) as { i: number }).i,
-      (xs) => items.push(...xs),
-      {
-        seedBytes: 256 * 1024,
-        sliceBytes: 32 * 1024,
-        readSync: (f, buf, off, len, pos) => {
-          maxLen = Math.max(maxLen, len);
-          const n = fs.readSync(f, buf, off, len, pos);
-          bytes += n;
-          return n;
-        },
-      },
-    );
-    r.start();
-    fs.appendFileSync(file, ln(123456) + "\n");
-    r.tick();
-    r.dispose();
-    expect(bytes).toBeLessThanOrEqual(256 * 1024 + 1 + ln(123456).length + 1);
-    expect(maxLen).toBeLessThanOrEqual(32 * 1024);
-    expect(items.at(-1)).toBe(123456);
-  });
-});
-
 describe("RawEventTail", () => {
   it("initial read is bounded, tops up from .1, then tails appends exactly once", () => {
     fs.writeFileSync(`${file}.1`, lines(0, 10));
@@ -438,7 +383,7 @@ describe("RawEventTail", () => {
   });
 });
 
-describe("readTailLines / readHistory", () => {
+describe("readTailLines", () => {
   it("reads only the newest maxBytes", () => {
     fs.writeFileSync(file, lines(0, 1000));
     const r = readTailLines(file, 300, { sliceBytes: 32 });
@@ -446,20 +391,6 @@ describe("readTailLines / readHistory", () => {
     expect(r.lines.length).toBeLessThan(40);
   });
 
-  it("readHistory is bounded to the newest bytes across .1 and the live file", () => {
-    const home = dir;
-    const pc = path.join(home, ".promptconduit");
-    fs.mkdirSync(pc);
-    const env = (id: string) =>
-      JSON.stringify({ schema: 2, event_id: id, session_id: "s", tool: "claude-code", hook_event: id, captured_at: new Date().toISOString(), raw_event: {}, enrichments: {} });
-    fs.writeFileSync(path.join(pc, "events.jsonl.1"), Array.from({ length: 200 }, (_, k) => env(`old${k}`) + "\n").join(""));
-    fs.writeFileSync(path.join(pc, "events.jsonl"), Array.from({ length: 5 }, (_, k) => env(`new${k}`) + "\n").join(""));
-    const out = readHistory(home, 3000);
-    expect(out.length).toBeLessThan(205);
-    expect(out.at(-1)?.hookEvent).toBe("new4");
-    expect(out.some((e) => e.hookEvent === "old199")).toBe(true);
-    expect(out.some((e) => e.hookEvent === "old0")).toBe(false);
-  });
 });
 
 describe("MonthSpendScanner", () => {
