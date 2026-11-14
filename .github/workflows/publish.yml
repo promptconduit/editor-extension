@@ -11,7 +11,8 @@ name: Publish
 #     `promptconduit` has a policy allowing promptconduit/editor-extension's
 #     publish.yml (Marketplace → Manage → Trusted Publishing). The job needs
 #     `id-token: write`. Replaces VSCE_PAT (Azure DevOps global PATs retire 2026-12-01).
-# The Open VSX step runs only when its secret is set. Both registries get the SAME .vsix (packaged once),
+# The Open VSX step runs only when its secret is set. Each registry gets its own .vsix (the
+# Marketplace one omits the Cursor-only modules, see below),
 # and both publish with --skip-duplicate, so re-running an existing tag skips the
 # registry that already has that version and publishes to the other. That is how
 # an existing tag reaches the Marketplace the first time:
@@ -58,12 +59,29 @@ jobs:
           ref: ${{ inputs.tag || github.ref }}
       - uses: actions/setup-node@v6
         with:
-          node-version: '20'
+          node-version: '22' # @vscode/vsce 4.x (trusted publishing) needs Node >= 22
           cache: npm
       - run: npm ci
       # `vsce package` runs the `vscode:prepublish` script (npm run compile).
-      - name: Package .vsix
+      - name: Package .vsix (Open VSX / Cursor)
         run: npx vsce package -o promptconduit.vsix
+
+      # The VS Code Marketplace package leaves out the Cursor-only modules
+      # (src/optionalFeatures.ts): the one-click curl installer and the Cursor
+      # state.vscdb reader. The Marketplace's malware scan rejects both
+      # ("suspicious content", v0.26.0). The extension degrades to the install
+      # docs link, and agent-tab tracking only ever ran in Cursor anyway.
+      - name: Package .vsix (VS Code Marketplace)
+        run: |
+          { cat .vscodeignore; printf '\n.vscodeignore.marketplace\nout/installer.js\nout/cursorTabs.js\n'; } > .vscodeignore.marketplace
+          npx vsce package -o promptconduit-marketplace.vsix --ignoreFile .vscodeignore.marketplace
+          files=$(unzip -Z1 promptconduit-marketplace.vsix)
+          if echo "$files" | grep -E 'out/(installer|cursorTabs)\.js$'; then
+            echo "::error::Cursor-only modules leaked into the Marketplace package"; exit 1
+          fi
+          if unzip -p promptconduit-marketplace.vsix | grep -aE '\| *(ba)?sh\b'; then
+            echo "::error::A pipe-to-shell command is in the Marketplace package"; exit 1
+          fi
 
       - name: Publish to Open VSX (Cursor)
         id: ovsx
@@ -71,7 +89,7 @@ jobs:
         run: npx ovsx publish promptconduit.vsix --pat "$OVSX_TOKEN" --skip-duplicate
 
       - name: Publish to VS Code Marketplace (trusted publishing)
-        run: npx --yes @vscode/vsce@4.1.1 publish --oidc --packagePath promptconduit.vsix --skip-duplicate
+        run: npx --yes @vscode/vsce@4.1.1 publish --oidc --packagePath promptconduit-marketplace.vsix --skip-duplicate
 
       - name: Warn about skipped registries
         if: ${{ !cancelled() }}
@@ -84,7 +102,9 @@ jobs:
         if: ${{ !cancelled() }}
         with:
           name: promptconduit-vsix
-          path: promptconduit.vsix
+          path: |
+            promptconduit.vsix
+            promptconduit-marketplace.vsix
           if-no-files-found: ignore
 
       # Tell the CLI to refresh its embedded copy of this extension. The CLI's

@@ -76,11 +76,9 @@ promptconduit loop
 
 ## Requirements
 
-Install the CLI:
-
-```bash
-curl -fsSL https://promptconduit.dev/install | bash
-```
+Install the free CLI by following
+[promptconduit.dev/docs/installation](https://promptconduit.dev/docs/installation)
+(one command on macOS and Linux).
 
 If it isn't on your `PATH`, set `promptconduit.cost.binaryPath`.
 
