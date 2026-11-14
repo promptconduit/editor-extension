@@ -5,8 +5,8 @@
 
 import { marketingUrl } from "./marketingUrl";
 
-/** The one supported install path (no Homebrew: it was retired in CLI v0.13.2). */
-export const INSTALL_COMMAND = "curl -fsSL https://promptconduit.dev/install | bash";
+/** Where to send people when there's no one-click installer (Windows, the Marketplace package). */
+export const INSTALL_DOCS_PATH = "/docs/installation";
 /** Hooks the CLI into Claude Code / Cursor. The installer runs it when interactive. */
 export const INIT_COMMAND = "promptconduit init";
 
@@ -39,33 +39,39 @@ export function setupStep(p: SetupProbe): SetupStep {
 /** Serializable setup card state for the Cost Breakdown webview. */
 export interface SetupState {
   step: Exclude<SetupStep, "ready">;
-  /** The curl installer, or undefined where it doesn't apply (Windows). */
+  /** The curl installer, or undefined where it doesn't apply (Windows, the Marketplace package). */
   installCommand?: string;
   initCommand: string;
   docsUrl: string;
 }
 
-export function setupState(step: SetupStep, platform: string): SetupState | undefined {
+/**
+ * @param installCommand the one-click installer (optionalFeatures.installCommand()),
+ *   undefined in the VS Code Marketplace package, which links to the docs instead.
+ */
+export function setupState(step: SetupStep, platform: string, installCommand?: string): SetupState | undefined {
   if (step === "ready") {
     return undefined;
   }
   return {
     step,
-    installCommand: platform === "win32" ? undefined : INSTALL_COMMAND,
+    installCommand: platform === "win32" ? undefined : installCommand,
     initCommand: INIT_COMMAND,
-    docsUrl: marketingUrl("/docs/installation", "cost_panel", "setup"),
+    docsUrl: marketingUrl(INSTALL_DOCS_PATH, "cost_panel", "setup"),
   };
 }
 
 /** Status bar text/tooltip while setup is incomplete and nothing is tracked yet. */
-export function setupStatusBar(step: SetupStep): { text: string; tooltip: string } | undefined {
+export function setupStatusBar(step: SetupStep, installCommand?: string): { text: string; tooltip: string } | undefined {
   switch (step) {
     case "install-cli":
       return {
         text: "$(zap) Set up cost tracking",
         tooltip:
           "**PromptConduit needs its free CLI** to record AI session costs on this machine.\n\n" +
-          `Install it with \`${INSTALL_COMMAND}\`, then run \`${INIT_COMMAND}\`.\n\n` +
+          (installCommand
+            ? `Install it with \`${installCommand}\`, then run \`${INIT_COMMAND}\`.\n\n`
+            : `Install it from promptconduit.dev${INSTALL_DOCS_PATH}, then run \`${INIT_COMMAND}\`.\n\n`) +
           "_Click for setup steps._",
       };
     case "run-init":

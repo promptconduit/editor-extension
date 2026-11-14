@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.26.1
+
+- **Now on the VS Code Marketplace.** Install it from the Extensions view in VS Code (search "PromptConduit") or with `code --install-extension promptconduit.promptconduit`.
+- **VS Code setup links to the install guide.** In VS Code, "Install the CLI" opens [promptconduit.dev/docs/installation](https://promptconduit.dev/docs/installation) instead of running the installer in a terminal. Cursor (Open VSX) keeps the one-click install.
+
 ## 0.26.0
 
 - **The Loop replaces every other panel.** One view answers why a prompt cost what it did: each round-trip to the model as a column sized by the conversation it re-read, the tools run in between, and the cost of each step. It replays when you open a prompt and grows live while one runs.

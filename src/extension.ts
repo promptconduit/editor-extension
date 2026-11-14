@@ -10,7 +10,7 @@ import { resolveBinary } from "./binary";
 import { UpdatePromptController } from "./updatePrompt";
 import { SessionRestoreController, makeRestoreDeps, recordDismissed } from "./sessionRestore";
 import { TerminalFocusController, makeTerminalFocusDeps } from "./terminalFocus";
-import { CursorTabTracker, runComposerQuery } from "./cursorTabs";
+import { cursorTabs } from "./optionalFeatures";
 import { SyncOfferController, shellQuote } from "./syncOffer";
 import { readPublishedRateCard } from "./rateCard";
 import { applyRateCard } from "./pricing";
@@ -184,19 +184,18 @@ function activateInner(context: vscode.ExtensionContext): void {
   terminalFocus.start();
   context.subscriptions.push(terminalFocus);
 
-  // Cursor-only, best-effort: the focused agent tab is not observable through
-  // any extension API, so read Cursor's own workspace-storage record of it
-  // (ItemTable key composer.composerData → lastFocusedComposerIds[0], which is
-  // the conversation_id our events are keyed by). Read-only via the sqlite3
-  // CLI; self-disables on repeated failure (missing sqlite3, schema change)
-  // without affecting the terminal/prompt signals.
+  // Cursor-only, best-effort agent-tab tracking (how it works: cursorTabs.ts).
+  // Self-disables on repeated failure without affecting the terminal/prompt
+  // signals.
   const isCursor = vscode.env.appName.toLowerCase().includes("cursor");
   const cursorTabsEnabled = vscode.workspace
     .getConfiguration("promptconduit.cursorTabs")
     .get<boolean>("enabled", true);
-  if (isCursor && cursorTabsEnabled) {
-    const storageDir = context.storageUri?.fsPath;
-    const workspaceDb = storageDir ? path.join(path.dirname(storageDir), "state.vscdb") : undefined;
+  // Not in the VS Code Marketplace package (see optionalFeatures.ts).
+  const cursorTabsModule = isCursor && cursorTabsEnabled ? cursorTabs() : undefined;
+  if (cursorTabsModule) {
+    const { CursorTabTracker, runComposerQuery, workspaceStateDb } = cursorTabsModule;
+    const workspaceDb = workspaceStateDb(context.storageUri?.fsPath);
     const tracker = new CursorTabTracker({
       dbPath: () => (workspaceDb && fs.existsSync(workspaceDb) ? workspaceDb : null),
       query: runComposerQuery,
@@ -207,8 +206,8 @@ function activateInner(context: vscode.ExtensionContext): void {
         console.warn(`PromptConduit: Cursor agent-tab tracking disabled (${reason})`);
       },
     });
-    // No sqlite3 polling while this window is in the background (many windows
-    // open = many pollers); a focused window polls immediately on return.
+    // No polling while this window is in the background (many windows open =
+    // many pollers); a focused window polls immediately on return.
     tracker.setFocused(vscode.window.state.focused);
     tracker.start();
     context.subscriptions.push(

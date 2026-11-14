@@ -8,6 +8,7 @@ export function shortId(key: string): string {
   return key.length > 12 ? `…${key.slice(-8)}` : key;
 }
 import { SetupStep, setupStatusBar } from "./setup";
+import { installCommand } from "./optionalFeatures";
 
 const SHOW_DETAILS_COMMAND = "promptconduit.cost.showDetails";
 
@@ -263,7 +264,7 @@ export class CostStatusBar {
 
   private render(): void {
     // Nothing tracked yet and setup incomplete: say what to do instead of "— · $0.00".
-    const setup = this.store.displayKey === undefined ? setupStatusBar(this.setupStep) : undefined;
+    const setup = this.store.displayKey === undefined ? setupStatusBar(this.setupStep, installCommand()) : undefined;
     if (setup) {
       this.item.text = setup.text;
       const setupTip = new vscode.MarkdownString(setup.tooltip);

@@ -20,6 +20,12 @@
 // SQLite fixture shaped like a live Cursor database.
 
 import { execFile } from "child_process";
+import * as path from "path";
+
+/** Cursor's workspace state database for this window, from the extension's storageUri path. */
+export function workspaceStateDb(storageDir: string | undefined): string | undefined {
+  return storageDir ? path.join(path.dirname(storageDir), "state.vscdb") : undefined;
+}
 
 /** ItemTable key that holds the chat-tab UI state. */
 export const COMPOSER_DATA_KEY = "composer.composerData";

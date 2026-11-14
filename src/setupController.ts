@@ -6,7 +6,8 @@ import * as fs from "fs";
 import * as vscode from "vscode";
 import { locateBinary } from "./binary";
 import { logDisabled, eventsJsonlPath, rotatedJsonlPath } from "./tail";
-import { INSTALL_COMMAND, SetupStep, setupStep, setupState, SetupState } from "./setup";
+import { SetupStep, setupStep, setupState, SetupState } from "./setup";
+import { installCommand } from "./optionalFeatures";
 import { shellQuote } from "./syncOffer";
 
 const RECHECK_MS = 10_000;
@@ -27,7 +28,7 @@ export class SetupController implements vscode.Disposable {
 
   /** Webview card state, or undefined once setup is done. */
   state(): SetupState | undefined {
-    return setupState(this.step, process.platform);
+    return setupState(this.step, process.platform, installCommand());
   }
 
   /** The located CLI, or null when it isn't installed. */
@@ -67,15 +68,20 @@ export class SetupController implements vscode.Disposable {
     this.onChange?.();
   }
 
-  /** Run the curl installer in a terminal (it starts `promptconduit init` itself). */
+  /**
+   * Run the curl installer in a terminal (it starts `promptconduit init` itself),
+   * or open the install docs where there's no one-click installer (Windows, the
+   * VS Code Marketplace package).
+   */
   installCli(): void {
-    if (process.platform === "win32") {
+    const command = process.platform === "win32" ? undefined : installCommand();
+    if (!command) {
       void vscode.env.openExternal(vscode.Uri.parse(setupState("install-cli", "win32")!.docsUrl));
       return;
     }
     const term = vscode.window.createTerminal({ name: "PromptConduit setup" });
     term.show();
-    term.sendText(INSTALL_COMMAND);
+    term.sendText(command);
   }
 
   /** Run `promptconduit init` in a terminal. */

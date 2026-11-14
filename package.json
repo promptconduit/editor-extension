@@ -2,7 +2,7 @@
   "name": "promptconduit",
   "displayName": "PromptConduit",
   "description": "See where every AI prompt's money goes. The Loop shows each round-trip to the model, what it re-read, which tools ran, what would have been cheaper, and how it compares with your past runs. Live cost in the status bar. 100% local. Claude Code and Cursor.",
-  "version": "0.26.0",
+  "version": "0.26.1",
   "publisher": "promptconduit",
   "license": "MIT",
   "icon": "resources/icon.png",
