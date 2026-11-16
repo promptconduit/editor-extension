@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# Local equivalent of the PR CI job (.github/workflows/ci.yml):
+#   npm ci -> compile -> unit tests -> vsce package smoke test.
+# Flags: --fast  skip the vsce packaging step.
+# Never publishes. The Cursor e2e gate is separate: scripts/e2e.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+FAST=0
+for a in "$@"; do [ "$a" = "--fast" ] && FAST=1; done
+
+command -v node >/dev/null || { echo "node is required (Node 20+)" >&2; exit 1; }
+command -v npm >/dev/null || { echo "npm is required" >&2; exit 1; }
+
+echo "==> install"
+npm ci
+echo "==> compile"
+npm run compile
+echo "==> unit tests"
+npm test
+if [ "$FAST" = 0 ]; then
+  echo "==> package (vsce smoke test)"
+  out="$(mktemp -d)/extension.vsix"
+  npx @vscode/vsce package --out "$out"
+fi
+echo "==> verify OK"

@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# Runs the Playwright suite that drives the REAL Cursor editor (test/e2e/).
+# Requires a Cursor binary: set CURSOR_BIN to the executable, e.g.
+#   CURSOR_BIN="/Applications/Cursor.app/Contents/MacOS/Cursor" scripts/e2e
+# CI pins a version and runs under xvfb (see .github/workflows/e2e-cursor.yml);
+# locally on macOS it opens a visible window. Extra args go to `playwright test`.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+if [ -z "${CURSOR_BIN:-}" ]; then
+  echo "CURSOR_BIN is not set. Point it at a Cursor executable (see header)." >&2
+  exit 1
+fi
+[ -x "$CURSOR_BIN" ] || { echo "CURSOR_BIN is not executable: $CURSOR_BIN" >&2; exit 1; }
+
+echo "==> compile"
+npm run compile
+echo "==> e2e (Cursor)"
+EXT_DEV_PATH="${EXT_DEV_PATH:-$PWD}" npx playwright test "$@"

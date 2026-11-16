@@ -21,6 +21,7 @@ scripts/**
 docs/**
 DEVELOPING.md
 CONTRIBUTING.md
+CLAUDE.md
 
 # repo / packaging cruft
 .gitignore
